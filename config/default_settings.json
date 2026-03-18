@@ -1,0 +1,70 @@
+{
+  "general": {
+    "language": "zh-TW",
+    "start_with_windows": false,
+    "start_minimized": true,
+    "single_instance": true,
+    "data_directory": "./data"
+  },
+  "capture": {
+    "backend": "mss",
+    "screenshot_format": "png",
+    "jpg_quality": 95,
+    "include_cursor": false,
+    "auto_ocr_on_capture": true,
+    "capture_sound": false,
+    "save_raw_image": true
+  },
+  "ocr": {
+    "engine": "onnxruntime",
+    "model_det": "models/det/pp-ocrv4_det.onnx",
+    "model_rec": "models/rec/pp-ocrv4_rec.onnx",
+    "model_cls": "models/cls/pp-ocrv4_cls.onnx",
+    "language": "chinese_cht",
+    "confidence_accept": 0.85,
+    "confidence_review": 0.60,
+    "enable_second_pass": false,
+    "enable_handwriting_mode": false,
+    "max_image_short_side": 960
+  },
+  "preprocessing": {
+    "enable_deskew": true,
+    "enable_denoise": true,
+    "enable_contrast_enhance": true,
+    "enable_shadow_removal": false,
+    "binarize_method": "sauvola"
+  },
+  "clipboard": {
+    "monitor_clipboard": true,
+    "auto_save_text": true,
+    "auto_save_image": false,
+    "auto_ocr_on_clipboard_image": false,
+    "ignore_self": true,
+    "max_text_length": 50000,
+    "deduplicate": true
+  },
+  "history": {
+    "max_items": 10000,
+    "auto_archive_days": 90,
+    "auto_delete_archived_days": 0
+  },
+  "hotkeys": {
+    "capture_region_ocr": "Ctrl+Shift+O",
+    "capture_region_image": "Ctrl+Shift+S",
+    "capture_fullscreen": "Ctrl+Shift+F",
+    "toggle_widget": "Ctrl+Shift+Space",
+    "paste_last": "Ctrl+Shift+V",
+    "open_console": "Ctrl+Shift+M",
+    "quick_search": "Ctrl+Shift+Q"
+  },
+  "ui": {
+    "theme": "system",
+    "widget_opacity": 0.95,
+    "widget_position": "remember",
+    "widget_max_items": 20,
+    "thumbnail_size": [80, 80],
+    "font_size": 13,
+    "widget_click_action": "select",
+    "font_family_priority": ["Microsoft JhengHei UI", "Microsoft JhengHei", ""]
+  }
+}

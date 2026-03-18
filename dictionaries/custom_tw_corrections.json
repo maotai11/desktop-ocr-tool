@@ -1,0 +1,12 @@
+{
+  "corrections": [
+    {"wrong": "己", "correct": "已", "context": "已經"},
+    {"wrong": "巳", "correct": "已", "context": "已"},
+    {"wrong": "l", "correct": "1", "context": "digit"},
+    {"wrong": "O", "correct": "0", "context": "digit"}
+  ],
+  "custom_words": [
+    "台灣", "繁體", "中文", "辨識", "擷取", "剪貼簿",
+    "確認", "取消", "儲存", "匯出", "匯入"
+  ]
+}
