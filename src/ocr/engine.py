@@ -64,12 +64,12 @@ class OcrEngine:
             def _init():
                 try:
                     _result[0] = PaddleOCR(
-                        use_angle_cls=True,
+                        use_textline_orientation=True,  # 3.4+ 新參數名
                         lang='chinese_cht',
                         device='cpu',
-                        det_model_dir=det_dir,
-                        rec_model_dir=rec_dir,
-                        cls_model_dir=cls_dir,
+                        text_detection_model_dir=det_dir,
+                        text_recognition_model_dir=rec_dir,
+                        textline_orientation_model_dir=cls_dir,
                     )
                 except Exception as e:
                     _result[1] = e
@@ -143,7 +143,7 @@ class OcrEngine:
 
     def _do_ocr_array(self, image: np.ndarray):
         if self._engine_type == 'paddleocr':
-            # PaddleOCR 3.x: cls 由建構子 use_angle_cls 控制，ocr() 不接受 cls 參數
+            # PaddleOCR 3.4+: ocr() 不接受額外關鍵字參數
             result = self._engine.ocr(image)
             if result and result[0]:
                 return result[0]

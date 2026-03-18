@@ -148,6 +148,9 @@ class ConfigManager:
             return ''
         if os.path.isabs(rel):
             return rel
+        # Frozen EXE: 模型在 sys._MEIPASS（PyInstaller 解壓暫存目錄）
+        if getattr(sys, 'frozen', False):
+            return os.path.abspath(os.path.join(sys._MEIPASS, rel))
         return os.path.abspath(os.path.join(self._root, rel))
 
     def _deep_copy(self, d: dict) -> dict:
