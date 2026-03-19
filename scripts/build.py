@@ -105,7 +105,7 @@ def main():
         '--hidden-import', 'onnxruntime',
         '--hidden-import', 'onnxruntime.capi',
         '--collect-all', 'onnxruntime',
-        '--hidden-import', 'cv2',
+        '--collect-all', 'cv2',
         '--hidden-import', 'PIL',
         '--hidden-import', 'PIL.Image',
         '--hidden-import', 'PIL.ImageOps',
