@@ -475,6 +475,10 @@ class FloatingWidget(QWidget):
                 simulate_paste(text)
 
     # --- OCR engine status ---
+    def on_ocr_engine_progress(self, pct: int, msg: str):
+        self._ocr_status_lbl.setText(f"OCR {pct}%")
+        self._ocr_status_lbl.setStyleSheet("font-size: 10px; color: #888;")
+
     def on_ocr_engine_ready(self):
         self._ocr_ready = True
         self._btn_ocr.setEnabled(True)

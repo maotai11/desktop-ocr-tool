@@ -26,8 +26,15 @@ class OcrEngine:
         self._engine_type = None
         self._ready = False
 
-    def load(self):
+    def load(self, progress_cb=None):
+        """載入 OCR 引擎。progress_cb(pct: int, msg: str) 可選，用於 UI 進度顯示。"""
+        def _progress(pct, msg):
+            logger.debug(f"OCR 載入進度 {pct}%: {msg}")
+            if progress_cb:
+                progress_cb(pct, msg)
+
         logger.info("開始載入 OCR 引擎...")
+        _progress(0, "初始化...")
         t0 = time.time()
 
         # 1st choice: PaddleOCR 3.x → PP-OCRv5 (繁體中文)
@@ -37,15 +44,6 @@ class OcrEngine:
             os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
 
             import sys
-            # Frozen EXE: importlib.metadata lacks .dist-info -> patch PaddleX deps checker
-            if getattr(sys, 'frozen', False):
-                try:
-                    import paddlex.utils.deps as _pdx_deps
-                    _pdx_deps.is_dep_available = lambda dep: True
-                    _pdx_deps.is_extra_available = lambda extra: True
-                except Exception:
-                    pass
-
             if getattr(sys, 'frozen', False):
                 # 從 PyInstaller EXE 執行：模型在 sys._MEIPASS
                 _base = sys._MEIPASS
@@ -65,10 +63,13 @@ class OcrEngine:
                     "PP-OCRv5 本機模型未就緒，請先執行 scripts/download_paddleocr_models.bat"
                 )
 
+            _progress(15, "模型檔案確認...")
             logger.info(f"使用本機 PP-OCRv5 模型: {_paddle_dir}")
             from paddleocr import PaddleOCR
+            _progress(25, "PP-OCRv5 初始化中...")
 
             # 用 daemon thread + timeout 防止 PaddleOCR init 卡死
+            # 同時用計時假進度（25→85%），每 3s 推進一格
             _result: list = [None, None]
             def _init():
                 try:
@@ -85,7 +86,13 @@ class OcrEngine:
 
             _t = threading.Thread(target=_init, daemon=True)
             _t.start()
-            _t.join(timeout=90)
+            # 等待期間每 3s 推進假進度（25→85，最多 20 步）
+            _fake_pct = 25
+            while _t.is_alive() and _fake_pct < 85:
+                _t.join(timeout=3)
+                if _t.is_alive():
+                    _fake_pct = min(_fake_pct + 3, 85)
+                    _progress(_fake_pct, "PP-OCRv5 初始化中...")
             if _t.is_alive():
                 raise TimeoutError("PaddleOCR 初始化逾時（>90s）")
             if _result[1]:
@@ -96,6 +103,7 @@ class OcrEngine:
             logger.info("使用 PaddleOCR PP-OCRv5 (chinese_cht) 引擎")
         except Exception as e:
             logger.warning(f"PaddleOCR 不可用 ({e})，嘗試 RapidOCR")
+            _progress(30, "改用 RapidOCR...")
             # 2nd choice: RapidOCR PP-OCRv4
             try:
                 from rapidocr_onnxruntime import RapidOCR
@@ -108,6 +116,7 @@ class OcrEngine:
                 self._engine_type = 'onnx_direct'
 
         # Warm-up with dummy image
+        _progress(90, "暖機推論...")
         dummy = np.zeros((64, 256, 3), dtype=np.uint8)
         try:
             self._do_ocr_array(dummy)
@@ -117,6 +126,7 @@ class OcrEngine:
         elapsed = time.time() - t0
         logger.info(f"OCR 引擎載入完成 [{self._engine_type}]，耗時 {elapsed:.2f}s")
         self._ready = True
+        _progress(100, "就緒")
 
     def _load_onnx_direct(self):
         import onnxruntime as ort

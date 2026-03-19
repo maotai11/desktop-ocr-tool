@@ -221,6 +221,7 @@ def main() -> int:
                 0, db_worker, lambda: db_worker.update_ocr(item_id, result)
             )
         )
+        ocr_worker.engine_progress.connect(widget.on_ocr_engine_progress)
         ocr_worker.engine_ready.connect(widget.on_ocr_engine_ready)
         ocr_worker.engine_failed.connect(widget.on_ocr_engine_failed)
 

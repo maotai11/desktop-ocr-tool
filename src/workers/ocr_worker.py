@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class OcrWorker(QThread):
     engine_loading = Signal()
+    engine_progress = Signal(int, str)   # pct, message
     engine_ready = Signal()
     engine_failed = Signal(str)
     ocr_done = Signal(int, object)    # item_id, OcrResultDTO
@@ -43,7 +44,7 @@ class OcrWorker(QThread):
     def _run_load(self):
         self.engine_loading.emit()
         try:
-            self._engine.load()
+            self._engine.load(progress_cb=lambda pct, msg: self.engine_progress.emit(pct, msg))
             self.engine_ready.emit()
             logger.info("OCR 引擎就緒")
             # Process any queued items
