@@ -99,8 +99,9 @@ def main():
         '--hidden-import', 'src.clipboard',
         # NumPy 2.x 完整收集（numpy._core C extension 必須用 collect-all）
         '--collect-all', 'numpy',
-        # RapidOCR — 含 config.yaml，必須 collect-all
-        '--collect-all', 'rapidocr_onnxruntime',
+        # RapidOCR — config.yaml 等資料檔（collect-data 只收資料，不拉模組依賴）
+        '--collect-data', 'rapidocr_onnxruntime',
+        '--hidden-import', 'rapidocr_onnxruntime',
         '--hidden-import', 'onnxruntime',
         '--hidden-import', 'onnxruntime.capi',
         '--collect-all', 'onnxruntime',
@@ -114,9 +115,10 @@ def main():
         '--hidden-import', 'deskew',
         '--hidden-import', 'scipy',
         '--hidden-import', 'scipy.fft',
-        # PaddleOCR + PaddleX — pipeline YAML 設定檔必須 collect-all
-        '--collect-all', 'paddleocr',
-        '--collect-all', 'paddlex',
+        # PaddleOCR + PaddleX — 只收 YAML/JSON pipeline 設定檔（collect-data 不拉整棵依賴樹）
+        '--collect-data', 'paddleocr',
+        '--collect-data', 'paddlex',
+        '--hidden-import', 'paddleocr',
         '--hidden-import', 'paddle',
         '--hidden-import', 'paddle.base',
         # Hidden imports — PySide6 外掛
