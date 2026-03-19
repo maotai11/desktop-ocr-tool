@@ -37,6 +37,15 @@ class OcrEngine:
             os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
 
             import sys
+            # Frozen EXE: importlib.metadata lacks .dist-info -> patch PaddleX deps checker
+            if getattr(sys, 'frozen', False):
+                try:
+                    import paddlex.utils.deps as _pdx_deps
+                    _pdx_deps.is_dep_available = lambda dep: True
+                    _pdx_deps.is_extra_available = lambda extra: True
+                except Exception:
+                    pass
+
             if getattr(sys, 'frozen', False):
                 # 從 PyInstaller EXE 執行：模型在 sys._MEIPASS
                 _base = sys._MEIPASS
