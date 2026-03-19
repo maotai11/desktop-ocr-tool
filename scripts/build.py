@@ -126,6 +126,8 @@ def main():
         '--hidden-import', 'paddleocr',
         '--hidden-import', 'paddle',
         '--hidden-import', 'paddle.base',
+        # paddle/libs/*.dll (mklml, mkldnn, warpctc etc.) are loaded dynamically
+        '--collect-binaries', 'paddle',
         # Hidden imports — PySide6 外掛
         '--hidden-import', 'PySide6.QtCore',
         '--hidden-import', 'PySide6.QtGui',
