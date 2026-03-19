@@ -97,10 +97,13 @@ def main():
         '--hidden-import', 'src.ocr',
         '--hidden-import', 'src.capture',
         '--hidden-import', 'src.clipboard',
+        # NumPy 2.x 完整收集（numpy._core C extension 必須用 collect-all）
+        '--collect-all', 'numpy',
         # Hidden imports — OCR / 影像
         '--hidden-import', 'rapidocr_onnxruntime',
         '--hidden-import', 'onnxruntime',
         '--hidden-import', 'onnxruntime.capi',
+        '--collect-all', 'onnxruntime',
         '--hidden-import', 'cv2',
         '--hidden-import', 'PIL',
         '--hidden-import', 'PIL.Image',
