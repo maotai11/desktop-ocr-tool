@@ -39,6 +39,10 @@ def setup_logger():
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
+
+    # 抑制 Pillow 的 DEBUG chunk log（PNG IHDR/IDAT 等）
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+
     _logger_initialized = True
 
 

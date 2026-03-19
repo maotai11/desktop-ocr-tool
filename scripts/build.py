@@ -118,6 +118,9 @@ def main():
         # PaddleOCR + PaddleX — 只收 YAML/JSON pipeline 設定檔（collect-data 不拉整棵依賴樹）
         '--collect-data', 'paddleocr',
         '--collect-data', 'paddlex',
+        # PaddleOCR/PaddleX pipeline 類別（frozen EXE 需要這些模組才能 create_pipeline）
+        '--collect-submodules', 'paddleocr._pipelines',
+        '--collect-submodules', 'paddlex.inference.pipelines',
         '--hidden-import', 'paddleocr',
         '--hidden-import', 'paddle',
         '--hidden-import', 'paddle.base',
