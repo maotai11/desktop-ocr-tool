@@ -86,9 +86,10 @@ class OcrEngine:
 
             _t = threading.Thread(target=_init, daemon=True)
             _t.start()
-            # 等待期間每 3s 推進假進度（25→85，最多 20 步）
+            # 等待期間每 3s 推進假進度（25→85%），用 deadline 確保滿 90s 才 timeout
+            _deadline = time.time() + 90
             _fake_pct = 25
-            while _t.is_alive() and _fake_pct < 85:
+            while _t.is_alive() and time.time() < _deadline:
                 _t.join(timeout=3)
                 if _t.is_alive():
                     _fake_pct = min(_fake_pct + 3, 85)
