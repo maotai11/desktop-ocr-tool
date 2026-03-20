@@ -59,7 +59,7 @@ def main():
         return (
             os.path.isfile(os.path.join(paddle_dir, 'PP-OCRv5_server_det', 'inference.yml')) and
             os.path.isfile(os.path.join(paddle_dir, 'PP-OCRv5_server_rec', 'inference.yml')) and
-            os.path.isfile(os.path.join(paddle_dir, 'PP-LCNet_x1_0_doc_ori', 'inference.yml'))
+            os.path.isfile(os.path.join(paddle_dir, 'PP-LCNet_x1_0_textline_ori', 'inference.yml'))
         )
 
     if has_paddle():

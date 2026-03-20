@@ -27,7 +27,7 @@ PADDLEX_CACHE = os.path.join(os.path.expanduser('~'), '.paddlex', 'official_mode
 MODEL_MAP = {
     'det': 'PP-OCRv5_server_det',
     'rec': 'PP-OCRv5_server_rec',
-    'cls': 'PP-LCNet_x1_0_doc_ori',
+    'cls': 'PP-LCNet_x1_0_textline_ori',
 }
 
 DET_DIR = os.path.join(PADDLE_DIR, MODEL_MAP['det'])

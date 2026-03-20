@@ -53,7 +53,7 @@ class OcrEngine:
             _paddle_dir = os.path.join(_base, 'models', 'paddleocr')
             det_dir = os.path.join(_paddle_dir, 'PP-OCRv5_server_det')
             rec_dir = os.path.join(_paddle_dir, 'PP-OCRv5_server_rec')
-            cls_dir = os.path.join(_paddle_dir, 'PP-LCNet_x1_0_doc_ori')
+            cls_dir = os.path.join(_paddle_dir, 'PP-LCNet_x1_0_textline_ori')
 
             def _has_model(d):
                 return os.path.isfile(os.path.join(d, 'inference.yml'))
