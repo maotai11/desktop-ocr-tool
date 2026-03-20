@@ -19,19 +19,20 @@ import shutil
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PADDLE_DIR = os.path.join(PROJECT_ROOT, 'models', 'paddleocr')
-DET_DIR = os.path.join(PADDLE_DIR, 'PP-OCRv5_server_det')
-REC_DIR = os.path.join(PADDLE_DIR, 'PP-OCRv5_server_rec')
-CLS_DIR = os.path.join(PADDLE_DIR, 'PP-LCNet_x1_0_doc_ori')
 
 # PaddleX 預設快取目錄（下載後放這裡）
 PADDLEX_CACHE = os.path.join(os.path.expanduser('~'), '.paddlex', 'official_models')
 
-# 模型名稱對應
+# 模型名稱對應（單一來源）
 MODEL_MAP = {
     'det': 'PP-OCRv5_server_det',
     'rec': 'PP-OCRv5_server_rec',
     'cls': 'PP-LCNet_x1_0_doc_ori',
 }
+
+DET_DIR = os.path.join(PADDLE_DIR, MODEL_MAP['det'])
+REC_DIR = os.path.join(PADDLE_DIR, MODEL_MAP['rec'])
+CLS_DIR = os.path.join(PADDLE_DIR, MODEL_MAP['cls'])
 
 print("=" * 60)
 print("下載 PaddleOCR PP-OCRv5 繁體中文模型")
@@ -76,7 +77,7 @@ else:
 print("\n[2/3] 複製模型到專案目錄...")
 for key, name in MODEL_MAP.items():
     src = os.path.join(PADDLEX_CACHE, name)
-    dst = {'det': DET_DIR, 'rec': REC_DIR, 'cls': CLS_DIR}[key]
+    dst = os.path.join(PADDLE_DIR, name)
     if not has_model(src):
         print(f"[錯誤] 找不到快取模型：{src}")
         sys.exit(1)
