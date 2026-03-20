@@ -19,9 +19,9 @@ import shutil
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PADDLE_DIR = os.path.join(PROJECT_ROOT, 'models', 'paddleocr')
-DET_DIR = os.path.join(PADDLE_DIR, 'det')
-REC_DIR = os.path.join(PADDLE_DIR, 'rec')
-CLS_DIR = os.path.join(PADDLE_DIR, 'cls')
+DET_DIR = os.path.join(PADDLE_DIR, 'PP-OCRv5_server_det')
+REC_DIR = os.path.join(PADDLE_DIR, 'PP-OCRv5_server_rec')
+CLS_DIR = os.path.join(PADDLE_DIR, 'PP-LCNet_x1_0_doc_ori')
 
 # PaddleX 預設快取目錄（下載後放這裡）
 PADDLEX_CACHE = os.path.join(os.path.expanduser('~'), '.paddlex', 'official_models')
