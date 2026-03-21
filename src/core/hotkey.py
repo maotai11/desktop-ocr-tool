@@ -52,26 +52,33 @@ class HotkeyListener(QThread):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._hotkeys: dict = {}
+        self._pending: list = []   # [(name, mods, vk), ...] — queued before thread starts
+        self._hotkeys: dict = {}   # hid → name, only populated inside run()
         self._next_id = 1
         self._running = False
 
     def register(self, name: str, hotkey_str: str) -> bool:
+        """Queue a hotkey for registration. Actual RegisterHotKey runs inside run()
+        so that WM_HOTKEY messages arrive in the correct thread's message queue."""
         mods, vk = parse_hotkey(hotkey_str)
         if vk == 0:
             logger.warning(f"無效熱鍵格式: {hotkey_str}")
             return False
-        hid = self._next_id
-        self._next_id += 1
-        ok = ctypes.windll.user32.RegisterHotKey(None, hid, mods, vk)
-        if ok:
-            self._hotkeys[hid] = name
-            logger.info(f"已註冊熱鍵 [{name}] = {hotkey_str} (id={hid})")
-            return True
-        else:
-            err = ctypes.windll.kernel32.GetLastError()
-            logger.warning(f"熱鍵 [{name}]={hotkey_str} 註冊失敗 (err={err})")
-            return False
+        self._pending.append((name, mods, vk, hotkey_str))
+        return True
+
+    def _register_pending(self):
+        for name, mods, vk, hotkey_str in self._pending:
+            hid = self._next_id
+            self._next_id += 1
+            ok = ctypes.windll.user32.RegisterHotKey(None, hid, mods, vk)
+            if ok:
+                self._hotkeys[hid] = name
+                logger.info(f"已註冊熱鍵 [{name}] = {hotkey_str} (id={hid})")
+            else:
+                err = ctypes.windll.kernel32.GetLastError()
+                logger.warning(f"熱鍵 [{name}]={hotkey_str} 註冊失敗 (err={err})")
+        self._pending.clear()
 
     def unregister_all(self):
         for hid in list(self._hotkeys.keys()):
@@ -80,6 +87,8 @@ class HotkeyListener(QThread):
 
     def run(self):
         self._running = True
+        # Must register from THIS thread so WM_HOTKEY goes to this thread's queue
+        self._register_pending()
         msg = ctypes.wintypes.MSG()
         while self._running:
             if ctypes.windll.user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
@@ -88,9 +97,9 @@ class HotkeyListener(QThread):
                     if hid in self._hotkeys:
                         self.hotkey_pressed.emit(self._hotkeys[hid])
             self.msleep(10)
+        self.unregister_all()
 
     def stop(self):
         self._running = False
-        self.unregister_all()
         self.quit()
         self.wait(2000)

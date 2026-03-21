@@ -22,7 +22,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication, QMessageBox
     from PySide6.QtCore import Qt, QTimer
 
-    from src.core.logger import setup_logger, get_project_root
+    from src.core.logger import setup_logger
     setup_logger()
     logger.info("===== 桌面OCR擷取工具 v1.0.0 啟動 =====")
 
@@ -48,6 +48,16 @@ def main() -> int:
 
         # 4. Data dir
         data_dir = cfg.get_data_directory()
+        parent_dir = os.path.dirname(data_dir) or '.'
+        if not os.access(parent_dir, os.W_OK):
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                None, "權限不足",
+                f"無法寫入資料目錄：\n{data_dir}\n\n"
+                "請將程式移至有寫入權限的目錄（例如桌面或 Documents），"
+                "或以系統管理員身份執行。"
+            )
+            return 1
         os.makedirs(data_dir, exist_ok=True)
 
         # 5. Database
@@ -75,9 +85,6 @@ def main() -> int:
         from src.ocr.engine import OcrEngine
         from src.workers.ocr_worker import OcrWorker
         ocr_engine = OcrEngine(
-            det_path=cfg.get_model_path('model_det'),
-            rec_path=cfg.get_model_path('model_rec'),
-            cls_path=cfg.get_model_path('model_cls'),
             confidence_accept=cfg.get('ocr', 'confidence_accept', default=0.85),
             confidence_review=cfg.get('ocr', 'confidence_review', default=0.60),
         )
@@ -129,7 +136,7 @@ def main() -> int:
                         content_hash=sha256_text(text),
                         ocr_status='none',
                     )
-                    db_worker.save_item(dto)
+                    QTimer.singleShot(0, db_worker, lambda dto=dto: db_worker.save_item(dto))
 
                 clip_watcher.text_captured.connect(on_clipboard_text)
 
@@ -214,16 +221,37 @@ def main() -> int:
         db_worker.item_updated.connect(
             lambda _: QTimer.singleShot(0, widget, widget.refresh_list)
         )
+        db_worker.save_failed.connect(
+            lambda err: QTimer.singleShot(
+                0, widget, lambda: widget.set_ocr_status(f"儲存失敗: {err}")
+            )
+        )
 
         # 16. OCR worker signals — update_ocr must run on db_thread
-        ocr_worker.ocr_done.connect(
-            lambda item_id, result: QTimer.singleShot(
-                0, db_worker, lambda: db_worker.update_ocr(item_id, result)
+        def on_ocr_done(item_id: int, result):
+            QTimer.singleShot(0, db_worker, lambda: db_worker.update_ocr(item_id, result))
+            if result.status == 'failed':
+                QTimer.singleShot(0, widget, lambda: widget.set_ocr_status("OCR 失敗"))
+
+        ocr_worker.ocr_done.connect(on_ocr_done)
+        ocr_worker.ocr_failed.connect(
+            lambda item_id, err: QTimer.singleShot(
+                0, widget, lambda: widget.set_ocr_status(f"OCR #{item_id} 失敗")
             )
         )
         ocr_worker.engine_progress.connect(widget.on_ocr_engine_progress)
         ocr_worker.engine_ready.connect(widget.on_ocr_engine_ready)
         ocr_worker.engine_failed.connect(widget.on_ocr_engine_failed)
+
+        # Cleanup on quit
+        def _on_quit():
+            hotkey_listener.stop()
+            db_thread.quit()
+            db_thread.wait(2000)
+            db.close()
+            from src.core.single_instance import release_instance_lock
+            release_instance_lock()
+        app.aboutToQuit.connect(_on_quit)
 
         # Phase B: background model loading
         ocr_worker.start_loading()

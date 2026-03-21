@@ -5,7 +5,6 @@
 
 注意事項：
 - ONNX 模型（RapidOCR PP-OCRv4）會一併打包進 EXE
-- PP-OCRv5 模型：請先執行 scripts\\download_paddleocr_models.bat 再打包
 - 打包後 EXE 可在乾淨 Windows 離線機直接執行，不需要 Python
 """
 import sys
@@ -52,21 +51,15 @@ def main():
     else:
         print("警告：models.lock.json 不存在，跳過模型驗證")
 
-    # --- 偵測 PP-OCRv5 模型 ---
-    paddle_dir = os.path.join(root, 'models', 'paddleocr')
-
-    def has_paddle():
-        return (
-            os.path.isfile(os.path.join(paddle_dir, 'PP-OCRv5_server_det', 'inference.yml')) and
-            os.path.isfile(os.path.join(paddle_dir, 'PP-OCRv5_server_rec', 'inference.yml')) and
-            os.path.isfile(os.path.join(paddle_dir, 'PP-LCNet_x1_0_textline_ori', 'inference.yml'))
-        )
-
-    if has_paddle():
-        print("OK PP-OCRv5 本機模型已就緒，一併打包進 EXE")
-    else:
-        print("WARNING models/paddleocr/ 未就緒 -> EXE 啟動時使用 RapidOCR PP-OCRv4 fallback")
-        print("  （如要 PP-OCRv5：先執行 scripts\\download_paddleocr_models.bat 再重打包）")
+    # --- 確認 EXE 未被占用（避免 BeginUpdateResourceW error 32）---
+    out_exe = os.path.join(root, 'artifacts', 'dist', 'DesktopOCRTool.exe')
+    if os.path.exists(out_exe):
+        try:
+            os.rename(out_exe, out_exe + '.chk')
+            os.rename(out_exe + '.chk', out_exe)
+        except OSError:
+            print(f"錯誤：{out_exe} 正在被占用（程式仍在執行？），請先關閉再打包。")
+            sys.exit(1)
 
     # --- 建立輸出目錄 ---
     sep = os.pathsep
@@ -82,8 +75,8 @@ def main():
         '--windowed',
         '--name', 'DesktopOCRTool',
         # 打包進 EXE 的資料
-        '--add-data', f'{os.path.join(root, "models")}{sep}models',
-        '--add-data', f'{os.path.join(root, "dictionaries")}{sep}dictionaries',
+        # RapidOCR 的 ONNX 模型由 --collect-data rapidocr_onnxruntime 收集（套件自帶）
+        # models/ 與 dictionaries/ 目錄已無執行期使用，不打包（節省 ~190MB）
         '--add-data', f'{os.path.join(root, "config", "default_settings.json")}{sep}config',
         # 路徑（確保 import 解析正確）
         '--paths', root,
@@ -99,12 +92,14 @@ def main():
         '--hidden-import', 'src.clipboard',
         # NumPy 2.x 完整收集（numpy._core C extension 必須用 collect-all）
         '--collect-all', 'numpy',
-        # RapidOCR — config.yaml 等資料檔（collect-data 只收資料，不拉模組依賴）
+        # RapidOCR — config.yaml 等資料檔
         '--collect-data', 'rapidocr_onnxruntime',
         '--hidden-import', 'rapidocr_onnxruntime',
         '--hidden-import', 'onnxruntime',
         '--hidden-import', 'onnxruntime.capi',
-        '--collect-all', 'onnxruntime',
+        '--hidden-import', 'onnxruntime.capi._pybind_state',
+        # collect-data 只收 YAML/JSON 設定檔，不遞迴拉 submodules（避免意外帶入 torch backend）
+        '--collect-data', 'onnxruntime',
         '--collect-all', 'cv2',
         '--hidden-import', 'PIL',
         '--hidden-import', 'PIL.Image',
@@ -112,22 +107,21 @@ def main():
         '--hidden-import', 'PIL.ImageFilter',
         '--hidden-import', 'mss',
         '--hidden-import', 'mss.windows',
-        '--hidden-import', 'deskew',
-        '--hidden-import', 'scipy',
-        '--hidden-import', 'scipy.fft',
-        # PaddleOCR + PaddleX — 只收 YAML/JSON pipeline 設定檔（collect-data 不拉整棵依賴樹）
-        '--collect-data', 'paddleocr',
-        '--collect-data', 'paddlex',
-        '--copy-metadata', 'paddlex',
-        '--copy-metadata', 'paddleocr',
-        # PaddleOCR/PaddleX pipeline 類別（frozen EXE 需要這些模組才能 create_pipeline）
-        '--collect-submodules', 'paddleocr._pipelines',
-        '--collect-submodules', 'paddlex.inference.pipelines',
-        '--hidden-import', 'paddleocr',
-        '--hidden-import', 'paddle',
-        '--hidden-import', 'paddle.base',
-        # paddle/libs/*.dll (mklml, mkldnn, warpctc etc.) are loaded dynamically
-        '--collect-binaries', 'paddle',
+        # 明確排除不需要的大型套件，防止 onnxruntime 的 hook 意外帶入 torch
+        '--exclude-module', 'torch',
+        '--exclude-module', 'torchvision',
+        '--exclude-module', 'torchaudio',
+        '--exclude-module', 'tensorflow',
+        '--exclude-module', 'paddle',
+        '--exclude-module', 'paddleocr',
+        '--exclude-module', 'paddlex',
+        '--exclude-module', 'pytest',
+        '--exclude-module', 'IPython',
+        '--exclude-module', 'matplotlib',
+        '--exclude-module', 'tkinter',
+        '--exclude-module', 'yt_dlp',
+        '--exclude-module', 'mutagen',
+        '--exclude-module', 'curl_cffi',
         # Hidden imports — PySide6 外掛
         '--hidden-import', 'PySide6.QtCore',
         '--hidden-import', 'PySide6.QtGui',
@@ -146,7 +140,6 @@ def main():
         print(f"\n打包失敗，返回碼：{result.returncode}")
         sys.exit(1)
 
-    out_exe = os.path.join(dist_dir, 'DesktopOCRTool.exe')
     exe_mb = os.path.getsize(out_exe) / 1024 / 1024
     print(f"\nOK 打包成功！")
     print(f"  EXE：{out_exe}  ({exe_mb:.1f} MB)")

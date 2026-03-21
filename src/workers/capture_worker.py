@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import queue as _queue_mod
 from typing import Optional
 import numpy as np
 from PIL import Image
@@ -24,24 +25,24 @@ class CaptureWorker(QThread):
     def __init__(self, file_manager: FileManager, parent=None):
         super().__init__(parent)
         self._file_manager = file_manager
-        self._task = None
+        self._queue = _queue_mod.Queue()
 
     def capture_region(self, x: int, y: int, w: int, h: int,
                        monitor_idx: int, source_mode: str):
-        self._task = ('region', x, y, w, h, monitor_idx, source_mode)
+        self._queue.put(('region', x, y, w, h, monitor_idx, source_mode))
         if not self.isRunning():
             self.start()
 
     def capture_fullscreen(self, monitor_idx: int = 1):
-        self._task = ('fullscreen', monitor_idx)
+        self._queue.put(('fullscreen', monitor_idx))
         if not self.isRunning():
             self.start()
 
     def run(self):
-        if not self._task:
+        try:
+            task = self._queue.get_nowait()
+        except _queue_mod.Empty:
             return
-        task = self._task
-        self._task = None
         try:
             backend = get_capture_backend()
             if task[0] == 'region':

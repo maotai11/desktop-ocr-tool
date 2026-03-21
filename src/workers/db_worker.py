@@ -53,6 +53,7 @@ class DbWorker(QObject):
         except Exception as e:
             logger.error(f"DbWorker update_ocr 失敗: {e}", exc_info=True)
 
+    @Slot(int, bool)
     def delete_item(self, item_id: int, delete_files: bool = True):
         try:
             item = self._repo.hard_delete(item_id)

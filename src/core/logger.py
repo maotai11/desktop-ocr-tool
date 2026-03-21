@@ -3,14 +3,9 @@ import logging
 import os
 import sys
 from logging.handlers import TimedRotatingFileHandler
+from .config import get_project_root  # single authoritative definition
 
 _logger_initialized = False
-
-
-def get_project_root() -> str:
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def setup_logger():

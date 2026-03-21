@@ -4,12 +4,18 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QCursor
 
+from ..theme import (
+    _BG_THUMB, _TEXT_PRI, _TEXT_SEC,
+    _ACCENT, _TEAL, _SUCCESS, _ERROR, _WARNING, _INFO,
+    _ACCENT_12, _ACCENT_25, _TEAL_12, _TEAL_25,
+)
+
 
 class ItemCard(QWidget):
     clicked = Signal(int)
     double_clicked = Signal(int)
 
-    def __init__(self, item, data_dir: str, thumb_size: tuple = (60, 60), parent=None):
+    def __init__(self, item, data_dir: str, thumb_size: tuple = (48, 48), parent=None):
         super().__init__(parent)
         self._item = item
         self._data_dir = data_dir
@@ -18,8 +24,8 @@ class ItemCard(QWidget):
 
     def _setup_ui(self, thumb_size: tuple):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        layout.setContentsMargins(6, 5, 8, 5)
+        layout.setSpacing(8)
 
         # Thumbnail / type indicator
         thumb_lbl = QLabel()
@@ -35,27 +41,36 @@ class ItemCard(QWidget):
                     Qt.TransformationMode.SmoothTransformation
                 )
                 thumb_lbl.setPixmap(px)
+                thumb_lbl.setStyleSheet(
+                    f"background: {_BG_THUMB}; border-radius: 4px;"
+                )
             else:
                 thumb_lbl.setText("IMG")
                 thumb_lbl.setStyleSheet(
-                    "background:#e8f4fd; border-radius:4px; font-size:10px; color:#4A90D9;"
+                    f"background: {_TEAL_12}; border-radius: 4px;"
+                    f" font-size: 10px; font-weight: 600; color: {_TEAL};"
+                    f" border: 1px solid {_TEAL_25};"
                 )
         else:
             thumb_lbl.setText("T")
             thumb_lbl.setStyleSheet(
-                "background:#e8f8e8; border-radius:4px; font-size:18px; color:#27ae60;"
+                f"background: {_ACCENT_12}; border-radius: 4px;"
+                f" font-size: 16px; font-weight: 700; color: {_ACCENT};"
+                f" border: 1px solid {_ACCENT_25};"
             )
         layout.addWidget(thumb_lbl)
 
         # Right panel
         right = QVBoxLayout()
         right.setSpacing(2)
-        right.setContentsMargins(0, 0, 0, 0)
+        right.setContentsMargins(0, 1, 0, 1)
 
         text = self._item.get_effective_text() or "(無文字)"
         preview = text[:60].replace('\n', ' ')
         text_lbl = QLabel(preview)
-        text_lbl.setStyleSheet("font-size:12px; color:#333;")
+        text_lbl.setStyleSheet(
+            f"font-size: 12px; color: {_TEXT_PRI}; background: transparent;"
+        )
         right.addWidget(text_lbl)
 
         source_names = {
@@ -64,33 +79,40 @@ class ItemCard(QWidget):
             'clipboard_image': '剪貼板圖', 'import': '匯入'
         }
         src = source_names.get(self._item.source_mode, self._item.source_mode)
-        meta_lbl = QLabel(f"{self._item.created_at or ''} | {src}")
-        meta_lbl.setStyleSheet("font-size:10px; color:#888;")
+        meta_lbl = QLabel(f"{self._item.created_at or ''} · {src}")
+        meta_lbl.setStyleSheet(
+            f"font-size: 10px; color: {_TEXT_SEC}; background: transparent;"
+        )
         right.addWidget(meta_lbl)
 
         # OCR status badge for non-done items
         status_map = {
-            'confirmed': ('已確認', '#27ae60'),
-            'needs_review': ('待確認', '#f39c12'),
-            'failed': ('失敗', '#e74c3c'),
-            'processing': ('處理中', '#3498db'),
-            'pending': ('排隊', '#95a5a6'),
+            'confirmed': ('已確認', _SUCCESS),
+            'needs_review': ('待確認', _WARNING),
+            'failed': ('失敗', _ERROR),
+            'processing': ('處理中', _INFO),
+            'pending': ('排隊', _TEXT_SEC),
         }
         if self._item.ocr_status in status_map:
             label, color = status_map[self._item.ocr_status]
             badge = QLabel(label)
             badge.setStyleSheet(
-                f"background:{color}; color:white; border-radius:3px; "
-                f"padding:1px 4px; font-size:10px;"
+                f"background: transparent; color: {color};"
+                f" font-size: 10px; font-weight: 600;"
+                f" border: 1px solid {color}; border-radius: 3px;"
+                f" padding: 0px 4px;"
             )
+            badge.setFixedHeight(16)
             right.addWidget(badge)
 
         layout.addLayout(right)
         layout.addStretch()
 
         if self._item.is_pinned:
-            pin = QLabel("[釘]")
-            pin.setStyleSheet("font-size:10px; color:#4A90D9;")
+            pin = QLabel("●")
+            pin.setStyleSheet(
+                f"font-size: 8px; color: {_ACCENT}; background: transparent;"
+            )
             layout.addWidget(pin)
 
     def mousePressEvent(self, event):

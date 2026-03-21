@@ -9,6 +9,9 @@ REG_RUN_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
 def set_autostart(enabled: bool):
+    if not getattr(sys, 'frozen', False):
+        logger.debug("開發模式下跳過開機自動啟動設定")
+        return
     try:
         import winreg
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_PATH, 0,

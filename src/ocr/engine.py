@@ -2,7 +2,6 @@
 import json
 import logging
 import time
-from typing import Optional
 import cv2
 import numpy as np
 
@@ -10,138 +9,39 @@ logger = logging.getLogger(__name__)
 
 
 class OcrEngine:
-    """
-    OCR 引擎，優先使用 PaddleOCR PP-OCRv5，退而使用 RapidOCR PP-OCRv4。
-    """
+    """OCR 引擎，使用 RapidOCR PP-OCRv4（ONNX Runtime，離線輕量）。"""
 
-    def __init__(self, det_path: str, rec_path: str, cls_path: str,
-                 confidence_accept: float = 0.85,
+    def __init__(self, confidence_accept: float = 0.85,
                  confidence_review: float = 0.60):
-        self._det_path = det_path
-        self._rec_path = rec_path
-        self._cls_path = cls_path
         self._confidence_accept = confidence_accept
         self._confidence_review = confidence_review
         self._engine = None
-        self._engine_type = None
         self._ready = False
 
     def load(self, progress_cb=None):
-        """載入 OCR 引擎。progress_cb(pct: int, msg: str) 可選，用於 UI 進度顯示。"""
+        """載入 RapidOCR 引擎。progress_cb(pct: int, msg: str) 可選。"""
         def _progress(pct, msg):
             logger.debug(f"OCR 載入進度 {pct}%: {msg}")
             if progress_cb:
                 progress_cb(pct, msg)
 
-        logger.info("開始載入 OCR 引擎...")
+        logger.info("開始載入 OCR 引擎 [RapidOCR PP-OCRv4]...")
         _progress(0, "初始化...")
         t0 = time.time()
 
-        # 1st choice: PaddleOCR 3.x → PP-OCRv5 (繁體中文)
-        # 僅在本機模型已就緒時啟用；首次需先執行 scripts/download_paddleocr_models.bat
-        try:
-            import os, threading
-            os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
+        _progress(20, "載入 RapidOCR PP-OCRv4 (ONNX)...")
+        from rapidocr_onnxruntime import RapidOCR
+        self._engine = RapidOCR()
+        logger.info("RapidOCR PP-OCRv4 引擎已建立")
 
-            import sys
-            if getattr(sys, 'frozen', False):
-                # 從 PyInstaller EXE 執行：模型在 sys._MEIPASS
-                _base = sys._MEIPASS
-            else:
-                _here = os.path.dirname(os.path.abspath(__file__))
-                _base = os.path.dirname(os.path.dirname(_here))  # project root
-            _paddle_dir = os.path.join(_base, 'models', 'paddleocr')
-            det_dir = os.path.join(_paddle_dir, 'PP-OCRv5_server_det')
-            rec_dir = os.path.join(_paddle_dir, 'PP-OCRv5_server_rec')
-            cls_dir = os.path.join(_paddle_dir, 'PP-LCNet_x1_0_textline_ori')
-
-            def _has_model(d):
-                return os.path.isfile(os.path.join(d, 'inference.yml'))
-
-            if not (_has_model(det_dir) and _has_model(rec_dir) and _has_model(cls_dir)):
-                raise FileNotFoundError(
-                    "PP-OCRv5 本機模型未就緒，請先執行 scripts/download_paddleocr_models.bat"
-                )
-
-            _progress(15, "模型檔案確認...")
-            logger.info(f"使用本機 PP-OCRv5 模型: {_paddle_dir}")
-            from paddleocr import PaddleOCR
-            _progress(25, "PP-OCRv5 初始化中...")
-
-            # 用 daemon thread + timeout 防止 PaddleOCR init 卡死
-            # 同時用計時假進度（25→85%），每 3s 推進一格
-            _result: list = [None, None]
-            def _init():
-                try:
-                    _result[0] = PaddleOCR(
-                        use_textline_orientation=True,  # 3.4+ 新參數名
-                        lang='chinese_cht',
-                        device='cpu',
-                        text_detection_model_dir=det_dir,
-                        text_recognition_model_dir=rec_dir,
-                        textline_orientation_model_dir=cls_dir,
-                    )
-                except Exception as e:
-                    _result[1] = e
-
-            _t = threading.Thread(target=_init, daemon=True)
-            _t.start()
-            # 等待期間每 3s 推進假進度（25→85%），用 deadline 確保滿 90s 才 timeout
-            _deadline = time.time() + 90
-            _fake_pct = 25
-            while _t.is_alive() and time.time() < _deadline:
-                _t.join(timeout=3)
-                if _t.is_alive():
-                    _fake_pct = min(_fake_pct + 3, 85)
-                    _progress(_fake_pct, "PP-OCRv5 初始化中...")
-            if _t.is_alive():
-                raise TimeoutError("PaddleOCR 初始化逾時（>90s）")
-            if _result[1]:
-                raise _result[1]
-
-            self._engine = _result[0]
-            self._engine_type = 'paddleocr'
-            logger.info("使用 PaddleOCR PP-OCRv5 (chinese_cht) 引擎")
-        except Exception as e:
-            logger.warning(f"PaddleOCR 不可用 ({e})，嘗試 RapidOCR")
-            _progress(30, "改用 RapidOCR...")
-            # 2nd choice: RapidOCR PP-OCRv4
-            try:
-                from rapidocr_onnxruntime import RapidOCR
-                self._engine = RapidOCR()
-                self._engine_type = 'rapidocr'
-                logger.info("使用 RapidOCR PP-OCRv4 引擎")
-            except ImportError:
-                logger.warning("RapidOCR 不可用，使用直接 ONNX 模式")
-                self._load_onnx_direct()
-                self._engine_type = 'onnx_direct'
-
-        # Warm-up with dummy image
         _progress(90, "暖機推論...")
         dummy = np.zeros((64, 256, 3), dtype=np.uint8)
-        try:
-            self._do_ocr_array(dummy)
-        except Exception as e:
-            logger.warning(f"暖機推論失敗（可忽略）: {e}")
+        self._do_ocr_array(dummy)  # raises if fails → engine_failed
 
         elapsed = time.time() - t0
-        logger.info(f"OCR 引擎載入完成 [{self._engine_type}]，耗時 {elapsed:.2f}s")
+        logger.info(f"OCR 引擎載入完成，耗時 {elapsed:.2f}s")
         self._ready = True
         _progress(100, "就緒")
-
-    def _load_onnx_direct(self):
-        import onnxruntime as ort
-        opts = ort.SessionOptions()
-        opts.inter_op_num_threads = 2
-        opts.intra_op_num_threads = 2
-        import os
-        if os.path.exists(self._det_path):
-            self._det_sess = ort.InferenceSession(self._det_path, opts)
-        if os.path.exists(self._rec_path):
-            self._rec_sess = ort.InferenceSession(self._rec_path, opts)
-        if os.path.exists(self._cls_path):
-            self._cls_sess = ort.InferenceSession(self._cls_path, opts)
-        logger.info("ONNX 直接載入完成")
 
     def is_ready(self) -> bool:
         return self._ready
@@ -162,16 +62,8 @@ class OcrEngine:
                     'detail': [], 'elapsed_ms': elapsed_ms, 'error': str(e)}
 
     def _do_ocr_array(self, image: np.ndarray):
-        if self._engine_type == 'paddleocr':
-            # PaddleOCR 3.4+: ocr() 不接受額外關鍵字參數
-            result = self._engine.ocr(image)
-            if result and result[0]:
-                return result[0]
-            return []
-        if self._engine_type == 'rapidocr':
-            result, _ = self._engine(image)
-            return result or []
-        return []
+        result, _ = self._engine(image)
+        return result or []
 
     def _process_results(self, results, elapsed_ms: int) -> dict:
         if not results:

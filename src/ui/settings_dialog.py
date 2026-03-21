@@ -7,7 +7,141 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QComboBox
 )
 
+from .theme import (
+    _BG, _BG_RAISE, _BG_HOVER, _BORDER,
+    _TEXT_PRI, _TEXT_SEC, _ACCENT, _ACCENT_H, _ACCENT_T,
+    _ACCENT_15, _ACCENT_18, _ACCENT_35,
+)
+
 logger = logging.getLogger(__name__)
+
+_DIALOG_QSS = f"""
+    QDialog {{
+        background: {_BG};
+    }}
+    QWidget {{
+        background: {_BG};
+        color: {_TEXT_PRI};
+        font-size: 13px;
+    }}
+    QTabWidget::pane {{
+        border: 1px solid {_BORDER};
+        border-radius: 5px;
+        background: {_BG};
+    }}
+    QTabBar::tab {{
+        background: {_BG_RAISE};
+        color: {_TEXT_SEC};
+        padding: 6px 16px;
+        border: none;
+        margin-right: 2px;
+    }}
+    QTabBar::tab:selected {{
+        background: {_ACCENT_15};
+        color: {_ACCENT};
+        border-bottom: 2px solid {_ACCENT};
+    }}
+    QTabBar::tab:hover:!selected {{
+        background: {_BG_HOVER};
+        color: {_TEXT_PRI};
+    }}
+    QLabel {{
+        color: {_TEXT_PRI};
+        background: transparent;
+    }}
+    QCheckBox {{
+        color: {_TEXT_PRI};
+        background: transparent;
+        spacing: 6px;
+    }}
+    QCheckBox::indicator {{
+        width: 15px;
+        height: 15px;
+        border-radius: 3px;
+        border: 1px solid {_BORDER};
+        background: {_BG_RAISE};
+    }}
+    QCheckBox::indicator:checked {{
+        background: {_ACCENT};
+        border: 1px solid {_ACCENT};
+        image: none;
+    }}
+    QCheckBox::indicator:hover {{
+        border: 1px solid {_ACCENT};
+    }}
+    QSpinBox {{
+        background: {_BG_RAISE};
+        color: {_TEXT_PRI};
+        border: 1px solid {_BORDER};
+        border-radius: 4px;
+        padding: 3px 6px;
+    }}
+    QSpinBox:focus {{
+        border: 1px solid {_ACCENT};
+    }}
+    QSpinBox::up-button, QSpinBox::down-button {{
+        background: {_BG_HOVER};
+        border: none;
+        width: 16px;
+    }}
+    QLineEdit {{
+        background: {_BG_RAISE};
+        color: {_TEXT_PRI};
+        border: 1px solid {_BORDER};
+        border-radius: 4px;
+        padding: 3px 8px;
+    }}
+    QLineEdit:focus {{
+        border: 1px solid {_ACCENT};
+    }}
+    QComboBox {{
+        background: {_BG_RAISE};
+        color: {_TEXT_PRI};
+        border: 1px solid {_BORDER};
+        border-radius: 4px;
+        padding: 3px 8px;
+        min-width: 100px;
+    }}
+    QComboBox:focus {{
+        border: 1px solid {_ACCENT};
+    }}
+    QComboBox::drop-down {{
+        border: none;
+        width: 20px;
+    }}
+    QComboBox QAbstractItemView {{
+        background: {_BG_RAISE};
+        color: {_TEXT_PRI};
+        border: 1px solid {_BORDER};
+        selection-background-color: {_ACCENT_18};
+        selection-color: {_ACCENT};
+    }}
+    QDialogButtonBox QPushButton {{
+        background: {_BG_RAISE};
+        color: {_TEXT_PRI};
+        border: 1px solid {_BORDER};
+        border-radius: 4px;
+        padding: 5px 16px;
+        min-width: 64px;
+    }}
+    QDialogButtonBox QPushButton:hover {{
+        background: {_BG_HOVER};
+        border: 1px solid {_ACCENT};
+        color: {_ACCENT};
+    }}
+    QDialogButtonBox QPushButton[text="OK"],
+    QDialogButtonBox QPushButton[text="確定"] {{
+        background: {_ACCENT};
+        color: {_ACCENT_T};
+        border: none;
+        font-weight: 600;
+    }}
+    QDialogButtonBox QPushButton[text="OK"]:hover,
+    QDialogButtonBox QPushButton[text="確定"]:hover {{
+        background: {_ACCENT_H};
+        color: {_ACCENT_T};
+    }}
+"""
 
 
 class SettingsDialog(QDialog):
@@ -17,6 +151,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("設定")
         self.setMinimumSize(520, 420)
         self._setup_ui()
+        self.setStyleSheet(_DIALOG_QSS)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -25,6 +160,7 @@ class SettingsDialog(QDialog):
         # ---- 一般 ----
         gen = QWidget()
         gf = QFormLayout(gen)
+        gf.setSpacing(10)
         self._cb_autostart = QCheckBox("開機自動啟動")
         self._cb_autostart.setChecked(
             self._cfg.get('general', 'start_with_windows', default=False)
@@ -41,20 +177,18 @@ class SettingsDialog(QDialog):
         # ---- 擷取 ----
         cap = QWidget()
         cf = QFormLayout(cap)
+        cf.setSpacing(10)
         self._cb_auto_ocr = QCheckBox("截圖後自動執行 OCR")
         self._cb_auto_ocr.setChecked(
             self._cfg.get('capture', 'auto_ocr_on_capture', default=True)
         )
         cf.addRow("OCR：", self._cb_auto_ocr)
-
-        cursor_lbl = QLabel("包含游標（即將推出）")
-        cursor_lbl.setEnabled(False)
-        cf.addRow("游標：", cursor_lbl)
         tabs.addTab(cap, "擷取")
 
         # ---- 剪貼簿 ----
         clip = QWidget()
         clf = QFormLayout(clip)
+        clf.setSpacing(10)
         self._cb_monitor = QCheckBox("啟用剪貼簿監聽")
         self._cb_monitor.setChecked(
             self._cfg.get('clipboard', 'monitor_clipboard', default=True)
@@ -73,12 +207,15 @@ class SettingsDialog(QDialog):
         )
         clf.addRow("圖片：", self._cb_auto_image)
 
-        clf.addRow("去重：", QLabel("連續相同內容（60 秒內）自動去重"))
+        dedup_lbl = QLabel("連續相同內容（60 秒內）自動去重")
+        dedup_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
+        clf.addRow("去重：", dedup_lbl)
         tabs.addTab(clip, "剪貼簿")
 
         # ---- 快捷鍵 ----
         hk_tab = QWidget()
         hkf = QFormLayout(hk_tab)
+        hkf.setSpacing(10)
         hk_defs = self._cfg.get('hotkeys', default={})
         self._hk_edits = {}
         for key, lbl_text in [
@@ -98,6 +235,7 @@ class SettingsDialog(QDialog):
         # ---- 介面 ----
         ui_tab = QWidget()
         uf = QFormLayout(ui_tab)
+        uf.setSpacing(10)
         self._cb_theme = QComboBox()
         self._cb_theme.addItems(["system", "light", "dark"])
         theme = self._cfg.get('ui', 'theme', default='system')
@@ -123,6 +261,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(btn_box)
 
     def _save(self):
+        old_theme = self._cfg.get('ui', 'theme', default='system')
+        old_font_size = self._cfg.get('ui', 'font_size', default=13)
+
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
         self._cfg.set('capture', 'auto_ocr_on_capture', self._cb_auto_ocr.isChecked())
@@ -132,8 +273,20 @@ class SettingsDialog(QDialog):
         self._cfg.set('ui', 'theme', self._cb_theme.currentText())
         self._cfg.set('ui', 'font_size', self._sp_font_size.value())
 
-        from src.core.autostart import set_autostart
+        from ..core.autostart import set_autostart
         set_autostart(self._cb_autostart.isChecked())
 
+        ui_changed = (
+            self._cb_theme.currentText() != old_theme or
+            self._sp_font_size.value() != old_font_size
+        )
+
         logger.info("設定已儲存")
-        self.accept()
+        self.accept()  # 關閉 dialog 後再顯示提示，避免 dialog 關閉前彈出 QMessageBox 造成焦點閃動
+
+        if ui_changed:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self.parent(), "設定已儲存",
+                "佈景主題與字型大小的變更將在下次重新啟動後生效。"
+            )

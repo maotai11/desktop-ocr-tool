@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import queue as _queue_mod
 from PySide6.QtCore import QThread, Signal
 from ..ocr.engine import OcrEngine
 from ..data.models import OcrResultDTO
@@ -20,7 +21,7 @@ class OcrWorker(QThread):
     def __init__(self, engine: OcrEngine, parent=None):
         super().__init__(parent)
         self._engine = engine
-        self._queue = []
+        self._queue = _queue_mod.Queue()  # thread-safe; replaces plain list
         self._mode = 'load'
 
     def start_loading(self):
@@ -28,12 +29,11 @@ class OcrWorker(QThread):
         self.start()
 
     def queue_ocr(self, item_id: int, image_path: str, mode: str = 'screen'):
-        self._queue.append((item_id, image_path, mode))
+        self._queue.put((item_id, image_path, mode))
         if not self.isRunning():
             self._mode = 'ocr'
             self.start()
-        elif self._mode == 'ocr':
-            pass  # already running, queue will be processed
+        # If already running in any mode the thread will drain the queue on its own.
 
     def run(self):
         if self._mode == 'load':
@@ -48,15 +48,19 @@ class OcrWorker(QThread):
             self.engine_ready.emit()
             logger.info("OCR 引擎就緒")
             # Process any queued items
-            if self._queue:
+            if not self._queue.empty():
                 self._run_ocr_queue()
         except Exception as e:
             logger.error(f"OCR 引擎載入失敗: {e}", exc_info=True)
             self.engine_failed.emit(str(e))
 
     def _run_ocr_queue(self):
-        while self._queue:
-            item_id, image_path, mode = self._queue.pop(0)
+        while True:
+            try:
+                # 50 ms window catches items enqueued just as the queue empties
+                item_id, image_path, mode = self._queue.get(timeout=0.05)
+            except _queue_mod.Empty:
+                break
             try:
                 if not self._engine.is_ready():
                     self.ocr_failed.emit(item_id, "OCR 引擎未就緒")

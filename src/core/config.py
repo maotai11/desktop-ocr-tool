@@ -115,8 +115,10 @@ class ConfigManager:
 
     def save(self):
         os.makedirs(self._config_dir, exist_ok=True)
-        with open(self._settings_path, 'w', encoding='utf-8') as f:
+        tmp_path = self._settings_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(self._data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, self._settings_path)
 
     def get(self, *keys, default=None) -> Any:
         d = self._data
