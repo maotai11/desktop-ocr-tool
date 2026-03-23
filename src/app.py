@@ -24,7 +24,7 @@ def main() -> int:
 
     from src.core.logger import setup_logger
     setup_logger()
-    logger.info("===== 桌面OCR擷取工具 v1.0.0 啟動 =====")
+    logger.info("===== 桌面OCR擷取工具 v1.0.5 啟動 =====")
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("桌面OCR擷取工具")
@@ -273,5 +273,5 @@ def main() -> int:
                 f"應用程式啟動失敗：\n{str(e)}\n\n請檢查 logs/app.log 獲取詳細資訊。"
             )
         except Exception:
-            pass
+            pass  # nosec B110 — last-resort crash dialog; if Qt itself fails here, nothing more can be done
         return 1

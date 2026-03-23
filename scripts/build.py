@@ -145,7 +145,7 @@ def main():
     print(f"  EXE：{out_exe}  ({exe_mb:.1f} MB)")
 
     # --- 建立發佈 ZIP ---
-    zip_name = 'DesktopOCRTool-v1.0.0'
+    zip_name = 'DesktopOCRTool-v1.0.5'
     zip_dir  = os.path.join(root, 'artifacts', zip_name)
     zip_path = os.path.join(root, 'artifacts', f'{zip_name}.zip')
 
@@ -159,7 +159,7 @@ def main():
     # 建立簡易 README
     readme = os.path.join(zip_dir, 'README.txt')
     with open(readme, 'w', encoding='utf-8') as f:
-        f.write("桌面 OCR 擷取工具 v1.0.0\n")
+        f.write("桌面 OCR 擷取工具 v1.0.5\n")
         f.write("=" * 40 + "\n\n")
         f.write("使用方式：\n")
         f.write("  直接雙擊 DesktopOCRTool.exe 啟動\n\n")
