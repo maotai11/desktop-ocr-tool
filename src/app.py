@@ -24,7 +24,7 @@ def main() -> int:
 
     from src.core.logger import setup_logger
     setup_logger()
-    logger.info("===== 桌面OCR擷取工具 v1.0.5 啟動 =====")
+    logger.info("===== 桌面OCR擷取工具 v1.0.6 啟動 =====")
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("桌面OCR擷取工具")
