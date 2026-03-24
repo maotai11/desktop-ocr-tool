@@ -108,8 +108,16 @@ class OcrEngine:
         }
 
     def run_ocr_from_path(self, image_path: str, mode: str = 'screen') -> dict:
-        img = cv2.imread(image_path)
+        # cv2.imread 不支援 UNC 路徑（\\server\...）或含中文路徑，
+        # 改用 np.fromfile + cv2.imdecode 繞過此限制
+        try:
+            img_array = np.fromfile(image_path, dtype=np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        except Exception as e:
+            logger.error(f"讀取圖片失敗: {image_path!r} -> {e}")
+            img = None
         if img is None:
+            logger.error(f"cv2.imdecode 回傳 None，路徑可能無效: {image_path!r}")
             return {'text': '', 'confidence': 0, 'status': 'failed',
                     'detail': [], 'elapsed_ms': 0, 'error': '無法讀取圖片'}
         return self.run_ocr(img, mode)
