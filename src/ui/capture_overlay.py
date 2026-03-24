@@ -5,7 +5,7 @@
 import logging
 from typing import Callable, Optional
 from PySide6.QtWidgets import QWidget, QApplication, QRubberBand
-from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal
+from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal, QTimer
 from PySide6.QtGui import QPainter, QColor, QCursor
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,8 @@ class CaptureOverlay(QWidget):
 
         logger.info(f"框選區域: x={x} y={y} w={w} h={h} monitor={self._monitor_idx}")
         if self._callback:
-            self._callback(x, y, w, h, self._monitor_idx)
+            # 延遲 150ms：讓 OS 重繪（移除半透明遮罩），避免截圖包含 overlay 圖層
+            QTimer.singleShot(150, lambda: self._callback(x, y, w, h, self._monitor_idx))
 
     def _cancel(self):
         self.releaseKeyboard()

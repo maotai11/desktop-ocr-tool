@@ -1,11 +1,19 @@
 # -*- coding: utf-8 -*-
-import json
 import logging
 import time
 import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+try:
+    import zhconv as _zhconv
+    def _s2t(text: str) -> str:
+        return _zhconv.convert(text, 'zh-hant')
+except ImportError:
+    logger.warning("zhconv 未安裝，簡→繁轉換停用")
+    def _s2t(text: str) -> str:
+        return text
 
 
 class OcrEngine:
@@ -85,6 +93,7 @@ class OcrEngine:
                 else:
                     continue
                 if text and conf > 0.1:
+                    text = _s2t(text)  # 簡→繁轉換
                     detail.append({'box': box, 'text': text, 'confidence': conf})
                     texts.append(text)
                     confs.append(conf)

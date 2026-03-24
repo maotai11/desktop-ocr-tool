@@ -7,3 +7,4 @@ Pillow>=10
 mss>=9
 rapidocr-onnxruntime>=1.4
 deskew>=0.10
+zhconv>=1.4
