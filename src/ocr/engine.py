@@ -3,6 +3,7 @@ import logging
 import time
 import cv2
 import numpy as np
+from .postprocessor import sort_boxes_and_merge
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,8 @@ class OcrEngine:
             except Exception:
                 continue
 
-        full_text = '\n'.join(texts)
+        # 用 sort_boxes_and_merge 依位置排列：同行合為一列（空格），不同行才換行
+        full_text = sort_boxes_and_merge(detail)
         avg_conf = sum(confs) / len(confs) if confs else 0.0
 
         if avg_conf >= self._confidence_accept:

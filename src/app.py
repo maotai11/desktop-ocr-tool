@@ -24,7 +24,7 @@ def main() -> int:
 
     from src.core.logger import setup_logger
     setup_logger()
-    logger.info("===== 桌面OCR擷取工具 v1.0.7 啟動 =====")
+    logger.info("===== 桌面OCR擷取工具 v1.0.8 啟動 =====")
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("桌面OCR擷取工具")
@@ -193,6 +193,7 @@ def main() -> int:
 
         # 14. Capture worker signals
         _pending_ocr: dict = {}
+        _ocr_image_paths: dict = {}   # item_id → image_path，OCR 完成後刪除
 
         def on_capture_done(image_path: str, dto):
             # UI op must run on main thread; DB op must run on db_thread
@@ -214,6 +215,7 @@ def main() -> int:
                 widget.refresh_list()
                 if 'path' in _pending_ocr and ocr_engine.is_ready():
                     path = _pending_ocr.pop('path')
+                    _ocr_image_paths[item_id] = path  # 記住路徑，OCR 後刪除
                     ocr_worker.queue_ocr(item_id, path, 'screen')
             QTimer.singleShot(0, widget, _update)  # context=widget → runs in main thread
 
@@ -232,6 +234,21 @@ def main() -> int:
             QTimer.singleShot(0, db_worker, lambda: db_worker.update_ocr(item_id, result))
             if result.status == 'failed':
                 QTimer.singleShot(0, widget, lambda: widget.set_ocr_status("OCR 失敗"))
+            elif result.text:
+                # 自動複製 OCR 結果到剪貼簿
+                from src.clipboard.writer import write_text_to_clipboard
+                text = result.text
+                QTimer.singleShot(0, widget, lambda: write_text_to_clipboard(text))
+            # 刪除 OCR 模式的暫存圖片（文字辨識不需要保留截圖）
+            if item_id in _ocr_image_paths:
+                import os as _os
+                path = _ocr_image_paths.pop(item_id)
+                try:
+                    if _os.path.exists(path):
+                        _os.remove(path)
+                        logger.debug(f"已刪除 OCR 暫存圖片: {path}")
+                except Exception as _e:
+                    logger.warning(f"無法刪除 OCR 圖片: {_e}")
 
         ocr_worker.ocr_done.connect(on_ocr_done)
         ocr_worker.ocr_failed.connect(
