@@ -7,9 +7,9 @@ __pycache__/
 dist/
 build/
 
-# Data & Logs
-data/
-logs/
+# Data & Logs (runtime directories at repo root only)
+/data/
+/logs/
 
 # PaddleOCR 模型（執行 scripts/download_paddleocr_models.bat 下載）
 models/paddleocr/

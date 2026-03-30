@@ -17,6 +17,10 @@ class DbWorker(QObject):
     item_updated = Signal(int)
     item_deleted = Signal(int)
     save_failed = Signal(str)
+    items_soft_deleted = Signal(list)   # list[int] — soft-deleted item ids
+    item_pinned = Signal(int, bool)     # item_id, new value
+    item_archived = Signal(int, bool)   # item_id, new value
+    purge_done = Signal(int)            # count of hard-deleted records
 
     def __init__(self, repo: ItemRepository, file_manager: FileManager,
                  enable_dedup: bool = True):
@@ -62,6 +66,49 @@ class DbWorker(QObject):
             self.item_deleted.emit(item_id)
         except Exception as e:
             logger.error(f"DbWorker delete_item 失敗: {e}", exc_info=True)
+
+    @Slot(list)
+    def soft_delete_items(self, item_ids: list):
+        try:
+            for item_id in item_ids:
+                self._repo.soft_delete(item_id)
+            self.items_soft_deleted.emit(item_ids)
+        except Exception as e:
+            logger.error(f"DbWorker soft_delete_items 失敗: {e}", exc_info=True)
+
+    @Slot(int, bool)
+    def set_pinned(self, item_id: int, value: bool):
+        try:
+            self._repo.set_pinned(item_id, value)
+            self.item_pinned.emit(item_id, value)
+        except Exception as e:
+            logger.error(f"DbWorker set_pinned 失敗: {e}", exc_info=True)
+
+    @Slot(int, bool)
+    def set_archived(self, item_id: int, value: bool):
+        try:
+            self._repo.set_archived(item_id, value)
+            self.item_archived.emit(item_id, value)
+        except Exception as e:
+            logger.error(f"DbWorker set_archived 失敗: {e}", exc_info=True)
+
+    @Slot(int)
+    def clear_image_paths(self, item_id: int):
+        try:
+            self._repo.clear_image_paths(item_id)
+        except Exception as e:
+            logger.error(f"DbWorker clear_image_paths 失敗 (item #{item_id}): {e}",
+                         exc_info=True)
+
+    @Slot()
+    def purge_soft_deleted(self):
+        try:
+            n, items = self._repo.hard_delete_all_soft_deleted()
+            for item in items:
+                self._file_manager.delete_item_files(item)
+            self.purge_done.emit(n)
+        except Exception as e:
+            logger.error(f"DbWorker purge_soft_deleted 失敗: {e}", exc_info=True)
 
 
 def create_db_worker_in_thread(repo: ItemRepository,

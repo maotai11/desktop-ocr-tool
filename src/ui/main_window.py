@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QStatusBar, QTabWidget, QMessageBox, QScrollArea,
     QMenu, QFileDialog
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 
 from .theme import (
@@ -113,6 +113,12 @@ _MAIN_QSS = f"""
 
 
 class MainWindow(QMainWindow):
+    # Request signals — connect to DbWorker slots for thread-safe writes
+    request_soft_delete = Signal(list)   # list[int]
+    request_set_pinned = Signal(int, bool)
+    request_set_archived = Signal(int, bool)
+    request_purge = Signal()
+
     def __init__(self, item_repo, tag_repo, file_mgr, db_worker,
                  ocr_worker, cfg, data_dir, parent=None):
         super().__init__(parent)
@@ -131,6 +137,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self._setup_ui()
         self._setup_menu()
+        self._connect_db_signals()
         self._load_items()
         self.setStyleSheet(_MAIN_QSS)
 
@@ -229,6 +236,7 @@ class MainWindow(QMainWindow):
             ["ID", "類型", "來源", "文字預覽", "OCR狀態", "建立時間"]
         )
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.horizontalHeader().setStretchLastSection(True)
@@ -356,6 +364,31 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         edit_menu.addAction("清理已刪除...").triggered.connect(self._clear_deleted)
 
+    def _connect_db_signals(self):
+        """連結 MainWindow request signals → DbWorker slots，以及 DbWorker response signals → UI refresh。"""
+        self.request_soft_delete.connect(self._db_worker.soft_delete_items)
+        self.request_set_pinned.connect(self._db_worker.set_pinned)
+        self.request_set_archived.connect(self._db_worker.set_archived)
+        self.request_purge.connect(self._db_worker.purge_soft_deleted)
+        self._db_worker.items_soft_deleted.connect(self._on_items_soft_deleted)
+        self._db_worker.item_pinned.connect(lambda *_: self._refresh_current())
+        self._db_worker.item_archived.connect(lambda *_: self._refresh_current())
+        self._db_worker.purge_done.connect(self._on_purge_done)
+
+    def _on_items_soft_deleted(self, ids: list):
+        deleted_set = set(ids)
+        if self._selected_item and self._selected_item.id in deleted_set:
+            self._selected_item = None
+            self._clear_detail_panel()
+        self._refresh_current()
+        n = len(ids)
+        self._status_lbl.setText(f"已刪除 {n} 筆")
+        QTimer.singleShot(2000, lambda: self._status_lbl.setText("就緒"))
+
+    def _on_purge_done(self, n: int):
+        self._refresh_current()
+        QMessageBox.information(self, "完成", f"已清理 {n} 筆紀錄。")
+
     def _load_items(self, category: str = 'all', search: str = ''):
         self._table.setRowCount(0)
         try:
@@ -463,17 +496,33 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(2000, lambda: self._status_lbl.setText("就緒"))
 
     def _delete_selected(self):
-        if not self._selected_item:
+        selected_rows = self._table.selectionModel().selectedRows()
+        if not selected_rows:
             return
+        ids = []
+        for idx in selected_rows:
+            row = idx.row()
+            if 0 <= row < len(self._current_items):
+                ids.append(self._current_items[row].id)
+        if not ids:
+            return
+        n = len(ids)
+        if n == 1:
+            msg = f"確定要刪除此筆記錄嗎？\nID: {ids[0]}"
+        else:
+            msg = f"確定要刪除選取的 {n} 筆記錄嗎？"
         ret = QMessageBox.question(
-            self, "確認刪除",
-            f"確定要刪除此筆記錄嗎？\nID: {self._selected_item.id}",
+            self, "確認刪除", msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if ret == QMessageBox.StandardButton.Yes:
-            self._item_repo.soft_delete(self._selected_item.id)
-            self._selected_item = None
-            self._load_items()
+            self.request_soft_delete.emit(ids)
+
+    def _clear_detail_panel(self):
+        self._text_view.setPlainText('')
+        self._preview_label.clear()
+        self._preview_label.setText("（未選取）")
+        self._info_view.setPlainText('')
 
     def _clear_deleted(self):
         total = self._item_repo.count(show_deleted=True)
@@ -485,11 +534,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if ret == QMessageBox.StandardButton.Yes:
-            n, items = self._item_repo.hard_delete_all_soft_deleted()
-            for item in items:
-                self._file_mgr.delete_item_files(item)
-            self._load_items()
-            QMessageBox.information(self, "完成", f"已清理 {n} 筆紀錄。")
+            self.request_purge.emit()
 
     def _export_csv(self):
         if not self._current_items:
@@ -500,10 +545,18 @@ class MainWindow(QMainWindow):
         path = exp.export_csv(self._current_items)
         QMessageBox.information(self, "匯出完成", f"已匯出至：\n{path}")
 
+    def _refresh_current(self):
+        """依目前搜尋欄與 sidebar 分類重新載入列表（保持使用者上下文）。"""
+        search = self._search.text().strip()
+        if search:
+            self._load_items(search=search)
+        else:
+            item = self._side_list.currentItem()
+            cat = item.data(Qt.ItemDataRole.UserRole) if item else 'all'
+            self._load_items(category=cat)
+
     def refresh(self):
-        item = self._side_list.currentItem()
-        cat = item.data(Qt.ItemDataRole.UserRole) if item else 'all'
-        self._load_items(category=cat)
+        self._refresh_current()
 
     # ------------------------------------------------------------------
     # 右鍵選單
@@ -539,22 +592,24 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
 
         pin_text = "取消釘選" if item.is_pinned else "釘選"
+        new_pinned = not item.is_pinned
         menu.addAction(pin_text).triggered.connect(
-            lambda: (self._item_repo.set_pinned(item.id, not item.is_pinned),
-                     self._load_items())
+            lambda checked=False, iid=item.id, val=new_pinned:
+                self.request_set_pinned.emit(iid, val)
         )
 
         arch_text = "取消歸檔" if item.is_archived else "歸檔"
+        new_archived = not item.is_archived
         menu.addAction(arch_text).triggered.connect(
-            lambda: (self._item_repo.set_archived(item.id, not item.is_archived),
-                     self._load_items())
+            lambda checked=False, iid=item.id, val=new_archived:
+                self.request_set_archived.emit(iid, val)
         )
 
         menu.addSeparator()
 
         menu.addAction("刪除（移至垃圾桶）").triggered.connect(
-            lambda: (self._item_repo.soft_delete(item.id),
-                     self._load_items())
+            lambda checked=False, iid=item.id:
+                self.request_soft_delete.emit([iid])
         )
 
         menu.exec(self._table.viewport().mapToGlobal(pos))
@@ -607,7 +662,7 @@ class MainWindow(QMainWindow):
             ocr_worker=self._ocr_worker,
             parent=self,
         )
-        editor.item_updated.connect(lambda _: self._load_items())
+        editor.item_updated.connect(lambda _: self._refresh_current())
         editor.destroyed.connect(
             lambda: self._editor_windows.pop(item.id, None)
         )

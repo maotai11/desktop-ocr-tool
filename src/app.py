@@ -24,7 +24,7 @@ def main() -> int:
 
     from src.core.logger import setup_logger
     setup_logger()
-    logger.info("===== 桌面OCR擷取工具 v1.0.8 啟動 =====")
+    logger.info("===== 桌面OCR擷取工具 v1.0.9 啟動 =====")
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("桌面OCR擷取工具")
@@ -192,15 +192,11 @@ def main() -> int:
         hotkey_listener.start()
 
         # 14. Capture worker signals
-        _pending_ocr: dict = {}
-        _ocr_image_paths: dict = {}   # item_id → image_path，OCR 完成後刪除
+        _ocr_image_paths: dict = {}   # item_id → abs_image_path，OCR 完成後刪除
 
         def on_capture_done(image_path: str, dto):
             # UI op must run on main thread; DB op must run on db_thread
             QTimer.singleShot(0, widget, widget.show)
-            # store path for post-save OCR trigger
-            if dto.source_mode == 'region_ocr':
-                _pending_ocr['path'] = image_path
             # Queue save_item onto db_thread via context object
             QTimer.singleShot(0, db_worker, lambda: db_worker.save_item(dto))
 
@@ -213,10 +209,12 @@ def main() -> int:
         def on_item_saved(item_id: int):
             def _update():
                 widget.refresh_list()
-                if 'path' in _pending_ocr and ocr_engine.is_ready():
-                    path = _pending_ocr.pop('path')
-                    _ocr_image_paths[item_id] = path  # 記住路徑，OCR 後刪除
-                    ocr_worker.queue_ocr(item_id, path, 'screen')
+                if ocr_engine.is_ready():
+                    item = item_repo.get_by_id(item_id)
+                    if item and item.source_mode == 'region_ocr' and item.raw_image_path:
+                        abs_path = file_mgr.get_abs_path(item.raw_image_path)
+                        _ocr_image_paths[item_id] = abs_path  # 記住路徑，OCR 後刪除
+                        ocr_worker.queue_ocr(item_id, abs_path, 'screen')
             QTimer.singleShot(0, widget, _update)  # context=widget → runs in main thread
 
         db_worker.item_saved.connect(on_item_saved)
@@ -230,6 +228,24 @@ def main() -> int:
         )
 
         # 16. OCR worker signals — update_ocr must run on db_thread
+
+        def _cleanup_ocr_image(item_id: int):
+            """無論 OCR 成功或失敗，都清理對應暫存圖與 pending 狀態，
+            並同步清空 DB 中已失效的 raw_image_path。
+            """
+            if item_id in _ocr_image_paths:
+                path = _ocr_image_paths.pop(item_id)
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                        logger.debug(f"已刪除 OCR 暫存圖片: {path}")
+                except Exception as _e:
+                    logger.warning(f"無法刪除 OCR 暫存圖片 (item #{item_id}): {_e}")
+                # 無論刪檔成功或失敗，都同步清空 DB 中已失效的 raw_image_path
+                # 此 dispatch 在 update_ocr dispatch 之後入列，確保 item_type 計算不受影響
+                QTimer.singleShot(0, db_worker,
+                                  lambda iid=item_id: db_worker.clear_image_paths(iid))
+
         def on_ocr_done(item_id: int, result):
             QTimer.singleShot(0, db_worker, lambda: db_worker.update_ocr(item_id, result))
             if result.status == 'failed':
@@ -239,23 +255,17 @@ def main() -> int:
                 from src.clipboard.writer import write_text_to_clipboard
                 text = result.text
                 QTimer.singleShot(0, widget, lambda: write_text_to_clipboard(text))
-            # 刪除 OCR 模式的暫存圖片（文字辨識不需要保留截圖）
-            if item_id in _ocr_image_paths:
-                import os as _os
-                path = _ocr_image_paths.pop(item_id)
-                try:
-                    if _os.path.exists(path):
-                        _os.remove(path)
-                        logger.debug(f"已刪除 OCR 暫存圖片: {path}")
-                except Exception as _e:
-                    logger.warning(f"無法刪除 OCR 圖片: {_e}")
+            # 無論 success / soft-fail，都清理對應暫存圖
+            _cleanup_ocr_image(item_id)
+
+        def on_ocr_failed(item_id: int, err: str):
+            QTimer.singleShot(0, widget,
+                              lambda: widget.set_ocr_status(f"OCR #{item_id} 失敗"))
+            # exception 路徑同樣清理暫存圖，避免殘留
+            _cleanup_ocr_image(item_id)
 
         ocr_worker.ocr_done.connect(on_ocr_done)
-        ocr_worker.ocr_failed.connect(
-            lambda item_id, err: QTimer.singleShot(
-                0, widget, lambda: widget.set_ocr_status(f"OCR #{item_id} 失敗")
-            )
-        )
+        ocr_worker.ocr_failed.connect(on_ocr_failed)
         ocr_worker.engine_progress.connect(widget.on_ocr_engine_progress)
         ocr_worker.engine_ready.connect(widget.on_ocr_engine_ready)
         ocr_worker.engine_failed.connect(widget.on_ocr_engine_failed)
