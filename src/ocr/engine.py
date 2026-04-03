@@ -4,6 +4,7 @@ import time
 import cv2
 import numpy as np
 from .postprocessor import sort_boxes_and_merge
+from .preprocess import enhance_for_ocr, upscale_if_small
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,21 @@ except ImportError:
 class OcrEngine:
     """OCR 引擎，使用 RapidOCR PP-OCRv4（ONNX Runtime，離線輕量）。"""
 
+    # 預設值；Patch 9D 會改由 config 傳入
+    _DEFAULT_MAX_SHORT_SIDE = 960
+    _DEFAULT_SECOND_PASS = True
+    _DEFAULT_HANDWRITING = False
+
     def __init__(self, confidence_accept: float = 0.85,
-                 confidence_review: float = 0.60):
+                 confidence_review: float = 0.60,
+                 max_image_short_side: int = _DEFAULT_MAX_SHORT_SIDE,
+                 enable_second_pass: bool = _DEFAULT_SECOND_PASS,
+                 enable_handwriting_mode: bool = _DEFAULT_HANDWRITING):
         self._confidence_accept = confidence_accept
         self._confidence_review = confidence_review
+        self._max_short_side = max_image_short_side
+        self._enable_second_pass = enable_second_pass
+        self._enable_handwriting = enable_handwriting_mode
         self._engine = None
         self._ready = False
 
@@ -55,13 +67,40 @@ class OcrEngine:
     def is_ready(self) -> bool:
         return self._ready
 
+    def configure(self, **kwargs):
+        """即時更新可調參數，無需重啟引擎。"""
+        if 'max_image_short_side' in kwargs:
+            self._max_short_side = int(kwargs['max_image_short_side'])
+        if 'enable_second_pass' in kwargs:
+            self._enable_second_pass = bool(kwargs['enable_second_pass'])
+        if 'enable_handwriting_mode' in kwargs:
+            self._enable_handwriting = bool(kwargs['enable_handwriting_mode'])
+        if 'confidence_accept' in kwargs:
+            self._confidence_accept = float(kwargs['confidence_accept'])
+        if 'confidence_review' in kwargs:
+            self._confidence_review = float(kwargs['confidence_review'])
+
     def run_ocr(self, image: np.ndarray, mode: str = 'screen') -> dict:
         if not self._ready:
             return {'text': '', 'confidence': 0, 'status': 'failed',
                     'detail': [], 'elapsed_ms': 0, 'error': 'OCR 引擎未就緒'}
         t0 = time.time()
         try:
+            # Step 1: upscale 小圖
+            image = upscale_if_small(image, self._max_short_side)
+
+            # Step 2: 第一次推論（raw BGR）
             results = self._do_ocr_array(image)
+
+            # Step 3: 判斷是否需要 second pass
+            needs_second = self._enable_second_pass and self._should_retry(results)
+            if needs_second:
+                binarize = self._enable_handwriting or (mode == 'handwriting')
+                enhanced = enhance_for_ocr(image, binarize=binarize)
+                results2 = self._do_ocr_array(enhanced)
+                results = self._merge_results(results, results2)
+                logger.debug("OCR second-pass 觸發，合併後 %d 筆", len(results))
+
             elapsed_ms = int((time.time() - t0) * 1000)
             return self._process_results(results, elapsed_ms)
         except Exception as e:
@@ -117,6 +156,32 @@ class OcrEngine:
             'detail': detail,
             'elapsed_ms': elapsed_ms
         }
+
+    def _should_retry(self, results) -> bool:
+        """第一次推論結果為空，或平均信心低於 confidence_review 時觸發二次推論。"""
+        if not results:
+            return True
+        confs = []
+        for item in results:
+            if item is None:
+                continue
+            try:
+                conf = float(item[2]) if len(item) >= 3 else float(item[1][1])
+                confs.append(conf)
+            except Exception:
+                continue
+        if not confs:
+            return True
+        return (sum(confs) / len(confs)) < self._confidence_review
+
+    @staticmethod
+    def _merge_results(r1, r2):
+        """合併兩次推論結果：以簡單聯集為主，不做 NMS。
+        若 r1 和 r2 有重複的文字框，兩者均保留（_process_results 的 box 排序會自然去重疊）。
+        """
+        merged = list(r1 or [])
+        merged.extend(r2 or [])
+        return merged
 
     def run_ocr_from_path(self, image_path: str, mode: str = 'screen') -> dict:
         # cv2.imread 不支援 UNC 路徑（\\server\...）或含中文路徑，

@@ -33,7 +33,7 @@ DEFAULT_SETTINGS = {
         "language": "chinese_cht",
         "confidence_accept": 0.85,
         "confidence_review": 0.60,
-        "enable_second_pass": False,
+        "enable_second_pass": True,
         "enable_handwriting_mode": False,
         "max_image_short_side": 960
     },

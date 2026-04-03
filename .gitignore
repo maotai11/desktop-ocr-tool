@@ -32,3 +32,6 @@ desktop.ini
 artifacts/
 *.exe
 *.spec
+
+# Build logs
+build_*.log

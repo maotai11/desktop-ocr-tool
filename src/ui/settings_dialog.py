@@ -145,9 +145,10 @@ _DIALOG_QSS = f"""
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, cfg, parent=None):
+    def __init__(self, cfg, parent=None, ocr_engine=None):
         super().__init__(parent)
         self._cfg = cfg
+        self._ocr_engine = ocr_engine
         self.setWindowTitle("設定")
         self.setMinimumSize(520, 420)
         self._setup_ui()
@@ -184,6 +185,37 @@ class SettingsDialog(QDialog):
         )
         cf.addRow("OCR：", self._cb_auto_ocr)
         tabs.addTab(cap, "擷取")
+
+        # ---- OCR ----
+        ocr_tab = QWidget()
+        of = QFormLayout(ocr_tab)
+        of.setSpacing(10)
+
+        self._cb_second_pass = QCheckBox("空結果或低信心時自動二次辨識")
+        self._cb_second_pass.setChecked(
+            self._cfg.get('ocr', 'enable_second_pass', default=True)
+        )
+        of.addRow("二次辨識：", self._cb_second_pass)
+
+        self._cb_handwriting = QCheckBox("手寫友善模式（積極前處理）")
+        self._cb_handwriting.setChecked(
+            self._cfg.get('ocr', 'enable_handwriting_mode', default=False)
+        )
+        of.addRow("手寫模式：", self._cb_handwriting)
+
+        self._sp_short_side = QSpinBox()
+        self._sp_short_side.setRange(64, 2048)
+        self._sp_short_side.setSingleStep(64)
+        self._sp_short_side.setSuffix(" px")
+        self._sp_short_side.setValue(
+            self._cfg.get('ocr', 'max_image_short_side', default=960)
+        )
+        of.addRow("小圖放大門檻：", self._sp_short_side)
+
+        _ocr_note = QLabel("以上設定儲存後即時生效，無需重啟。")
+        _ocr_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
+        of.addRow("", _ocr_note)
+        tabs.addTab(ocr_tab, "OCR")
 
         # ---- 剪貼簿 ----
         clip = QWidget()
@@ -267,11 +299,22 @@ class SettingsDialog(QDialog):
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
         self._cfg.set('capture', 'auto_ocr_on_capture', self._cb_auto_ocr.isChecked())
+        self._cfg.set('ocr', 'enable_second_pass', self._cb_second_pass.isChecked())
+        self._cfg.set('ocr', 'enable_handwriting_mode', self._cb_handwriting.isChecked())
+        self._cfg.set('ocr', 'max_image_short_side', self._sp_short_side.value())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
         self._cfg.set('clipboard', 'auto_save_image', self._cb_auto_image.isChecked())
         self._cfg.set('ui', 'theme', self._cb_theme.currentText())
         self._cfg.set('ui', 'font_size', self._sp_font_size.value())
+
+        # OCR 參數即時更新（不需重啟）
+        if self._ocr_engine is not None:
+            self._ocr_engine.configure(
+                enable_second_pass=self._cb_second_pass.isChecked(),
+                enable_handwriting_mode=self._cb_handwriting.isChecked(),
+                max_image_short_side=self._sp_short_side.value(),
+            )
 
         from ..core.autostart import set_autostart
         set_autostart(self._cb_autostart.isChecked())

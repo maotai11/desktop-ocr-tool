@@ -76,6 +76,27 @@
 
 ---
 
+## Group B — 批量選取 UX 補強
+
+| # | 步驟 | 預期結果 |
+|---|------|---------|
+| B.1 | 主控台右上角點「選取模式」 | 按鈕高亮（accent 色），搜尋列下方出現 action bar；status bar 顯示「選取模式 — ...Esc 離開」 |
+| B.2 | 點任意 3 行（單擊即選，不需 Ctrl）| action bar 顯示「已選 3 筆」，「刪除所選」由灰變紅啟用 |
+| B.3 | 點「全選」 | 所有行高亮，計數 = 表格總行數 |
+| B.4 | 點「清除選取」 | 所有高亮消失，計數回「已選 0 筆」，「刪除所選」停用 |
+| B.5 | 選取 3 筆 → 點「刪除所選」→ 確認 | 彈確認框（含「3 筆」），確認後 3 筆消失，計數歸 0 |
+| B.6 | 搜尋關鍵字 → 進入選取模式 → 選幾筆 → 刪除 | 刪除後搜尋結果保持（列表減少，搜尋欄不清空） |
+| B.7 | 側欄切「釘選」→ 進入選取模式 → 刪除一筆 | 刪除後仍在「釘選」分類（不跳回「全部」） |
+| B.8 | 點「離開選取模式」 | action bar 消失，按鈕回預設態，detail panel 清空，status bar 回「就緒」 |
+| B.9 | 離開選取模式後點任意行 | detail panel 右側正常更新（預覽 / 文字 / 資訊） |
+| B.10 | 進入選取模式後 → 搜尋框仍可輸入 | 選取模式不鎖定搜尋框，Esc 在搜尋框內不觸發退出模式 |
+| B.11 | 進入選取模式後按 Esc（焦點在 table） | 退出選取模式，action bar 消失 |
+| B.12 | Ctrl+Click 選不連續行 | 計數正確更新，多選仍可用 |
+| B.13 | 右鍵點選 table 中一行（選取模式下）| 右鍵選單最頂端顯示「刪除已選取（N 筆）」 |
+| B.14 | 選取模式下 detail panel 右側 | 不因單擊 row 而更新（不殘留舊筆資訊） |
+
+---
+
 ## 整體回歸確認
 
 - [ ] 以上所有步驟完成後，`logs/app.log` 最後不含 CRITICAL / ERROR 行
@@ -88,10 +109,12 @@
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                        # 執行全部自動化測試
-pytest tests/test_repository.py -v          # 只跑資料層
-pytest tests/test_db_worker.py -v           # 只跑 DbWorker slots
-pytest tests/test_capture_worker_drain.py -v  # 需要 Qt (pytest-qt)
+pytest                                          # 執行全部自動化測試
+pytest tests/test_repository.py -v             # 只跑資料層
+pytest tests/test_db_worker.py -v              # 只跑 DbWorker slots
+pytest tests/test_capture_worker_drain.py -v   # 需要 Qt (pytest-qt)
+pytest tests/test_ocr_preprocess.py -v         # OCR 前處理（Group A）
+pytest tests/test_main_window_batch.py -v      # 批量選取狀態機（Group B）
 ```
 
-預期：`19 passed`（11 repository + 6 db_worker + 2 capture_worker）
+預期：`47 passed`（11 repository + 7 db_worker + 2 capture_worker + 16 ocr_preprocess + 11 main_window_batch）

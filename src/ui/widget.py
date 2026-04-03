@@ -556,7 +556,8 @@ class FloatingWidget(QWidget):
 
     def open_settings(self):
         from .settings_dialog import SettingsDialog
-        dlg = SettingsDialog(self._cfg, self)
+        ocr_engine = getattr(self, '_ocr_engine', None)
+        dlg = SettingsDialog(self._cfg, self, ocr_engine=ocr_engine)
         dlg.exec()
 
     # --- Capture callbacks ---

@@ -24,7 +24,7 @@ def main() -> int:
 
     from src.core.logger import setup_logger
     setup_logger()
-    logger.info("===== 桌面OCR擷取工具 v1.0.9 啟動 =====")
+    logger.info("===== 桌面OCR擷取工具 v1.1.0 啟動 =====")
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("桌面OCR擷取工具")
@@ -87,6 +87,9 @@ def main() -> int:
         ocr_engine = OcrEngine(
             confidence_accept=cfg.get('ocr', 'confidence_accept', default=0.85),
             confidence_review=cfg.get('ocr', 'confidence_review', default=0.60),
+            max_image_short_side=cfg.get('ocr', 'max_image_short_side', default=960),
+            enable_second_pass=cfg.get('ocr', 'enable_second_pass', default=True),
+            enable_handwriting_mode=cfg.get('ocr', 'enable_handwriting_mode', default=False),
         )
         ocr_worker = OcrWorker(ocr_engine)
 
@@ -108,6 +111,9 @@ def main() -> int:
             cfg=cfg,
             data_dir=data_dir,
         )
+
+        # 讓 settings dialog 可以即時更新 OCR engine 參數
+        widget._ocr_engine = ocr_engine
 
         tray = TrayManager(widget)
         tray.show()
@@ -209,12 +215,13 @@ def main() -> int:
         def on_item_saved(item_id: int):
             def _update():
                 widget.refresh_list()
-                if ocr_engine.is_ready():
-                    item = item_repo.get_by_id(item_id)
-                    if item and item.source_mode == 'region_ocr' and item.raw_image_path:
-                        abs_path = file_mgr.get_abs_path(item.raw_image_path)
-                        _ocr_image_paths[item_id] = abs_path  # 記住路徑，OCR 後刪除
-                        ocr_worker.queue_ocr(item_id, abs_path, 'screen')
+                # 不再檢查 is_ready()：queue_ocr 是 thread-safe 的，
+                # 若 engine 尚未 ready，item 進 queue；_run_load() 完成後自動 drain。
+                item = item_repo.get_by_id(item_id)
+                if item and item.source_mode == 'region_ocr' and item.raw_image_path:
+                    abs_path = file_mgr.get_abs_path(item.raw_image_path)
+                    _ocr_image_paths[item_id] = abs_path  # 記住路徑，OCR 後刪除
+                    ocr_worker.queue_ocr(item_id, abs_path, 'screen')
             QTimer.singleShot(0, widget, _update)  # context=widget → runs in main thread
 
         db_worker.item_saved.connect(on_item_saved)

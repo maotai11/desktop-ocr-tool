@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QMenu, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QKeyEvent
 
 from .theme import (
     _BG, _BG_SIDE, _BG_RAISE, _BG_HOVER, _BORDER,
@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self._data_dir = data_dir
         self._selected_item = None
         self._current_items = []
+        self._batch_mode = False
 
         self.setWindowTitle("桌面OCR擷取工具 - 主控台")
         self.resize(1200, 800)
@@ -226,9 +227,87 @@ class MainWindow(QMainWindow):
             }}
             QPushButton:hover {{ background: {_ACCENT_H}; }}
         """)
+        self._btn_toggle_batch = QPushButton("選取模式")
+        self._btn_toggle_batch.setCheckable(True)
+        self._btn_toggle_batch.setStyleSheet(f"""
+            QPushButton {{
+                background: {_BG_RAISE}; color: {_TEXT_PRI};
+                border: 1px solid {_BORDER}; border-radius: 5px;
+                padding: 6px 14px; font-size: 13px;
+            }}
+            QPushButton:checked {{
+                background: {_ACCENT_15}; color: {_ACCENT};
+                border: 1px solid {_ACCENT};
+            }}
+            QPushButton:hover:!checked {{ background: {_BG_HOVER}; }}
+        """)
+        self._btn_toggle_batch.clicked.connect(self._toggle_batch_mode)
         search_row.addWidget(self._search)
         search_row.addWidget(btn_search)
+        search_row.addWidget(self._btn_toggle_batch)
         center_layout.addLayout(search_row)
+
+        # Batch action bar (hidden until batch mode is activated)
+        self._batch_bar = QWidget()
+        self._batch_bar.setVisible(False)
+        self._batch_bar.setStyleSheet(
+            f"background: {_ACCENT_15}; border: 1px solid {_ACCENT};"
+            f" border-radius: 4px; margin: 0px 0px 4px 0px;"
+        )
+        _bbl = QHBoxLayout(self._batch_bar)
+        _bbl.setContentsMargins(10, 5, 10, 5)
+        _bbl.setSpacing(8)
+
+        self._sel_count_lbl = QLabel("已選 0 筆")
+        self._sel_count_lbl.setStyleSheet(
+            f"color: {_ACCENT}; font-weight: 600; background: transparent;"
+        )
+        _bbl.addWidget(self._sel_count_lbl)
+        _bbl.addStretch()
+
+        _plain = f"""
+            QPushButton {{
+                background: {_BG_RAISE}; color: {_TEXT_PRI};
+                border: 1px solid {_BORDER}; border-radius: 4px;
+                padding: 4px 12px; font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background: {_BG_HOVER}; border: 1px solid {_ACCENT}; color: {_ACCENT};
+            }}
+            QPushButton:disabled {{ color: {_TEXT_SEC}; opacity: 0.5; }}
+        """
+        _danger = f"""
+            QPushButton {{
+                background: {_ERROR_15}; color: {_ERROR};
+                border: 1px solid {_ERROR_30}; border-radius: 4px;
+                padding: 4px 12px; font-size: 12px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background: {_ERROR_25}; border: 1px solid {_ERROR}; }}
+            QPushButton:disabled {{ opacity: 0.4; }}
+        """
+
+        _btn_all = QPushButton("全選")
+        _btn_all.setStyleSheet(_plain)
+        _btn_all.clicked.connect(lambda: self._table.selectAll())
+        _bbl.addWidget(_btn_all)
+
+        _btn_clear = QPushButton("清除選取")
+        _btn_clear.setStyleSheet(_plain)
+        _btn_clear.clicked.connect(lambda: self._table.clearSelection())
+        _bbl.addWidget(_btn_clear)
+
+        self._btn_batch_delete = QPushButton("刪除所選")
+        self._btn_batch_delete.setStyleSheet(_danger)
+        self._btn_batch_delete.setEnabled(False)
+        self._btn_batch_delete.clicked.connect(self._delete_selected)
+        _bbl.addWidget(self._btn_batch_delete)
+
+        _btn_exit = QPushButton("離開選取模式")
+        _btn_exit.setStyleSheet(_plain)
+        _btn_exit.clicked.connect(lambda: self._toggle_batch_mode(False))
+        _bbl.addWidget(_btn_exit)
+
+        center_layout.addWidget(self._batch_bar)
 
         self._table = QTableWidget()
         self._table.setColumnCount(6)
@@ -274,6 +353,7 @@ class MainWindow(QMainWindow):
         )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_table_context_menu)
+        self._table.selectionModel().selectionChanged.connect(self._on_selection_changed)
         center_layout.addWidget(self._table)
         splitter.addWidget(center)
 
@@ -447,9 +527,35 @@ class MainWindow(QMainWindow):
         self._load_items(search=self._search.text().strip())
 
     def _on_row_changed(self, row: int):
+        if self._batch_mode:
+            return  # batch mode: row click only changes selection, no detail update
         if 0 <= row < len(self._current_items):
             self._selected_item = self._current_items[row]
             self._update_detail()
+
+    def _toggle_batch_mode(self, active: bool = None):
+        """進入／離開批量選取模式。"""
+        if active is None:
+            active = self._btn_toggle_batch.isChecked()
+        self._batch_mode = active
+        self._btn_toggle_batch.setChecked(active)
+        self._batch_bar.setVisible(active)
+        if active:
+            self._status_lbl.setText("選取模式 — 點選行加入選取，支援 Ctrl / Shift 多選，Esc 離開")
+        else:
+            self._table.clearSelection()
+            self._sel_count_lbl.setText("已選 0 筆")
+            self._btn_batch_delete.setEnabled(False)
+            self._clear_detail_panel()
+            self._status_lbl.setText("就緒")
+
+    def _on_selection_changed(self):
+        """批量模式下即時更新「已選 N 筆」計數與刪除按鈕狀態。"""
+        if not self._batch_mode:
+            return
+        n = len(self._table.selectionModel().selectedRows())
+        self._sel_count_lbl.setText(f"已選 {n} 筆")
+        self._btn_batch_delete.setEnabled(n > 0)
 
     def _update_detail(self):
         item = self._selected_item
@@ -558,6 +664,16 @@ class MainWindow(QMainWindow):
     def refresh(self):
         self._refresh_current()
 
+    def keyPressEvent(self, event: QKeyEvent):
+        """Esc 在選取模式下退出選取模式；不干擾搜尋框等文字輸入。"""
+        if (event.key() == Qt.Key.Key_Escape
+                and self._batch_mode
+                and not isinstance(self.focusWidget(), (QLineEdit, QTextEdit))):
+            self._toggle_batch_mode(False)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     # ------------------------------------------------------------------
     # 右鍵選單
     # ------------------------------------------------------------------
@@ -568,6 +684,14 @@ class MainWindow(QMainWindow):
         item = self._current_items[row]
 
         menu = QMenu(self)
+
+        # 選取模式下：在選單頂部顯示批量刪除快捷項
+        if self._batch_mode:
+            n = len(self._table.selectionModel().selectedRows())
+            act_del_batch = menu.addAction(f"刪除已選取（{n} 筆）")
+            act_del_batch.setEnabled(n > 0)
+            act_del_batch.triggered.connect(self._delete_selected)
+            menu.addSeparator()
 
         act_copy_text = menu.addAction("複製文字")
         act_copy_text.setEnabled(bool(item.get_effective_text()))
