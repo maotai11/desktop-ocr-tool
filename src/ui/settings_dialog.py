@@ -2,9 +2,9 @@
 import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget,
-    QWidget, QLabel, QCheckBox, QSpinBox,
+    QWidget, QLabel, QCheckBox, QSpinBox, QDoubleSpinBox,
     QLineEdit, QPushButton, QFormLayout,
-    QDialogButtonBox, QComboBox
+    QDialogButtonBox, QComboBox, QGroupBox
 )
 
 from .theme import (
@@ -215,6 +215,81 @@ class SettingsDialog(QDialog):
         _ocr_note = QLabel("以上設定儲存後即時生效，無需重啟。")
         _ocr_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
         of.addRow("", _ocr_note)
+
+        # ---- OCR tab：第二引擎備援區塊（Patch H3）----
+        sec_box = QGroupBox("第二引擎備援（選用套件）")
+        sec_box.setStyleSheet(f"""
+            QGroupBox {{
+                color: {_TEXT_SEC};
+                font-size: 12px;
+                border: 1px solid {_BORDER};
+                border-radius: 4px;
+                margin-top: 8px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 4px;
+                color: {_TEXT_SEC};
+            }}
+        """)
+        sec_layout = QFormLayout(sec_box)
+        sec_layout.setSpacing(8)
+
+        self._sec_enabled = QCheckBox("啟用第二引擎備援辨識")
+        self._sec_enabled.setChecked(
+            self._cfg.get('ocr', 'enable_secondary_engine', default=False)
+        )
+        sec_layout.addRow("備援：", self._sec_enabled)
+
+        self._sec_provider = QComboBox()
+        # 僅顯示已登記的 provider（不一定安裝）
+        try:
+            from ..ocr.providers import list_known_providers
+            for p in list_known_providers():
+                self._sec_provider.addItem(p, userData=p)
+        except Exception:
+            self._sec_provider.addItem('paddleocr_v5_mobile', userData='paddleocr_v5_mobile')
+        saved_provider = self._cfg.get(
+            'ocr', 'secondary_engine_provider', default='paddleocr_v5_mobile'
+        )
+        idx = self._sec_provider.findData(saved_provider)
+        if idx >= 0:
+            self._sec_provider.setCurrentIndex(idx)
+        sec_layout.addRow("Provider：", self._sec_provider)
+
+        self._sec_diag_label = QLabel()
+        self._sec_diag_label.setStyleSheet("font-size: 11px;")
+        self._update_sec_diag()
+        self._sec_provider.currentIndexChanged.connect(self._update_sec_diag)
+        sec_layout.addRow("安裝狀態：", self._sec_diag_label)
+
+        self._sec_handwriting = QCheckBox("手寫模式時使用第二引擎")
+        self._sec_handwriting.setChecked(
+            self._cfg.get('ocr', 'secondary_engine_for_handwriting', default=True)
+        )
+        sec_layout.addRow("手寫備援：", self._sec_handwriting)
+
+        self._sec_low_conf = QCheckBox("低信心時使用第二引擎")
+        self._sec_low_conf.setChecked(
+            self._cfg.get('ocr', 'secondary_engine_for_low_confidence', default=True)
+        )
+        sec_layout.addRow("低信心備援：", self._sec_low_conf)
+
+        self._sec_threshold = QDoubleSpinBox()
+        self._sec_threshold.setRange(0.01, 1.00)
+        self._sec_threshold.setSingleStep(0.05)
+        self._sec_threshold.setDecimals(2)
+        self._sec_threshold.setValue(
+            self._cfg.get('ocr', 'secondary_engine_confidence_threshold', default=0.85)
+        )
+        _threshold_note = QLabel("主引擎信心低於此值時，啟用第二引擎（低信心備援）")
+        _threshold_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
+        sec_layout.addRow("信心門檻：", self._sec_threshold)
+        sec_layout.addRow("", _threshold_note)
+
+        of.addRow(sec_box)
         tabs.addTab(ocr_tab, "OCR")
 
         # ---- 剪貼簿 ----
@@ -292,6 +367,22 @@ class SettingsDialog(QDialog):
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
 
+    def _update_sec_diag(self):
+        """Patch H3: 更新第二引擎安裝狀態標籤（不載入模型，僅做 import 檢查）。"""
+        provider_name = self._sec_provider.currentData() or ''
+        try:
+            from ..ocr.providers import create_provider
+            available = create_provider(provider_name).is_available()
+        except Exception:
+            available = False
+
+        if available:
+            self._sec_diag_label.setText("已安裝，可使用")
+            self._sec_diag_label.setStyleSheet(f"color: #4caf50; font-size: 11px;")
+        else:
+            self._sec_diag_label.setText("未安裝（pip install paddleocr）")
+            self._sec_diag_label.setStyleSheet(f"color: #ff9800; font-size: 11px;")
+
     def _save(self):
         old_theme = self._cfg.get('ui', 'theme', default='system')
         old_font_size = self._cfg.get('ui', 'font_size', default=13)
@@ -308,12 +399,40 @@ class SettingsDialog(QDialog):
         self._cfg.set('ui', 'theme', self._cb_theme.currentText())
         self._cfg.set('ui', 'font_size', self._sp_font_size.value())
 
+        # ---- 第二引擎設定（Patch H3）----
+        enable_sec = self._sec_enabled.isChecked()
+        sec_provider_name = self._sec_provider.currentData() or 'paddleocr_v5_mobile'
+        sec_threshold = self._sec_threshold.value()
+        self._cfg.set('ocr', 'enable_secondary_engine', enable_sec)
+        self._cfg.set('ocr', 'secondary_engine_provider', sec_provider_name)
+        self._cfg.set('ocr', 'secondary_engine_for_handwriting',
+                      self._sec_handwriting.isChecked())
+        self._cfg.set('ocr', 'secondary_engine_for_low_confidence',
+                      self._sec_low_conf.isChecked())
+        self._cfg.set('ocr', 'secondary_engine_confidence_threshold', sec_threshold)
+
         # OCR 參數即時更新（不需重啟）
         if self._ocr_engine is not None:
             self._ocr_engine.configure(
                 enable_second_pass=self._cb_second_pass.isChecked(),
                 enable_handwriting_mode=self._cb_handwriting.isChecked(),
                 max_image_short_side=self._sp_short_side.value(),
+            )
+            # 第二引擎即時切換（Patch H3）
+            if enable_sec:
+                from ..ocr.providers import create_provider
+                provider = create_provider(
+                    sec_provider_name, confidence_accept=sec_threshold
+                )
+                self._ocr_engine.set_secondary_engine(provider)
+            else:
+                from ..ocr.secondary_engine import NullSecondaryEngine
+                self._ocr_engine.set_secondary_engine(NullSecondaryEngine())
+            self._ocr_engine.configure(
+                enable_secondary_engine=enable_sec,
+                secondary_for_handwriting=self._sec_handwriting.isChecked(),
+                secondary_for_low_confidence=self._sec_low_conf.isChecked(),
+                secondary_confidence_threshold=sec_threshold,
             )
 
         from ..core.autostart import set_autostart

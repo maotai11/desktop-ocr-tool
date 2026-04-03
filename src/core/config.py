@@ -35,7 +35,12 @@ DEFAULT_SETTINGS = {
         "confidence_review": 0.60,
         "enable_second_pass": True,
         "enable_handwriting_mode": False,
-        "max_image_short_side": 960
+        "max_image_short_side": 960,
+        "enable_secondary_engine": False,
+        "secondary_engine_provider": "paddleocr_v5_mobile",
+        "secondary_engine_for_handwriting": True,
+        "secondary_engine_for_low_confidence": True,
+        "secondary_engine_confidence_threshold": 0.85
     },
     "preprocessing": {
         "enable_deskew": True,

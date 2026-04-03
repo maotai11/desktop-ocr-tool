@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 from .postprocessor import sort_boxes_and_merge
 from .preprocess import enhance_for_ocr, upscale_if_small
+from .secondary_engine import SecondaryEngineBase, NullSecondaryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,13 @@ class OcrEngine:
         self._enable_handwriting = enable_handwriting_mode
         self._engine = None
         self._ready = False
+        # Patch H1: pluggable second engine slot（預設 Null，不影響現有 pipeline）
+        self._secondary: SecondaryEngineBase = NullSecondaryEngine()
+        self._enable_secondary_engine: bool = False
+        # Patch H3: 細粒度觸發控制，預設 True 保持與 H1 行為一致
+        self._secondary_for_handwriting: bool = True
+        self._secondary_for_low_confidence: bool = True
+        self._secondary_confidence_threshold: float = 0.85
 
     def load(self, progress_cb=None):
         """載入 RapidOCR 引擎。progress_cb(pct: int, msg: str) 可選。"""
@@ -67,6 +75,29 @@ class OcrEngine:
     def is_ready(self) -> bool:
         return self._ready
 
+    def set_secondary_engine(self, engine: SecondaryEngineBase) -> None:
+        """注入第二引擎實作（Patch H1）。傳入 NullSecondaryEngine() 可停用。"""
+        self._secondary = engine
+        logger.info(f"第二 OCR 引擎已設定: {engine.name} (available={engine.is_available()})")
+
+    def get_secondary_info(self) -> dict:
+        """Patch H3: 回傳第二引擎目前狀態，供 UI diagnostics 使用。
+
+        Returns
+        -------
+        dict
+            {
+              'name': str,       引擎識別名稱
+              'available': bool, is_available() 結果
+              'enabled': bool,   enable_secondary_engine 開關狀態
+            }
+        """
+        return {
+            'name': self._secondary.name,
+            'available': self._secondary.is_available(),
+            'enabled': self._enable_secondary_engine,
+        }
+
     def configure(self, **kwargs):
         """即時更新可調參數，無需重啟引擎。"""
         if 'max_image_short_side' in kwargs:
@@ -79,6 +110,16 @@ class OcrEngine:
             self._confidence_accept = float(kwargs['confidence_accept'])
         if 'confidence_review' in kwargs:
             self._confidence_review = float(kwargs['confidence_review'])
+        # Patch H1: 第二引擎開關
+        if 'enable_secondary_engine' in kwargs:
+            self._enable_secondary_engine = bool(kwargs['enable_secondary_engine'])
+        # Patch H3: 細粒度觸發控制
+        if 'secondary_for_handwriting' in kwargs:
+            self._secondary_for_handwriting = bool(kwargs['secondary_for_handwriting'])
+        if 'secondary_for_low_confidence' in kwargs:
+            self._secondary_for_low_confidence = bool(kwargs['secondary_for_low_confidence'])
+        if 'secondary_confidence_threshold' in kwargs:
+            self._secondary_confidence_threshold = float(kwargs['secondary_confidence_threshold'])
 
     def run_ocr(self, image: np.ndarray, mode: str = 'screen') -> dict:
         if not self._ready:
@@ -102,7 +143,22 @@ class OcrEngine:
                 logger.debug("OCR second-pass 觸發，合併後 %d 筆", len(results))
 
             elapsed_ms = int((time.time() - t0) * 1000)
-            return self._process_results(results, elapsed_ms)
+            primary_result = self._process_results(results, elapsed_ms)
+
+            # Step 4 (Patch H1): 第二引擎 fallback routing
+            # 僅在開關開啟、第二引擎可用、且主引擎結果不佳時觸發
+            if self._should_use_secondary(primary_result, mode):
+                logger.debug("觸發第二引擎 fallback [%s], mode=%s", self._secondary.name, mode)
+                secondary_result = self._secondary.recognize(image, mode)
+                # 若第二引擎有更好的結果，採用之；否則保留主引擎結果
+                if self._is_better(secondary_result, primary_result):
+                    secondary_result['elapsed_ms'] += primary_result['elapsed_ms']
+                    logger.debug("第二引擎結果較優 (conf=%.3f > %.3f)，採用",
+                                 secondary_result['confidence'], primary_result['confidence'])
+                    return secondary_result
+                logger.debug("第二引擎結果未優於主引擎，保留主引擎結果")
+
+            return primary_result
         except Exception as e:
             elapsed_ms = int((time.time() - t0) * 1000)
             logger.error(f"OCR 執行失敗: {e}", exc_info=True)
@@ -173,6 +229,59 @@ class OcrEngine:
         if not confs:
             return True
         return (sum(confs) / len(confs)) < self._confidence_review
+
+    def _should_use_secondary(self, primary_result: dict, mode: str) -> bool:
+        """Patch H1/H3: 決定是否啟動第二引擎 fallback。
+
+        觸發條件（全部需成立）：
+        1. `_enable_secondary_engine` 開關為 True
+        2. 第二引擎 is_available()
+        3. 符合下列觸發路徑之一：
+           - handwriting 路徑：`_secondary_for_handwriting=True` 且
+             （handwriting_mode 開啟 或 mode=='handwriting'）
+           - 低信心路徑：`_secondary_for_low_confidence=True` 且
+             （status=='failed' 或 text 為空 或 conf < _secondary_confidence_threshold）
+
+        Patch H3 新增細粒度控制，預設值（兩個 for_* 皆 True，threshold=0.85）
+        與 H1 原始行為等價。
+        """
+        if not self._enable_secondary_engine:
+            return False
+        if not self._secondary.is_available():
+            return False
+
+        status = primary_result.get('status', '')
+        text = primary_result.get('text', '')
+        conf = primary_result.get('confidence', 0.0)
+
+        use_handwriting_path = self._enable_handwriting or (mode == 'handwriting')
+        weak_primary = (
+            status == 'failed' or
+            not text or
+            conf < self._secondary_confidence_threshold
+        )
+
+        trigger_handwriting = use_handwriting_path and self._secondary_for_handwriting
+        trigger_low_conf = weak_primary and self._secondary_for_low_confidence
+
+        return trigger_handwriting or trigger_low_conf
+
+    @staticmethod
+    def _is_better(candidate: dict, baseline: dict) -> bool:
+        """回傳 True 若 candidate 的結果優於 baseline。
+
+        優先比較 text 是否有內容，再比較 confidence。
+        baseline status='failed' 時，任何有 text 的 candidate 都算優。
+        """
+        cand_text = candidate.get('text', '')
+        base_text = baseline.get('text', '')
+        base_status = baseline.get('status', '')
+
+        if not cand_text:
+            return False  # candidate 空結果不算優
+        if base_status == 'failed' or not base_text:
+            return True   # baseline 失敗，有結果就好
+        return candidate.get('confidence', 0.0) > baseline.get('confidence', 0.0)
 
     @staticmethod
     def _merge_results(r1, r2):

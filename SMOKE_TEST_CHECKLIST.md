@@ -97,6 +97,49 @@
 
 ---
 
+## Patch H1-H3 — 第二引擎（Handwriting OCR Second Engine）
+
+> 前置條件：Settings → OCR 分頁 → 「第二引擎」區塊中，勾選「啟用第二 OCR 引擎」。
+> 若 paddleocr 未安裝，診斷標籤會顯示「未安裝（pip install paddleocr）」，以下 H-A 至 H-D 僅在安裝後有效。
+
+### H-A：Settings 接線（不需安裝 paddleocr 即可驗收）
+
+| # | 步驟 | 預期結果 |
+|---|------|---------|
+| A.1 | 開啟 Settings → OCR 分頁 | 可見「第二引擎 (Handwriting OCR)」QGroupBox |
+| A.2 | paddleocr 未安裝時，觀察診斷標籤 | 顯示「未安裝（pip install paddleocr）」橘色 |
+| A.3 | 勾選「啟用第二 OCR 引擎」→ 儲存 → 重新開啟 Settings | 勾選狀態持久化 |
+| A.4 | 調整信心門檻 SpinBox → 儲存 → 重新開啟 | 數值正確保留 |
+| A.5 | 取消勾選「手寫/低信心 觸發」→ 儲存 | 儲存不報錯；下次開啟設定值正確 |
+
+### H-B：第二引擎 fallback 行為（需安裝 paddleocr）
+
+| # | 步驟 | 預期結果 |
+|---|------|---------|
+| B.1 | pip install paddleocr → 重開 Settings | 診斷標籤變「已安裝，可使用」綠色 |
+| B.2 | 啟用第二引擎 → 截取手寫圖片（region_ocr） | `logs/app.log` 出現「觸發第二引擎 fallback [paddleocr_v5_mobile]」 |
+| B.3 | 同上 → 觀察主控台識別結果 | 識別文字應優於或等於 RapidOCR 主引擎結果 |
+| B.4 | 截取清晰印刷文字（高信心）→ 觀察 log | 不應出現「觸發第二引擎」— 主引擎信心足夠，不 fallback |
+| B.5 | 取消勾選「啟用第二 OCR 引擎」→ 儲存 → 截取手寫圖片 | log 中不出現「觸發第二引擎 fallback」 |
+
+### H-C：細粒度觸發控制（需安裝 paddleocr）
+
+| # | 步驟 | 預期結果 |
+|---|------|---------|
+| C.1 | 取消勾選「手寫觸發」，保留「低信心觸發」→ 截取手寫圖片 | 主引擎信心高時，不觸發第二引擎 |
+| C.2 | 調低信心門檻（如 0.60）→ 截取同一圖片 | 主引擎信心若低於 0.60，觸發第二引擎 |
+| C.3 | 取消勾選「低信心觸發」，保留「手寫觸發」→ 以 mode=handwriting 截圖 | 手寫模式觸發，低信心模式不觸發 |
+
+### H-D：懶惰載入與啟動效能
+
+| # | 步驟 | 預期結果 |
+|---|------|---------|
+| D.1 | 啟用第二引擎 → 啟動 app → 觀察 `logs/app.log` | 無「載入 PaddleOCRv5」訊息（首次 recognize() 才載入） |
+| D.2 | 第一次觸發第二引擎 → 觀察 log | 出現「載入 PaddleOCRv5 Mobile 引擎」，且只出現一次 |
+| D.3 | 第二次及後續觸發 | 不再出現「載入」訊息（模型已快取） |
+
+---
+
 ## 整體回歸確認
 
 - [ ] 以上所有步驟完成後，`logs/app.log` 最後不含 CRITICAL / ERROR 行
@@ -115,6 +158,10 @@ pytest tests/test_db_worker.py -v              # 只跑 DbWorker slots
 pytest tests/test_capture_worker_drain.py -v   # 需要 Qt (pytest-qt)
 pytest tests/test_ocr_preprocess.py -v         # OCR 前處理（Group A）
 pytest tests/test_main_window_batch.py -v      # 批量選取狀態機（Group B）
+pytest tests/test_secondary_engine.py -v       # H1: 第二引擎介面 + fallback routing
+pytest tests/test_h2_providers.py -v           # H2: provider adapter (paddleocr 可不裝)
+pytest tests/test_h3_config_wiring.py -v       # H3: config / settings / diagnostics
+pytest tests/test_h4_fallback_edge_cases.py -v # H4: 3.x 格式映射 + 失敗路徑邊界情況
 ```
 
-預期：`47 passed`（11 repository + 7 db_worker + 2 capture_worker + 16 ocr_preprocess + 11 main_window_batch）
+預期：`114 passed`（含 H1-H4 第二引擎全套）

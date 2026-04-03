@@ -93,6 +93,28 @@ def main() -> int:
         )
         ocr_worker = OcrWorker(ocr_engine)
 
+        # 9b. Secondary engine setup（Patch H3，optional provider）
+        if cfg.get('ocr', 'enable_secondary_engine', default=False):
+            from src.ocr.providers import create_provider
+            _sec_name = cfg.get('ocr', 'secondary_engine_provider',
+                                default='paddleocr_v5_mobile')
+            _sec_threshold = cfg.get('ocr', 'secondary_engine_confidence_threshold',
+                                     default=0.85)
+            _sec_provider = create_provider(_sec_name, confidence_accept=_sec_threshold)
+            ocr_engine.set_secondary_engine(_sec_provider)
+            ocr_engine.configure(
+                enable_secondary_engine=True,
+                secondary_for_handwriting=cfg.get(
+                    'ocr', 'secondary_engine_for_handwriting', default=True),
+                secondary_for_low_confidence=cfg.get(
+                    'ocr', 'secondary_engine_for_low_confidence', default=True),
+                secondary_confidence_threshold=_sec_threshold,
+            )
+            logger.info(
+                f"第二引擎已設定: {_sec_name} "
+                f"(available={_sec_provider.is_available()})"
+            )
+
         # 10. Capture worker + overlay
         from src.workers.capture_worker import CaptureWorker
         from src.ui.capture_overlay import CaptureOverlay
