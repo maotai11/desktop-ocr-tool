@@ -108,10 +108,19 @@ def main():
         '--hidden-import', 'mss',
         '--hidden-import', 'mss.windows',
         '--collect-all', 'zhconv',
-        # 明確排除不需要的大型套件，防止 onnxruntime 的 hook 意外帶入 torch
+        # PaddleOCR v5 引擎（選配，約 +200MB）
+        '--hidden-import', 'paddleocr',
+        '--hidden-import', 'paddle',
+        '--hidden-import', 'paddlex',
+        '--collect-all', 'paddleocr',
+        # 明確排除不需要的大型套件
         '--exclude-module', 'torch',
         '--exclude-module', 'torchvision',
         '--exclude-module', 'torchaudio',
+        '--exclude-module', 'cnocr',
+        '--exclude-module', 'cnstd',
+        '--exclude-module', 'pytorch_lightning',
+        '--exclude-module', 'torchmetrics',
         '--exclude-module', 'tensorflow',
         '--exclude-module', 'paddle',
         '--exclude-module', 'paddleocr',

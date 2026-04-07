@@ -24,9 +24,10 @@ logger = logging.getLogger(__name__)
 
 class FloatingWidget(QWidget):
     def __init__(self, item_repo, file_mgr, db_worker, ocr_worker,
-                 cfg, data_dir, parent=None):
+                 cfg, data_dir, parent=None, tag_repo=None):
         super().__init__(parent)
         self._item_repo = item_repo
+        self._tag_repo = tag_repo
         self._file_mgr = file_mgr
         self._db_worker = db_worker
         self._ocr_worker = ocr_worker
@@ -557,7 +558,8 @@ class FloatingWidget(QWidget):
     def open_settings(self):
         from .settings_dialog import SettingsDialog
         ocr_engine = getattr(self, '_ocr_engine', None)
-        dlg = SettingsDialog(self._cfg, self, ocr_engine=ocr_engine)
+        tag_repo = getattr(self, '_tag_repo', None)
+        dlg = SettingsDialog(self._cfg, self, ocr_engine=ocr_engine, tag_repo=tag_repo)
         dlg.exec()
 
     # --- Capture callbacks ---

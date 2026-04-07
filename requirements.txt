@@ -8,3 +8,7 @@ mss>=9
 rapidocr-onnxruntime>=1.4
 deskew>=0.10
 zhconv>=1.4
+
+# 第二引擎（可選）
+# cnocr>=2.3  # 繁體中文 OCR，ONNX 後端（約 +200MB）
+# paddleocr>=2.7  # PaddleOCR v5 引擎（約 +500MB）

@@ -145,10 +145,11 @@ _DIALOG_QSS = f"""
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, cfg, parent=None, ocr_engine=None):
+    def __init__(self, cfg, parent=None, ocr_engine=None, tag_repo=None):
         super().__init__(parent)
         self._cfg = cfg
         self._ocr_engine = ocr_engine
+        self._tag_repo = tag_repo
         self.setWindowTitle("設定")
         self.setMinimumSize(520, 420)
         self._setup_ui()
@@ -216,8 +217,76 @@ class SettingsDialog(QDialog):
         _ocr_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
         of.addRow("", _ocr_note)
 
+        # ---- OCR tab：引擎選擇區塊（新增）----
+        engine_box = QGroupBox("引擎選擇與優先級")
+        engine_box.setStyleSheet(f"""
+            QGroupBox {{
+                color: {_TEXT_PRI};
+                font-size: 12px;
+                border: 1px solid {_ACCENT};
+                border-radius: 4px;
+                margin-top: 8px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 4px;
+                color: {_ACCENT};
+                font-weight: bold;
+            }}
+        """)
+        engine_layout = QFormLayout(engine_box)
+        engine_layout.setSpacing(8)
+
+        # 第一引擎選擇
+        self._primary_engine = QComboBox()
+        self._primary_engine.addItem("RapidOCR PP-OCRv4（輕量、快速）", userData="rapidocr")
+        self._primary_engine.addItem("PaddleOCR v5（高品質、繁體中文）", userData="paddleocr_v5")
+        self._primary_engine.addItem("CnOCR（繁體中文、ONNX）", userData="cnocr")
+        saved_primary = self._cfg.get('ocr', 'primary_engine', default='rapidocr')
+        idx = self._primary_engine.findData(saved_primary)
+        if idx >= 0:
+            self._primary_engine.setCurrentIndex(idx)
+        engine_layout.addRow("第一引擎（主要）：", self._primary_engine)
+
+        # 第二引擎選擇
+        self._secondary_engine_combo = QComboBox()
+        self._secondary_engine_combo.addItem("RapidOCR PP-OCRv4（輕量、快速）", userData="rapidocr")
+        self._secondary_engine_combo.addItem("PaddleOCR v5（高品質、繁體中文）", userData="paddleocr_v5")
+        self._secondary_engine_combo.addItem("CnOCR（繁體中文、ONNX）", userData="cnocr")
+        self._secondary_engine_combo.addItem("無（停用第二引擎）", userData="none")
+        saved_secondary = self._cfg.get('ocr', 'secondary_engine', default='paddleocr_v5')
+        idx = self._secondary_engine_combo.findData(saved_secondary)
+        if idx >= 0:
+            self._secondary_engine_combo.setCurrentIndex(idx)
+        engine_layout.addRow("第二引擎（備援）：", self._secondary_engine_combo)
+
+        # 自動切換條件
+        self._auto_switch = QCheckBox("當第一引擎信心不足時，自動使用第二引擎")
+        self._auto_switch.setChecked(
+            self._cfg.get('ocr', 'auto_switch_secondary', default=True)
+        )
+        engine_layout.addRow("自動切換：", self._auto_switch)
+
+        self._auto_switch_threshold = QDoubleSpinBox()
+        self._auto_switch_threshold.setRange(0.01, 1.00)
+        self._auto_switch_threshold.setSingleStep(0.05)
+        self._auto_switch_threshold.setDecimals(2)
+        self._auto_switch_threshold.setValue(
+            self._cfg.get('ocr', 'auto_switch_threshold', default=0.75)
+        )
+        engine_layout.addRow("切換門檻：", self._auto_switch_threshold)
+
+        _engine_note = QLabel("💡 提示：PaddleOCR v5 對複雜結構文字（如「籤」）和手寫辨識較佳")
+        _engine_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px; wordwrap: true;")
+        _engine_note.setWordWrap(True)
+        engine_layout.addRow("", _engine_note)
+
+        of.addRow(engine_box)
+
         # ---- OCR tab：第二引擎備援區塊（Patch H3）----
-        sec_box = QGroupBox("第二引擎備援（選用套件）")
+        sec_box = QGroupBox("進階：第二引擎觸發條件")
         sec_box.setStyleSheet(f"""
             QGroupBox {{
                 color: {_TEXT_SEC};
@@ -357,6 +426,11 @@ class SettingsDialog(QDialog):
         uf.addRow("字型大小：", self._sp_font_size)
         tabs.addTab(ui_tab, "介面")
 
+        # ---- 標籤管理 ----
+        if self._tag_repo is not None:
+            tag_tab = self._create_tag_management_tab()
+            tabs.addTab(tag_tab, "標籤管理")
+
         layout.addWidget(tabs)
 
         btn_box = QDialogButtonBox(
@@ -401,7 +475,7 @@ class SettingsDialog(QDialog):
 
         # ---- 第二引擎設定（Patch H3）----
         enable_sec = self._sec_enabled.isChecked()
-        sec_provider_name = self._sec_provider.currentData() or 'paddleocr_v5_mobile'
+        sec_provider_name = self._sec_provider.currentData() or 'paddleocr_v5'
         sec_threshold = self._sec_threshold.value()
         self._cfg.set('ocr', 'enable_secondary_engine', enable_sec)
         self._cfg.set('ocr', 'secondary_engine_provider', sec_provider_name)
@@ -410,6 +484,16 @@ class SettingsDialog(QDialog):
         self._cfg.set('ocr', 'secondary_engine_for_low_confidence',
                       self._sec_low_conf.isChecked())
         self._cfg.set('ocr', 'secondary_engine_confidence_threshold', sec_threshold)
+
+        # ---- 引擎優先級設定（新增）----
+        primary_engine = self._primary_engine.currentData() or 'rapidocr'
+        secondary_engine = self._secondary_engine_combo.currentData() or 'none'
+        auto_switch = self._auto_switch.isChecked()
+        auto_threshold = self._auto_switch_threshold.value()
+        self._cfg.set('ocr', 'primary_engine', primary_engine)
+        self._cfg.set('ocr', 'secondary_engine', secondary_engine)
+        self._cfg.set('ocr', 'auto_switch_secondary', auto_switch)
+        self._cfg.set('ocr', 'auto_switch_threshold', auto_threshold)
 
         # OCR 參數即時更新（不需重啟）
         if self._ocr_engine is not None:
@@ -452,3 +536,263 @@ class SettingsDialog(QDialog):
                 self.parent(), "設定已儲存",
                 "佈景主題與字型大小的變更將在下次重新啟動後生效。"
             )
+
+    def _create_tag_management_tab(self) -> QWidget:
+        """建立標籤管理分頁。"""
+        from PySide6.QtWidgets import (
+            QListWidget, QListWidgetItem, QTableWidget,
+            QTableWidgetItem, QHeaderView, QColorDialog,
+        )
+        from PySide6.QtGui import QColor
+
+        tag_tab = QWidget()
+        main_layout = QVBoxLayout(tag_tab)
+
+        # 上方：標籤列表
+        top_layout = QVBoxLayout()
+        top_label = QLabel("現有標籤：")
+        top_layout.addWidget(top_label)
+
+        self._tag_list = QListWidget()
+        self._tag_list.setMaximumHeight(200)
+        top_layout.addWidget(self._tag_list)
+
+        # 標籤操作按鈕
+        tag_btn_layout = QHBoxLayout()
+        self._btn_add_tag = QPushButton("新增標籤")
+        self._btn_edit_tag = QPushButton("編輯")
+        self._btn_delete_tag = QPushButton("刪除")
+        tag_btn_layout.addWidget(self._btn_add_tag)
+        tag_btn_layout.addWidget(self._btn_edit_tag)
+        tag_btn_layout.addWidget(self._btn_delete_tag)
+        top_layout.addLayout(tag_btn_layout)
+
+        main_layout.addLayout(top_layout)
+
+        # 下方：標籤關聯列表（顯示哪些項目有標籤）
+        bottom_layout = QVBoxLayout()
+        bottom_label = QLabel("標籤使用統計：")
+        bottom_layout.addWidget(bottom_label)
+
+        self._tag_stats_table = QTableWidget()
+        self._tag_stats_table.setColumnCount(4)
+        self._tag_stats_table.setHorizontalHeaderLabels(["標籤名稱", "顏色", "使用次數", "操作"])
+        self._tag_stats_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._tag_stats_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._tag_stats_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self._tag_stats_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self._tag_stats_table.setColumnWidth(1, 80)
+        self._tag_stats_table.setColumnWidth(2, 80)
+        self._tag_stats_table.setColumnWidth(3, 80)
+        self._tag_stats_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._tag_stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        bottom_layout.addWidget(self._tag_stats_table)
+
+        main_layout.addLayout(bottom_layout)
+
+        # 連線信號
+        self._btn_add_tag.clicked.connect(self._add_tag_dialog)
+        self._btn_edit_tag.clicked.connect(self._edit_tag_dialog)
+        self._btn_delete_tag.clicked.connect(self._delete_tag_confirm)
+
+        # 載入標籤
+        self._load_tags()
+
+        return tag_tab
+
+    def _load_tags(self):
+        """載入所有標籤到列表和統計表。"""
+        if self._tag_repo is None:
+            return
+
+        # 清空
+        self._tag_list.clear()
+        self._tag_stats_table.setRowCount(0)
+
+        # 載入標籤
+        all_tags = self._tag_repo.list_all()
+
+        for tag in all_tags:
+            # 加入列表
+            item = QListWidgetItem(f"● {tag.name}")
+            item.setData(Qt.ItemDataRole.UserRole, tag)
+            item.setForeground(QColor(tag.color))
+            self._tag_list.addItem(item)
+
+            # 加入統計表
+            row = self._tag_stats_table.rowCount()
+            self._tag_stats_table.insertRow(row)
+
+            name_item = QTableWidgetItem(tag.name)
+            name_item.setData(Qt.ItemDataRole.UserRole, tag.id)
+
+            color_item = QTableWidgetItem(tag.color)
+            color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # 使用次數（暫時顯示 "-"，需要 repository 支援查詢）
+            usage_item = QTableWidgetItem("-")
+            usage_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # 操作按鈕
+            from PySide6.QtWidgets import QPushButton
+            action_btn = QPushButton("套用")
+            action_btn.clicked.connect(lambda checked, tid=tag.id: self._apply_tag_to_selected(tid))
+
+            self._tag_stats_table.setItem(row, 0, name_item)
+            self._tag_stats_table.setItem(row, 1, color_item)
+            self._tag_stats_table.setItem(row, 2, usage_item)
+            self._tag_stats_table.setCellWidget(row, 3, action_btn)
+
+    def _add_tag_dialog(self):
+        """顯示新增標籤對話框。"""
+        from PySide6.QtWidgets import (
+            QDialog, QFormLayout, QColorDialog,
+            QDialogButtonBox,
+        )
+        from PySide6.QtGui import QColor
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("新增標籤")
+        dlg.setModal(True)
+        dlg.setMinimumWidth(350)
+
+        layout = QFormLayout(dlg)
+
+        self._new_tag_name = QLineEdit()
+        self._new_tag_name.setPlaceholderText("例如：財務、個資、待辦...")
+        layout.addRow("標籤名稱：", self._new_tag_name)
+
+        self._new_tag_color = QPushButton("#4A90D9")
+        self._new_tag_color.clicked.connect(self._pick_color)
+        self._new_tag_color.setStyleSheet("background: #4A90D9; color: white;")
+        layout.addRow("顏色：", self._new_tag_color)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addRow(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        name = self._new_tag_name.text().strip()
+        if not name:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "警告", "請輸入標籤名稱。")
+            return
+
+        color = self._new_tag_color.text()
+        tag = self._tag_repo.create(name=name, color=color)
+
+        if tag:
+            self._load_tags()
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "成功", f"已新增標籤 '{name}'。")
+        else:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "警告", f"標籤 '{name}' 已存在。")
+
+    def _edit_tag_dialog(self):
+        """顯示編輯標籤對話框。"""
+        from PySide6.QtWidgets import (
+            QDialog, QFormLayout, QColorDialog,
+            QDialogButtonBox,
+        )
+        from PySide6.QtGui import QColor
+
+        current_item = self._tag_list.currentItem()
+        if not current_item:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "提示", "請先選擇要編輯的標籤。")
+            return
+
+        tag = current_item.data(Qt.ItemDataRole.UserRole)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("編輯標籤")
+        dlg.setModal(True)
+        dlg.setMinimumWidth(350)
+
+        layout = QFormLayout(dlg)
+
+        self._edit_tag_name = QLineEdit()
+        self._edit_tag_name.setText(tag.name)
+        layout.addRow("標籤名稱：", self._edit_tag_name)
+
+        self._edit_tag_color = QPushButton(tag.color)
+        self._edit_tag_color.clicked.connect(self._pick_color)
+        self._edit_tag_color.setStyleSheet(f"background: {tag.color}; color: white;")
+        layout.addRow("顏色：", self._edit_tag_color)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addRow(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_name = self._edit_tag_name.text().strip()
+        if not new_name:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "警告", "請輸入標籤名稱。")
+            return
+
+        # 注意：TagRepository 需要 update 方法，目前未實作
+        # 暫時只能刪除再新增
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, "提示",
+            "標籤編輯功能需要 repository 支援 update 方法。\n請使用刪除再新增。"
+        )
+
+    def _delete_tag_confirm(self):
+        """確認刪除標籤。"""
+        from PySide6.QtWidgets import QMessageBox
+
+        current_item = self._tag_list.currentItem()
+        if not current_item:
+            QMessageBox.information(self, "提示", "請先選擇要刪除的標籤。")
+            return
+
+        tag = current_item.data(Qt.ItemDataRole.UserRole)
+
+        reply = QMessageBox.question(
+            self, "確認刪除",
+            f"確定要刪除標籤 '{tag.name}' 嗎？\n此操作會同時移除所有項目與此標籤的關聯。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self._tag_repo.delete(tag.id)
+            self._load_tags()
+            QMessageBox.information(self, "成功", f"已刪除標籤 '{tag.name}'。")
+
+    def _pick_color(self):
+        """顏色選擇器。"""
+        from PySide6.QtWidgets import QColorDialog
+        from PySide6.QtGui import QColor
+
+        btn = self.sender()
+        current_color = QColor(btn.text())
+        color = QColorDialog.getColor(current_color, self, "選擇顏色")
+
+        if color.isValid():
+            hex_color = color.name()
+            btn.setText(hex_color)
+            btn.setStyleSheet(f"background: {hex_color}; color: white;")
+
+    def _apply_tag_to_selected(self, tag_id: int):
+        """將標籤套用到主控台選取的項目（佔位符）。"""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, "提示",
+            "標籤套用功能需要在主控台實作選取機制。\n此為預留接口。"
+        )

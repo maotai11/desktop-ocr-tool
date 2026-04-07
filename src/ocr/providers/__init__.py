@@ -20,9 +20,13 @@ from ..secondary_engine import SecondaryEngineBase, NullSecondaryEngine
 # 已知 provider 名稱 → (模組路徑, 類別名稱)
 # 使用字串延遲引用，避免模組頂層 import 副作用
 _PROVIDER_MAP: dict[str, tuple[str, str]] = {
-    'paddleocr_v5_mobile': (
+    'paddleocr_v5': (
         '.paddleocr_v5_provider',
         'PaddleOCRv5Provider',
+    ),
+    'cnocr_traditional_chinese': (
+        '.cnocr_provider',
+        'CnOcrProvider',
     ),
 }
 

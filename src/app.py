@@ -81,9 +81,17 @@ def main() -> int:
             item_repo, file_mgr, enable_dedup
         )
 
-        # 9. OCR Engine + Worker
+        # 9. OCR Engine + Worker（支援引擎優先級）
         from src.ocr.engine import OcrEngine
         from src.workers.ocr_worker import OcrWorker
+
+        # 取得引擎設定
+        primary_engine = cfg.get('ocr', 'primary_engine', default='rapidocr')
+        secondary_engine = cfg.get('ocr', 'secondary_engine', default='none')
+        auto_switch = cfg.get('ocr', 'auto_switch_secondary', default=True)
+        auto_threshold = cfg.get('ocr', 'auto_switch_threshold', default=0.75)
+
+        # 建立主引擎
         ocr_engine = OcrEngine(
             confidence_accept=cfg.get('ocr', 'confidence_accept', default=0.85),
             confidence_review=cfg.get('ocr', 'confidence_review', default=0.60),
@@ -93,25 +101,24 @@ def main() -> int:
         )
         ocr_worker = OcrWorker(ocr_engine)
 
-        # 9b. Secondary engine setup（Patch H3，optional provider）
-        if cfg.get('ocr', 'enable_secondary_engine', default=False):
+        logger.info(f"主引擎: {primary_engine}")
+        logger.info(f"備援引擎: {secondary_engine}")
+        logger.info(f"自動切換: {auto_switch} (門檻: {auto_threshold})")
+
+        # 9b. 第二引擎設定（支援新優先級系統）
+        if secondary_engine and secondary_engine != 'none':
             from src.ocr.providers import create_provider
-            _sec_name = cfg.get('ocr', 'secondary_engine_provider',
-                                default='paddleocr_v5_mobile')
-            _sec_threshold = cfg.get('ocr', 'secondary_engine_confidence_threshold',
-                                     default=0.85)
-            _sec_provider = create_provider(_sec_name, confidence_accept=_sec_threshold)
+            _sec_threshold = cfg.get('ocr', 'secondary_engine_confidence_threshold', default=0.85)
+            _sec_provider = create_provider(secondary_engine, confidence_accept=_sec_threshold)
             ocr_engine.set_secondary_engine(_sec_provider)
             ocr_engine.configure(
                 enable_secondary_engine=True,
-                secondary_for_handwriting=cfg.get(
-                    'ocr', 'secondary_engine_for_handwriting', default=True),
-                secondary_for_low_confidence=cfg.get(
-                    'ocr', 'secondary_engine_for_low_confidence', default=True),
+                secondary_for_handwriting=cfg.get('ocr', 'secondary_engine_for_handwriting', default=True),
+                secondary_for_low_confidence=cfg.get('ocr', 'secondary_engine_for_low_confidence', default=True),
                 secondary_confidence_threshold=_sec_threshold,
             )
             logger.info(
-                f"第二引擎已設定: {_sec_name} "
+                f"第二引擎已設定: {secondary_engine} "
                 f"(available={_sec_provider.is_available()})"
             )
 
@@ -132,6 +139,7 @@ def main() -> int:
             ocr_worker=ocr_worker,
             cfg=cfg,
             data_dir=data_dir,
+            tag_repo=tag_repo,
         )
 
         # 讓 settings dialog 可以即時更新 OCR engine 參數

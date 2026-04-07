@@ -434,7 +434,14 @@ class MainWindow(QMainWindow):
     def _setup_menu(self):
         mb = self.menuBar()
         file_menu = mb.addMenu("檔案")
-        file_menu.addAction("匯出（CSV）...").triggered.connect(self._export_csv)
+        
+        # 匯出子選單
+        export_menu = file_menu.addMenu("匯出...")
+        export_menu.addAction("TXT 純文字...").triggered.connect(lambda: self._export_with_dialog('txt'))
+        export_menu.addAction("CSV (Excel 相容)...").triggered.connect(lambda: self._export_with_dialog('csv'))
+        export_menu.addAction("JSON...").triggered.connect(lambda: self._export_with_dialog('json'))
+        export_menu.addAction("ZIP (文字+圖片)...").triggered.connect(lambda: self._export_with_dialog('zip'))
+        
         file_menu.addSeparator()
         file_menu.addAction("關閉").triggered.connect(self.close)
 
@@ -643,6 +650,7 @@ class MainWindow(QMainWindow):
             self.request_purge.emit()
 
     def _export_csv(self):
+        """舊版快捷方法（保留相容性）。"""
         if not self._current_items:
             QMessageBox.information(self, "匯出", "沒有可匯出的資料。")
             return
@@ -650,6 +658,106 @@ class MainWindow(QMainWindow):
         exp = Exporter(self._file_mgr.get_export_dir(), self._data_dir)
         path = exp.export_csv(self._current_items)
         QMessageBox.information(self, "匯出完成", f"已匯出至：\n{path}")
+
+    def _export_with_dialog(self, fmt: str):
+        """顯示匯出對話框，選擇格式與範圍。"""
+        if not self._current_items:
+            QMessageBox.information(self, "匯出", "目前沒有可匯出的資料。\n請先載入列表或使用搜尋。")
+            return
+
+        # 匯出對話框
+        from PySide6.QtWidgets import QDialog, QComboBox, QLabel, QSpinBox
+        from PySide6.QtWidgets import QDialogButtonBox
+        
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"匯出為 {fmt.upper()}")
+        dlg.setModal(True)
+        dlg.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dlg)
+        
+        # 格式選擇（已從外部指定，但顯示）
+        fmt_labels = {
+            'txt': 'TXT 純文字',
+            'csv': 'CSV (Excel 相容)',
+            'json': 'JSON',
+            'zip': 'ZIP (文字+圖片)',
+        }
+        layout.addWidget(QLabel(f"格式：{fmt_labels.get(fmt, fmt)}"))
+        
+        # 匯出範圍
+        range_label = QLabel("匯出範圍：")
+        layout.addWidget(range_label)
+        
+        range_combo = QComboBox()
+        range_combo.addItem("目前顯示的列表", "current")
+        range_combo.addItem("全部未刪除項目", "all")
+        layout.addWidget(range_combo)
+        
+        # 數量限制
+        limit_spin = QSpinBox()
+        limit_spin.setRange(0, 100000)
+        limit_spin.setValue(0)
+        limit_spin.setSpecialValueText("無限制")
+        limit_spin.setSuffix(" 筆" if limit_spin.value() > 0 else "")
+        layout.addWidget(QLabel("最大匯出數量（0=無限制）："))
+        layout.addWidget(limit_spin)
+        
+        # 按鈕
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+        
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # 決定匯出資料
+        range_mode = range_combo.currentData()
+        max_count = limit_spin.value()
+        
+        if range_mode == 'current':
+            items_to_export = list(self._current_items)
+        else:
+            # 查詢全部未刪除項目
+            items_to_export = self._repo.list_recent(
+                limit=max_count if max_count > 0 else 100000,
+                show_deleted=False,
+                show_archived=False
+            )
+        
+        if not items_to_export:
+            QMessageBox.information(self, "匯出", "沒有符合條件的資料。")
+            return
+
+        if max_count > 0 and len(items_to_export) > max_count:
+            items_to_export = items_to_export[:max_count]
+
+        # 執行匯出
+        from ..data.exporter import Exporter
+        exp = Exporter(self._file_mgr.get_export_dir(), self._data_dir)
+        
+        export_methods = {
+            'txt': exp.export_txt,
+            'csv': exp.export_csv,
+            'json': exp.export_json,
+            'zip': exp.export_zip,
+        }
+        
+        export_func = export_methods.get(fmt)
+        if not export_func:
+            QMessageBox.critical(self, "錯誤", f"不支援的格式: {fmt}")
+            return
+
+        path = export_func(items_to_export)
+        QMessageBox.information(
+            self,
+            "匯出完成",
+            f"已匯出 {len(items_to_export)} 筆資料至：\n{path}"
+        )
 
     def _refresh_current(self):
         """依目前搜尋欄與 sidebar 分類重新載入列表（保持使用者上下文）。"""

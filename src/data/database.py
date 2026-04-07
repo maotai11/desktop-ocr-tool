@@ -86,6 +86,19 @@ _CREATE_TABLES = [
            INSERT INTO items_fts(items_fts, rowid, text_content, edited_text, note_plaintext)
            VALUES ('delete', old.id, old.text_content, old.edited_text, old.note_plaintext);
        END""",
+    # --- v4: 效能索引 ---
+    """CREATE INDEX IF NOT EXISTS idx_items_deleted_pinned_created
+       ON items(is_deleted, is_pinned, created_at)""",
+    """CREATE INDEX IF NOT EXISTS idx_items_source_deleted_created
+       ON items(source_mode, is_deleted, created_at)""",
+    """CREATE INDEX IF NOT EXISTS idx_items_status_deleted
+       ON items(ocr_status, is_deleted)""",
+    """CREATE INDEX IF NOT EXISTS idx_items_content_hash
+       ON items(content_hash) WHERE content_hash IS NOT NULL""",
+    """CREATE INDEX IF NOT EXISTS idx_items_image_hash
+       ON items(image_hash) WHERE image_hash IS NOT NULL""",
+    """CREATE INDEX IF NOT EXISTS idx_item_tags_tag_id
+       ON item_tags(tag_id, item_id)""",
 ]
 
 
