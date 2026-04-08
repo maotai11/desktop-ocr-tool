@@ -6,7 +6,7 @@ import logging
 import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLineEdit, QScrollArea, QLabel, QMessageBox,
+    QLineEdit, QTextEdit, QScrollArea, QLabel, QMessageBox,
     QFrame, QMenu, QApplication, QProgressBar
 )
 from PySide6.QtCore import Qt, QPoint
@@ -169,8 +169,6 @@ class FloatingWidget(QWidget):
         vbox.addLayout(top_bar)
 
         # --- Search (多行輸入 + 換行按鈕) ---
-        from PySide6.QtWidgets import QTextEdit, QPushButton, QHBoxLayout
-        
         search_container = QWidget()
         search_layout = QHBoxLayout(search_container)
         search_layout.setContentsMargins(0, 0, 0, 0)

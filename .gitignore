@@ -1,37 +1,89 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyd
-.Python
+*$py.class
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
+*.spec.bak
 
-# Data & Logs (runtime directories at repo root only)
-/data/
-/logs/
-
-# PaddleOCR 模型（執行 scripts/download_paddleocr_models.bat 下載）
-models/paddleocr/
-
-# User settings (not config defaults)
-config/settings.json
-config/settings.json.bak
+# Virtual Environment
+.venv/
+venv/
+env/
 
 # IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Build output
-artifacts/
-*.exe
-*.spec
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-# Build logs
-build_*.log
+# Secrets & Credentials
+*.pem
+*.key
+*.p12
+*.jks
+secrets.json
+credentials.json
+service-account.json
+
+# Build artifacts (PyInstaller)
+artifacts/build/
+artifacts/dist/
+*.exe
+
+# Release artifacts (keep ZIP but exclude temp folders)
+artifacts/release-*/
+
+# Logs & Cache
+logs/
+*.log
+.cache/
+temp/
+tmp/
+
+# Test data
+test_data/
+*.test.*
+
+# Database (exclude user data)
+*.db
+*.sqlite3
+data/captures/
+data/thumbnails/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Package manager
+node_modules/
+package-lock.json
+
+# Jupyter
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# tox
+.tox/
