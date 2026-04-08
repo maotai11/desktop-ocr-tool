@@ -315,6 +315,7 @@ def main() -> int:
 
         ocr_worker.ocr_done.connect(on_ocr_done)
         ocr_worker.ocr_failed.connect(on_ocr_failed)
+        ocr_worker.ocr_progress.connect(widget.set_ocr_progress)
         ocr_worker.engine_progress.connect(widget.on_ocr_engine_progress)
         ocr_worker.engine_ready.connect(widget.on_ocr_engine_ready)
         ocr_worker.engine_failed.connect(widget.on_ocr_engine_failed)

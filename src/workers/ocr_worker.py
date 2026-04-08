@@ -17,6 +17,7 @@ class OcrWorker(QThread):
     engine_failed = Signal(str)
     ocr_done = Signal(int, object)    # item_id, OcrResultDTO
     ocr_failed = Signal(int, str)     # item_id, error
+    ocr_progress = Signal(int, str)   # pct, message (OCR 辨識進度)
 
     def __init__(self, engine: OcrEngine, parent=None):
         super().__init__(parent)
@@ -26,6 +27,10 @@ class OcrWorker(QThread):
 
     def start_loading(self):
         self._mode = 'load'
+        # 設定 OCR 辨識進度回呼
+        self._engine.set_progress_callback(
+            lambda pct, msg: self.ocr_progress.emit(pct, msg)
+        )
         self.start()
 
     def queue_ocr(self, item_id: int, image_path: str, mode: str = 'screen'):

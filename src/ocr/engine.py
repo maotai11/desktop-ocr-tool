@@ -46,6 +46,8 @@ class OcrEngine:
         self._secondary_for_handwriting: bool = True
         self._secondary_for_low_confidence: bool = True
         self._secondary_confidence_threshold: float = 0.85
+        # 進度條回呼
+        self._progress_callback = None
 
     def load(self, progress_cb=None):
         """載入 RapidOCR 引擎。progress_cb(pct: int, msg: str) 可選。"""
@@ -127,20 +129,30 @@ class OcrEngine:
                     'detail': [], 'elapsed_ms': 0, 'error': 'OCR 引擎未就緒'}
         t0 = time.time()
         try:
-            # Step 1: upscale 小圖
+            # Step 1: upscale 小圖 (10%)
+            if self._progress_callback:
+                self._progress_callback(10, "圖片處理中...")
             image = upscale_if_small(image, self._max_short_side)
 
-            # Step 2: 第一次推論（raw BGR）
+            # Step 2: 第一次推論（raw BGR） (50%)
+            if self._progress_callback:
+                self._progress_callback(30, "文字辨識中...")
             results = self._do_ocr_array(image)
 
-            # Step 3: 判斷是否需要 second pass
+            # Step 3: 判斷是否需要 second pass (70%)
             needs_second = self._enable_second_pass and self._should_retry(results)
             if needs_second:
+                if self._progress_callback:
+                    self._progress_callback(60, "二次辨識中...")
                 binarize = self._enable_handwriting or (mode == 'handwriting')
                 enhanced = enhance_for_ocr(image, binarize=binarize)
                 results2 = self._do_ocr_array(enhanced)
                 results = self._merge_results(results, results2)
                 logger.debug("OCR second-pass 觸發，合併後 %d 筆", len(results))
+
+            # Step 4: 合併結果 (90%)
+            if self._progress_callback:
+                self._progress_callback(80, "合併結果...")
 
             elapsed_ms = int((time.time() - t0) * 1000)
             primary_result = self._process_results(results, elapsed_ms)
