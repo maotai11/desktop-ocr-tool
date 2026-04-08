@@ -99,11 +99,11 @@ def main() -> int:
         auto_switch = cfg.get('ocr', 'auto_switch_secondary', default=True)
         auto_threshold = cfg.get('ocr', 'auto_switch_threshold', default=0.75)
 
-        # 建立主引擎
+        # 建立主引擎（優化繁體中文/小字/複雜結構辨識）
         ocr_engine = OcrEngine(
             confidence_accept=cfg.get('ocr', 'confidence_accept', default=0.85),
             confidence_review=cfg.get('ocr', 'confidence_review', default=0.60),
-            max_image_short_side=cfg.get('ocr', 'max_image_short_side', default=960),
+            max_image_short_side=cfg.get('ocr', 'max_image_short_side', default=1280),  # 提高解析度
             enable_second_pass=cfg.get('ocr', 'enable_second_pass', default=True),
             enable_handwriting_mode=cfg.get('ocr', 'enable_handwriting_mode', default=False),
         )

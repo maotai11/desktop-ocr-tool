@@ -129,6 +129,26 @@ class FloatingWidget(QWidget):
             f"font-size: 10px; color: {_TEXT_SEC}; background: transparent;"
         )
 
+        # OCR 進度條（隱藏，執行 OCR 時顯示）
+        from PySide6.QtWidgets import QProgressBar
+        self._ocr_progress_bar = QProgressBar()
+        self._ocr_progress_bar.setFixedHeight(4)
+        self._ocr_progress_bar.setRange(0, 100)
+        self._ocr_progress_bar.setValue(0)
+        self._ocr_progress_bar.setTextVisible(False)
+        self._ocr_progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {_BG_RAISE};
+                border: none;
+                border-radius: 2px;
+            }}
+            QProgressBar::chunk {{
+                background: {_ACCENT};
+                border-radius: 2px;
+            }}
+        """)
+        self._ocr_progress_bar.hide()
+
         self._btn_settings = QPushButton("⚙")
         self._btn_settings.setFixedSize(28, 28)
         self._btn_settings.setToolTip("設定")
@@ -145,6 +165,7 @@ class FloatingWidget(QWidget):
         top_bar.addWidget(self._btn_screenshot)
         top_bar.addStretch()
         top_bar.addWidget(self._ocr_status_lbl)
+        top_bar.addWidget(self._ocr_progress_bar)
         top_bar.addWidget(self._btn_settings)
         vbox.addLayout(top_bar)
 
@@ -283,6 +304,13 @@ class FloatingWidget(QWidget):
 
     # --- Drag to move ---
     def mousePressEvent(self, event):
+        # 只在點擊空白區域（非按鈕）時才啟動拖曳
+        # 檢查點擊的是否是按鈕或其他互動元件
+        child = self.childAt(event.position().toPoint())
+        if child is not None and isinstance(child, (QPushButton, QLineEdit, QTextEdit, QComboBox)):
+            # 點擊到互動元件，不啟動拖曳，讓子元件處理事件
+            super().mousePressEvent(event)
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
@@ -594,9 +622,20 @@ class FloatingWidget(QWidget):
     def set_ocr_status(self, text: str):
         self._ocr_status_lbl.setText(text)
 
+    def set_ocr_progress(self, pct: int):
+        """更新 OCR 進度條。"""
+        if pct > 0:
+            self._ocr_progress_bar.show()
+            self._ocr_progress_bar.setValue(pct)
+        else:
+            self._ocr_progress_bar.hide()
+
     # --- OCR engine status ---
     def on_ocr_engine_progress(self, pct: int, msg: str):
         self._ocr_status_lbl.setText(f"OCR {pct}%")
+        # 顯示進度條
+        self._ocr_progress_bar.show()
+        self._ocr_progress_bar.setValue(pct)
 
     def on_ocr_engine_ready(self):
         self._ocr_ready = True
@@ -605,6 +644,8 @@ class FloatingWidget(QWidget):
         self._ocr_status_lbl.setStyleSheet(
             f"font-size: 10px; color: {_SUCCESS}; background: transparent;"
         )
+        # 隱藏進度條
+        self._ocr_progress_bar.hide()
         logger.info("OCR 引擎就緒，按鈕已啟用")
 
     def on_ocr_engine_failed(self, error: str):
@@ -614,6 +655,8 @@ class FloatingWidget(QWidget):
         self._ocr_status_lbl.setStyleSheet(
             f"font-size: 10px; color: {_ERROR}; background: transparent;"
         )
+        # 隱藏進度條
+        self._ocr_progress_bar.hide()
         QMessageBox.warning(
             self, "OCR 引擎載入失敗",
             f"OCR 引擎載入失敗，截圖功能仍可用。\n\n錯誤：{error}"
