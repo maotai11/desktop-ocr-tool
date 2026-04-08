@@ -528,14 +528,17 @@ class SettingsDialog(QDialog):
         )
 
         logger.info("設定已儲存")
-        self.accept()  # 關閉 dialog 後再顯示提示，避免 dialog 關閉前彈出 QMessageBox 造成焦點閃動
 
+        # 先顯示提示（在 dialog 關閉前），避免焦點閃動
         if ui_changed:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(
-                self.parent(), "設定已儲存",
+                self, "設定已儲存",
                 "佈景主題與字型大小的變更將在下次重新啟動後生效。"
             )
+
+        # 最後才關閉 dialog
+        self.accept()
 
     def _create_tag_management_tab(self) -> QWidget:
         """建立標籤管理分頁。"""

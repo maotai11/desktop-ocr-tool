@@ -108,11 +108,13 @@ def main():
         '--hidden-import', 'mss',
         '--hidden-import', 'mss.windows',
         '--collect-all', 'zhconv',
-        # PaddleOCR v5 引擎（選配，約 +200MB）
+        # PaddleOCR v5 引擎（官方推薦打包方式）
+        # 參考: https://github.com/paddlepaddle/paddleocr/blob/main/docs/version3.x/deployment/packaging.en.md
+        '--collect-data', 'paddlex',
+        '--collect-binaries', 'paddle',
         '--hidden-import', 'paddleocr',
         '--hidden-import', 'paddle',
         '--hidden-import', 'paddlex',
-        '--collect-all', 'paddleocr',
         # 明確排除不需要的大型套件
         '--exclude-module', 'torch',
         '--exclude-module', 'torchvision',

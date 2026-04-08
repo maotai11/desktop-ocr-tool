@@ -269,6 +269,7 @@ def main() -> int:
         def _cleanup_ocr_image(item_id: int):
             """無論 OCR 成功或失敗，都清理對應暫存圖與 pending 狀態，
             並同步清空 DB 中已失效的 raw_image_path。
+            注意：必須在 OCR 真正完成後才刪除，避免競爭條件。
             """
             if item_id in _ocr_image_paths:
                 path = _ocr_image_paths.pop(item_id)
@@ -284,6 +285,7 @@ def main() -> int:
                                   lambda iid=item_id: db_worker.clear_image_paths(iid))
 
         def on_ocr_done(item_id: int, result):
+            # 先更新 DB，再清理圖片（確保 OCR 結果已持久化）
             QTimer.singleShot(0, db_worker, lambda: db_worker.update_ocr(item_id, result))
             if result.status == 'failed':
                 QTimer.singleShot(0, widget, lambda: widget.set_ocr_status("OCR 失敗"))
@@ -298,7 +300,9 @@ def main() -> int:
         def on_ocr_failed(item_id: int, err: str):
             QTimer.singleShot(0, widget,
                               lambda: widget.set_ocr_status(f"OCR #{item_id} 失敗"))
-            # exception 路徑同樣清理暫存圖，避免殘留
+            # 記錄失敗日誌
+            logger.error(f"OCR 工作失敗 (item #{item_id}): {err}")
+            # 只有確認 OCR 真正失敗後才清理圖片（避免競爭條件）
             _cleanup_ocr_image(item_id)
 
         ocr_worker.ocr_done.connect(on_ocr_done)
