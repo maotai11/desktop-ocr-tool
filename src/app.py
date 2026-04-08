@@ -85,9 +85,17 @@ def main() -> int:
         from src.ocr.engine import OcrEngine
         from src.workers.ocr_worker import OcrWorker
 
-        # 取得引擎設定
+        # 取得引擎設定（相容舊版 settings.json）
         primary_engine = cfg.get('ocr', 'primary_engine', default='rapidocr')
-        secondary_engine = cfg.get('ocr', 'secondary_engine', default='none')
+        # 相容邏輯：如果沒有 secondary_engine 欄位，從 enable_secondary_engine 推斷
+        secondary_engine = cfg.get('ocr', 'secondary_engine', default=None)
+        if secondary_engine is None:
+            # 舊版設定：從 enable_secondary_engine 推斷
+            if cfg.get('ocr', 'enable_secondary_engine', default=False):
+                secondary_engine = cfg.get('ocr', 'secondary_engine_provider', default='paddleocr_v5')
+            else:
+                secondary_engine = 'none'
+
         auto_switch = cfg.get('ocr', 'auto_switch_secondary', default=True)
         auto_threshold = cfg.get('ocr', 'auto_switch_threshold', default=0.75)
 

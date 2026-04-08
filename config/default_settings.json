@@ -30,7 +30,7 @@
     "secondary_engine": "paddleocr_v5",
     "auto_switch_secondary": true,
     "auto_switch_threshold": 0.75,
-    "enable_secondary_engine": false,
+    "enable_secondary_engine": true,
     "secondary_engine_provider": "paddleocr_v5",
     "secondary_engine_for_handwriting": true,
     "secondary_engine_for_low_confidence": true,

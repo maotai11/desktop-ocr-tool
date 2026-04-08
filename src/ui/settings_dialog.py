@@ -319,9 +319,9 @@ class SettingsDialog(QDialog):
             for p in list_known_providers():
                 self._sec_provider.addItem(p, userData=p)
         except Exception:
-            self._sec_provider.addItem('paddleocr_v5_mobile', userData='paddleocr_v5_mobile')
+            self._sec_provider.addItem('paddleocr_v5', userData='paddleocr_v5')
         saved_provider = self._cfg.get(
-            'ocr', 'secondary_engine_provider', default='paddleocr_v5_mobile'
+            'ocr', 'secondary_engine_provider', default='paddleocr_v5'
         )
         idx = self._sec_provider.findData(saved_provider)
         if idx >= 0:
