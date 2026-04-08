@@ -7,7 +7,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QScrollArea, QLabel, QMessageBox,
-    QFrame, QMenu, QApplication
+    QFrame, QMenu, QApplication, QProgressBar
 )
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QCursor
@@ -130,7 +130,6 @@ class FloatingWidget(QWidget):
         )
 
         # OCR 進度條（隱藏，執行 OCR 時顯示）
-        from PySide6.QtWidgets import QProgressBar
         self._ocr_progress_bar = QProgressBar()
         self._ocr_progress_bar.setFixedHeight(4)
         self._ocr_progress_bar.setRange(0, 100)
