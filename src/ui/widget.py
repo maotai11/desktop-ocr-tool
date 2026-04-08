@@ -169,27 +169,48 @@ class FloatingWidget(QWidget):
         top_bar.addWidget(self._btn_settings)
         vbox.addLayout(top_bar)
 
-        # --- Search ---
-        self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("搜尋...")
-        self._search_edit.textChanged.connect(self._on_search)
+        # --- Search (多行輸入 + 換行按鈕) ---
+        from PySide6.QtWidgets import QTextEdit, QPushButton, QHBoxLayout
+        
+        search_container = QWidget()
+        search_layout = QHBoxLayout(search_container)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(4)
+
+        self._search_edit = QTextEdit()
+        self._search_edit.setPlaceholderText("搜尋...（Enter 換行，Ctrl+Enter 搜尋）")
+        self._search_edit.setFixedHeight(52)
+        self._search_edit.setAcceptRichText(False)
+        self._search_edit.textChanged.connect(self._on_search_text_changed)
         self._search_edit.setStyleSheet(f"""
-            QLineEdit {{
+            QTextEdit {{
                 background: {_BG_RAISE};
                 border: 1px solid {_BORDER};
                 border-radius: 5px;
-                padding: 4px 10px;
+                padding: 4px 8px;
                 font-size: 12px;
                 color: {_TEXT_PRI};
             }}
-            QLineEdit:focus {{
+            QTextEdit:focus {{
                 border: 1px solid {_ACCENT};
             }}
-            QLineEdit::placeholder {{
-                color: {_TEXT_SEC};
-            }}
         """)
-        vbox.addWidget(self._search_edit)
+        search_layout.addWidget(self._search_edit)
+
+        self._btn_newline = QPushButton("↵")
+        self._btn_newline.setFixedSize(28, 28)
+        self._btn_newline.setToolTip("插入換行")
+        self._btn_newline.clicked.connect(self._insert_newline)
+        self._btn_newline.setStyleSheet(f"""
+            QPushButton {{
+                background: {_TEAL}; color: {_ACCENT_T};
+                border-radius: 5px; border: none;
+                font-size: 14px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background: {_TEAL_H}; }}
+        """)
+        search_layout.addWidget(self._btn_newline)
+        vbox.addWidget(search_container)
 
         # --- Filter tabs ---
         filter_bar = QHBoxLayout()
@@ -219,6 +240,42 @@ class FloatingWidget(QWidget):
             self._filter_buttons[key] = btn
             filter_bar.addWidget(btn)
         filter_bar.addStretch()
+
+        # 批量選取按鈕
+        self._btn_batch_select = QPushButton("☐ 多選")
+        self._btn_batch_select.setCheckable(True)
+        self._btn_batch_select.setFixedHeight(22)
+        self._btn_batch_select.setToolTip("多選模式")
+        self._btn_batch_select.setStyleSheet(f"""
+            QPushButton {{
+                background: {_BG_RAISE}; border-radius: 4px;
+                padding: 2px 8px; font-size: 11px; border: none;
+                color: {_TEXT_SEC};
+            }}
+            QPushButton:checked {{
+                background: {_ACCENT_18};
+                color: {_ACCENT};
+                border: 1px solid {_ACCENT_35};
+            }}
+        """)
+        self._btn_batch_select.clicked.connect(self._toggle_batch_mode)
+        filter_bar.addWidget(self._btn_batch_select)
+
+        self._btn_batch_action = QPushButton("操作 (0)")
+        self._btn_batch_action.setFixedHeight(22)
+        self._btn_batch_action.hide()
+        self._btn_batch_action.setStyleSheet(f"""
+            QPushButton {{
+                background: {_TEAL}; color: {_ACCENT_T}; border-radius: 4px;
+                padding: 2px 8px; font-size: 11px; border: none;
+                font-weight: 600;
+            }}
+        """)
+        self._btn_batch_action.clicked.connect(self._show_batch_menu)
+        filter_bar.addWidget(self._btn_batch_action)
+
+        self._batch_mode = False
+        self._selected_items = set()
         self._filter_buttons['all'].setChecked(True)
         self._current_filter = 'all'
         vbox.addLayout(filter_bar)
@@ -354,8 +411,95 @@ class FloatingWidget(QWidget):
             btn.setChecked(k == key)
         self.refresh_list()
 
+    def _on_search_text_changed(self):
+        if hasattr(self, '_search_timer'):
+            self._search_timer.stop()
+        else:
+            from PySide6.QtCore import QTimer
+            self._search_timer = QTimer(self)
+            self._search_timer.setSingleShot(True)
+            self._search_timer.timeout.connect(self._do_search)
+        self._search_timer.start(300)
+
+    def _do_search(self):
+        text = self._search_edit.toPlainText().strip()
+        self.refresh_list(search_text=text if len(text) >= 2 else None)
+
+    def _insert_newline(self):
+        cursor = self._search_edit.textCursor()
+        cursor.insertText("\n")
+        self._search_edit.setFocus()
+
     def _on_search(self, text: str):
         self.refresh_list(search_text=text)
+
+    # --- Batch operations ---
+    def _toggle_batch_mode(self):
+        self._batch_mode = self._btn_batch_select.isChecked()
+        self._selected_items.clear()
+        self._btn_batch_select.setText("☑ 多選" if self._batch_mode else "☐ 多選")
+        self._btn_batch_action.setVisible(self._batch_mode)
+        self._update_batch_button_text()
+        self.refresh_list()
+
+    def _update_batch_button_text(self):
+        count = len(self._selected_items)
+        self._btn_batch_action.setText(f"操作 ({count})" if count > 0 else "操作 (0)")
+        self._btn_batch_action.setEnabled(count > 0)
+
+    def _show_batch_menu(self):
+        if not self._selected_items:
+            return
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.addAction(f"已選取 {len(self._selected_items)} 個項目").setEnabled(False)
+        menu.addSeparator()
+        menu.addAction("📋 批量複製").triggered.connect(self._batch_copy)
+        menu.addAction("🗑️ 批量刪除").triggered.connect(self._batch_delete)
+        menu.addSeparator()
+        menu.addAction("全選").triggered.connect(self._select_all)
+        menu.addAction("取消全選").triggered.connect(self._deselect_all)
+        menu.exec(self._btn_batch_action.mapToGlobal(self._btn_batch_action.rect().bottomLeft()))
+
+    def _batch_copy(self):
+        texts = []
+        for item_id in self._selected_items:
+            item = self._item_repo.get_by_id(item_id)
+            if item:
+                text = item.get_effective_text()
+                if text:
+                    texts.append(text)
+        if texts:
+            from ..clipboard.writer import write_text_to_clipboard
+            write_text_to_clipboard("\n\n".join(texts))
+        self._selected_items.clear()
+        self._update_batch_button_text()
+        self.refresh_list()
+
+    def _batch_delete(self):
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "確認批量刪除",
+            f"確定要刪除 {len(self._selected_items)} 個項目嗎？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            for item_id in list(self._selected_items):
+                self._item_repo.soft_delete(item_id)
+            self._selected_items.clear()
+            self._update_batch_button_text()
+            self.refresh_list()
+
+    def _select_all(self):
+        for item in self._items:
+            self._selected_items.add(item.id)
+        self._update_batch_button_text()
+        self.refresh_list()
+
+    def _deselect_all(self):
+        self._selected_items.clear()
+        self._update_batch_button_text()
+        self.refresh_list()
 
     # --- List population ---
     def refresh_list(self, search_text: str = None):
@@ -367,7 +511,7 @@ class FloatingWidget(QWidget):
                 item.widget().deleteLater()
 
         if search_text is None:
-            search_text = self._search_edit.text()
+            search_text = self._search_edit.toPlainText().strip()
 
         max_items = self._cfg.get('ui', 'widget_max_items', default=20)
 
