@@ -7,9 +7,9 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QTextEdit, QScrollArea, QLabel, QMessageBox,
-    QFrame, QMenu, QApplication, QProgressBar
+    QFrame, QMenu, QApplication, QProgressBar, QComboBox
 )
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QEvent
 from PySide6.QtGui import QCursor
 
 from .theme import (
@@ -42,6 +42,8 @@ class FloatingWidget(QWidget):
         self._capture_image_callback = None
         self._clip_watcher = None
         self._selected_item_id = None   # track selection for efficient re-styling
+        self._drag_region_height = 44
+        self._drag_host = None
 
         self._setup_ui()
         self._position_widget()
@@ -58,6 +60,8 @@ class FloatingWidget(QWidget):
         self.resize(320, 480)
 
         container = QWidget(self)
+        self._drag_host = container
+        container.installEventFilter(self)
         container.setObjectName("floatContainer")
         container.setStyleSheet(f"""
             QWidget#floatContainer {{
@@ -125,6 +129,7 @@ class FloatingWidget(QWidget):
         """)
 
         self._ocr_status_lbl = QLabel("OCR 載入中（約 5-10 秒）")
+        self._ocr_status_lbl.installEventFilter(self)
         self._ocr_status_lbl.setStyleSheet(
             f"font-size: 10px; color: {_TEXT_SEC}; background: transparent;"
         )
@@ -357,27 +362,48 @@ class FloatingWidget(QWidget):
         self.move(x, y)
 
     # --- Drag to move ---
-    def mousePressEvent(self, event):
-        # 只在點擊空白區域（非按鈕）時才啟動拖曳
-        # 檢查點擊的是否是按鈕或其他互動元件
-        child = self.childAt(event.position().toPoint())
-        if child is not None and isinstance(child, (QPushButton, QLineEdit, QTextEdit, QComboBox)):
-            # 點擊到互動元件，不啟動拖曳，讓子元件處理事件
-            super().mousePressEvent(event)
-            return
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+    def _is_interactive_widget(self, widget) -> bool:
+        return isinstance(
+            widget,
+            (QPushButton, QLineEdit, QTextEdit, QComboBox, QScrollArea, QProgressBar),
+        )
 
-    def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton and self._drag_pos:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-
-    def mouseReleaseEvent(self, event):
-        self._drag_pos = None
+    def _persist_widget_position(self):
         if self._cfg.get('ui', 'widget_position', default='remember') == 'remember':
             pos = self.pos()
             self._cfg.set('ui', 'widget_saved_x', pos.x())
             self._cfg.set('ui', 'widget_saved_y', pos.y())
+
+    def eventFilter(self, watched, event):
+        drag_targets = tuple(
+            target
+            for target in (self._drag_host, getattr(self, "_ocr_status_lbl", None))
+            if target is not None
+        )
+        if watched in drag_targets:
+            if event.type() == QEvent.Type.MouseButtonPress:
+                local_pos = event.position().toPoint()
+                child = watched.childAt(local_pos)
+                if (
+                    event.button() == Qt.MouseButton.LeftButton
+                    and local_pos.y() <= self._drag_region_height
+                    and not self._is_interactive_widget(child)
+                ):
+                    self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                    event.accept()
+                    return True
+            elif event.type() == QEvent.Type.MouseMove:
+                if self._drag_pos and event.buttons() & Qt.MouseButton.LeftButton:
+                    self.move(event.globalPosition().toPoint() - self._drag_pos)
+                    event.accept()
+                    return True
+            elif event.type() == QEvent.Type.MouseButtonRelease:
+                if self._drag_pos:
+                    self._drag_pos = None
+                    self._persist_widget_position()
+                    event.accept()
+                    return True
+        return super().eventFilter(watched, event)
 
     # --- Single-instance bring-to-front ---
     def nativeEvent(self, eventType, message):
@@ -498,9 +524,66 @@ class FloatingWidget(QWidget):
         self._update_batch_button_text()
         self.refresh_list()
 
+    def _handle_card_click(self, item_id: int):
+        if self._batch_mode:
+            self._toggle_item_selection(item_id)
+            return
+
+        click_action = self._cfg.get('ui', 'widget_click_action', default='select')
+        if click_action == 'copy':
+            self._on_item_copy(item_id)
+        else:
+            self._on_item_select(item_id)
+
+    def _handle_card_double_click(self, item_id: int):
+        if self._batch_mode:
+            return
+
+        click_action = self._cfg.get('ui', 'widget_click_action', default='select')
+        if click_action == 'copy':
+            self._on_item_select(item_id)
+        else:
+            self._on_item_copy(item_id)
+
+    def _toggle_item_selection(self, item_id: int):
+        if item_id in self._selected_items:
+            self._selected_items.remove(item_id)
+        else:
+            self._selected_items.add(item_id)
+        self._update_batch_button_text()
+        self._restyle_cards()
+
+    def _card_style(self, idx: int, item_id: int) -> str:
+        if self._batch_mode and item_id in self._selected_items:
+            return (
+                f"background: {_ACCENT_18}; border-radius: 4px;"
+                f" border: 1px solid {_ACCENT_35};"
+            )
+        if not self._batch_mode and self._selected_item_id == item_id:
+            return (
+                f"background: {_ACCENT_10}; border-radius: 4px;"
+                f" border: 1px solid {_ACCENT_35};"
+            )
+        bg = _BG_RAISE if idx % 2 == 0 else _BG
+        return (
+            f"background: {bg}; border-radius: 4px;"
+            f" border: 1px solid transparent;"
+        )
+
+    def _restyle_cards(self):
+        card_idx = 0
+        for i in range(self._list_layout.count()):
+            widget = self._list_layout.itemAt(i).widget()
+            item_id = None if widget is None else widget.property('item_id')
+            if widget is None or item_id is None:
+                continue
+            widget.setStyleSheet(self._card_style(card_idx, item_id))
+            card_idx += 1
+
     # --- List population ---
     def refresh_list(self, search_text: str = None):
-        self._selected_item_id = None   # clear selection on refresh
+        if self._batch_mode:
+            self._selected_item_id = None
         # Clear items (keep stretch at end)
         while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
@@ -540,20 +623,10 @@ class FloatingWidget(QWidget):
             for idx, item in enumerate(items):
                 card = ItemCard(item, self._data_dir, parent=self._list_widget)
                 card.setProperty('item_id', item.id)
+                card.setStyleSheet(self._card_style(idx, item.id))
 
-                bg = _BG_RAISE if idx % 2 == 0 else _BG
-                card.setStyleSheet(
-                    f"background: {bg}; border-radius: 4px;"
-                    f" border: 1px solid transparent;"
-                )
-
-                click_action = self._cfg.get('ui', 'widget_click_action', default='select')
-                if click_action == 'copy':
-                    card.clicked.connect(self._on_item_copy)
-                    card.double_clicked.connect(self._on_item_select)
-                else:
-                    card.clicked.connect(self._on_item_select)
-                    card.double_clicked.connect(self._on_item_copy)
+                card.clicked.connect(self._handle_card_click)
+                card.double_clicked.connect(self._handle_card_double_click)
 
                 card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
                 card.customContextMenuRequested.connect(
@@ -564,28 +637,8 @@ class FloatingWidget(QWidget):
             logger.error(f"refresh_list 失敗: {e}", exc_info=True)
 
     def _on_item_select(self, item_id: int):
-        prev_id = self._selected_item_id
         self._selected_item_id = item_id
-
-        # Only re-style the two affected cards (skip QSS re-parse for unchanged cards)
-        card_idx = 0
-        for i in range(self._list_layout.count()):
-            w = self._list_layout.itemAt(i).widget()
-            if w is None:
-                continue
-            wid = w.property('item_id')
-            if wid == item_id:
-                w.setStyleSheet(
-                    f"background: {_ACCENT_10}; border-radius: 4px;"
-                    f" border: 1px solid {_ACCENT_35};"
-                )
-            elif wid == prev_id:
-                bg = _BG_RAISE if card_idx % 2 == 0 else _BG
-                w.setStyleSheet(
-                    f"background: {bg}; border-radius: 4px;"
-                    f" border: 1px solid transparent;"
-                )
-            card_idx += 1
+        self._restyle_cards()
 
     def _on_item_copy(self, item_id: int):
         item = self._item_repo.get_by_id(item_id)

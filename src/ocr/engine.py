@@ -77,6 +77,10 @@ class OcrEngine:
     def is_ready(self) -> bool:
         return self._ready
 
+    def set_progress_callback(self, callback) -> None:
+        """Expose OCR progress updates through the wrapper, not the vendor SDK."""
+        self._progress_callback = callback
+
     def set_secondary_engine(self, engine: SecondaryEngineBase) -> None:
         """注入第二引擎實作（Patch H1）。傳入 NullSecondaryEngine() 可停用。"""
         self._secondary = engine

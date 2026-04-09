@@ -1,208 +1,294 @@
 # -*- coding: utf-8 -*-
 """
-打包腳本：使用 PyInstaller 打包為單一 EXE（離線可用）
-執行：python scripts/build.py
+Build the Windows release bundle with PyInstaller.
 
-注意事項：
-- ONNX 模型（RapidOCR PP-OCRv4）會一併打包進 EXE
-- 打包後 EXE 可在乾淨 Windows 離線機直接執行，不需要 Python
+Usage:
+    python scripts/build.py
 """
-import sys
-import os
-import subprocess
-import json
 import hashlib
+import json
+import os
 import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 
-def sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, 'rb') as f:
-        for chunk in iter(lambda: f.read(65536), b''):
-            h.update(chunk)
-    return h.hexdigest()
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.core.version import (  # noqa: E402
+    APP_DISPLAY_NAME,
+    APP_NAME,
+    APP_VERSION,
+    release_bundle_name,
+    release_dir_name,
+    versioned_exe_name,
+)
 
 
-def main():
-    if sys.version_info < (3, 11):
-        print(f"錯誤：需要 Python 3.11+，目前為 {sys.version}")
-        sys.exit(1)
-    print(f"Python {sys.version_info.major}.{sys.version_info.minor} OK")
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-    # --- 驗證 RapidOCR ONNX 模型 ---
-    lock_path = os.path.join(root, 'models', 'models.lock.json')
-    if os.path.exists(lock_path):
-        with open(lock_path, encoding='utf-8') as f:
-            lock = json.load(f)
-        print("驗證 RapidOCR 模型 SHA256...")
-        for key, info in lock.items():
-            mp = os.path.join(root, info['path'])
-            if not os.path.exists(mp):
-                print(f"錯誤：模型不存在: {info['path']}")
-                sys.exit(1)
-            if info.get('sha256'):
-                actual = sha256_file(mp)
-                if actual != info['sha256']:
-                    print(f"錯誤：模型 SHA256 不符: {info['path']}")
-                    sys.exit(1)
-            print(f"  OK {info['path']}")
-    else:
-        print("警告：models.lock.json 不存在，跳過模型驗證")
+def verify_models(root: Path) -> None:
+    lock_path = root / "models" / "models.lock.json"
+    if not lock_path.exists():
+        print("warning: models.lock.json not found; skipping model hash verification")
+        return
 
-    # --- 確認 EXE 未被占用（避免 BeginUpdateResourceW error 32）---
-    out_exe = os.path.join(root, 'artifacts', 'dist', 'DesktopOCRTool.exe')
-    if os.path.exists(out_exe):
-        try:
-            os.rename(out_exe, out_exe + '.chk')
-            os.rename(out_exe + '.chk', out_exe)
-        except OSError:
-            print(f"錯誤：{out_exe} 正在被占用（程式仍在執行？），請先關閉再打包。")
-            sys.exit(1)
+    with lock_path.open(encoding="utf-8") as handle:
+        lock = json.load(handle)
 
-    # --- 建立輸出目錄 ---
+    print("verifying model hashes...")
+    for info in lock.values():
+        model_path = root / info["path"]
+        if not model_path.exists():
+            raise FileNotFoundError(f"missing model file: {info['path']}")
+        expected = info.get("sha256")
+        if expected and sha256_file(model_path) != expected:
+            raise RuntimeError(f"sha256 mismatch: {info['path']}")
+        print(f"  ok {info['path']}")
+
+
+def assert_output_writable(path: Path) -> None:
+    if not path.exists():
+        return
+    probe = path.with_suffix(path.suffix + ".chk")
+    try:
+        path.rename(probe)
+        probe.rename(path)
+    except OSError as exc:
+        raise RuntimeError(
+            f"{path} is locked; close the running app before building"
+        ) from exc
+
+
+def resolve_release_paths(root: Path) -> dict[str, Path]:
+    artifacts_dir = root / "artifacts"
+    dist_dir = artifacts_dir / "dist"
+    build_dir = artifacts_dir / "build"
+    release_dir = artifacts_dir / release_dir_name()
+    zip_path = artifacts_dir / f"{release_bundle_name()}.zip"
+    out_exe = dist_dir / f"{APP_NAME}.exe"
+    release_exe = release_dir / versioned_exe_name()
+    return {
+        "artifacts_dir": artifacts_dir,
+        "dist_dir": dist_dir,
+        "build_dir": build_dir,
+        "release_dir": release_dir,
+        "zip_path": zip_path,
+        "out_exe": out_exe,
+        "release_exe": release_exe,
+    }
+
+
+def reset_output_dirs(paths: dict[str, Path]) -> None:
+    paths["artifacts_dir"].mkdir(exist_ok=True)
+
+    for key in ("dist_dir", "build_dir", "release_dir"):
+        directory = paths[key]
+        if directory.exists():
+            shutil.rmtree(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+    if paths["zip_path"].exists():
+        paths["zip_path"].unlink()
+
+
+def build_with_pyinstaller(root: Path, paths: dict[str, Path]) -> None:
     sep = os.pathsep
-    dist_dir = os.path.join(root, 'artifacts', 'dist')
-    build_dir = os.path.join(root, 'artifacts', 'build')
-    os.makedirs(dist_dir, exist_ok=True)
-    os.makedirs(build_dir, exist_ok=True)
-
-    # --- 組裝 PyInstaller 指令 ---
     cmd = [
-        sys.executable, '-m', 'PyInstaller',
-        '--onefile',
-        '--windowed',
-        '--name', 'DesktopOCRTool',
-        # 打包進 EXE 的資料
-        # RapidOCR 的 ONNX 模型由 --collect-data rapidocr_onnxruntime 收集（套件自帶）
-        # models/ 與 dictionaries/ 目錄已無執行期使用，不打包（節省 ~190MB）
-        '--add-data', f'{os.path.join(root, "config", "default_settings.json")}{sep}config',
-        # 路徑（確保 import 解析正確）
-        '--paths', root,
-        # Hidden imports — 核心
-        '--hidden-import', 'src',
-        '--hidden-import', 'src.app',
-        '--hidden-import', 'src.core',
-        '--hidden-import', 'src.data',
-        '--hidden-import', 'src.ui',
-        '--hidden-import', 'src.workers',
-        '--hidden-import', 'src.ocr',
-        '--hidden-import', 'src.capture',
-        '--hidden-import', 'src.clipboard',
-        # NumPy 2.x 完整收集（numpy._core C extension 必須用 collect-all）
-        '--collect-all', 'numpy',
-        # RapidOCR — config.yaml 等資料檔
-        '--collect-data', 'rapidocr_onnxruntime',
-        '--hidden-import', 'rapidocr_onnxruntime',
-        '--hidden-import', 'onnxruntime',
-        '--hidden-import', 'onnxruntime.capi',
-        '--hidden-import', 'onnxruntime.capi._pybind_state',
-        # collect-data 只收 YAML/JSON 設定檔，不遞迴拉 submodules（避免意外帶入 torch backend）
-        '--collect-data', 'onnxruntime',
-        '--collect-all', 'cv2',
-        '--hidden-import', 'PIL',
-        '--hidden-import', 'PIL.Image',
-        '--hidden-import', 'PIL.ImageOps',
-        '--hidden-import', 'PIL.ImageFilter',
-        '--hidden-import', 'mss',
-        '--hidden-import', 'mss.windows',
-        '--collect-all', 'zhconv',
-        # PaddleOCR v5 引擎（官方推薦打包方式）
-        # 參考: https://github.com/paddlepaddle/paddleocr/blob/main/docs/version3.x/deployment/packaging.en.md
-        '--collect-data', 'paddlex',
-        '--collect-binaries', 'paddle',
-        '--hidden-import', 'paddleocr',
-        '--hidden-import', 'paddle',
-        '--hidden-import', 'paddlex',
-        # 明確排除不需要的大型套件
-        '--exclude-module', 'torch',
-        '--exclude-module', 'torchvision',
-        '--exclude-module', 'torchaudio',
-        '--exclude-module', 'cnocr',
-        '--exclude-module', 'cnstd',
-        '--exclude-module', 'pytorch_lightning',
-        '--exclude-module', 'torchmetrics',
-        '--exclude-module', 'tensorflow',
-        '--exclude-module', 'paddle',
-        '--exclude-module', 'paddleocr',
-        '--exclude-module', 'paddlex',
-        '--exclude-module', 'pytest',
-        '--exclude-module', 'IPython',
-        '--exclude-module', 'matplotlib',
-        '--exclude-module', 'tkinter',
-        '--exclude-module', 'yt_dlp',
-        '--exclude-module', 'mutagen',
-        '--exclude-module', 'curl_cffi',
-        # Hidden imports — PySide6 外掛
-        '--hidden-import', 'PySide6.QtCore',
-        '--hidden-import', 'PySide6.QtGui',
-        '--hidden-import', 'PySide6.QtWidgets',
-        # 輸出設定
-        '--distpath', dist_dir,
-        '--workpath', build_dir,
-        '--specpath', os.path.join(root, 'artifacts'),
-        os.path.join(root, 'src', 'main.py'),
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--clean",
+        "--onefile",
+        "--windowed",
+        "--name",
+        APP_NAME,
+        "--add-data",
+        f"{root / 'config' / 'default_settings.json'}{sep}config",
+        "--paths",
+        str(root),
+        "--hidden-import",
+        "src",
+        "--hidden-import",
+        "src.app",
+        "--hidden-import",
+        "src.core",
+        "--hidden-import",
+        "src.data",
+        "--hidden-import",
+        "src.ui",
+        "--hidden-import",
+        "src.workers",
+        "--hidden-import",
+        "src.ocr",
+        "--hidden-import",
+        "src.capture",
+        "--hidden-import",
+        "src.clipboard",
+        "--collect-all",
+        "numpy",
+        "--collect-data",
+        "rapidocr_onnxruntime",
+        "--hidden-import",
+        "rapidocr_onnxruntime",
+        "--hidden-import",
+        "onnxruntime",
+        "--hidden-import",
+        "onnxruntime.capi",
+        "--hidden-import",
+        "onnxruntime.capi._pybind_state",
+        "--collect-data",
+        "onnxruntime",
+        "--collect-all",
+        "cv2",
+        "--hidden-import",
+        "PIL",
+        "--hidden-import",
+        "PIL.Image",
+        "--hidden-import",
+        "PIL.ImageOps",
+        "--hidden-import",
+        "PIL.ImageFilter",
+        "--hidden-import",
+        "mss",
+        "--hidden-import",
+        "mss.windows",
+        "--collect-all",
+        "zhconv",
+        "--collect-data",
+        "paddlex",
+        "--collect-binaries",
+        "paddle",
+        "--hidden-import",
+        "paddleocr",
+        "--hidden-import",
+        "paddle",
+        "--hidden-import",
+        "paddlex",
+        "--exclude-module",
+        "torch",
+        "--exclude-module",
+        "torchvision",
+        "--exclude-module",
+        "torchaudio",
+        "--exclude-module",
+        "cnocr",
+        "--exclude-module",
+        "cnstd",
+        "--exclude-module",
+        "pytorch_lightning",
+        "--exclude-module",
+        "torchmetrics",
+        "--exclude-module",
+        "tensorflow",
+        "--exclude-module",
+        "paddle",
+        "--exclude-module",
+        "paddleocr",
+        "--exclude-module",
+        "paddlex",
+        "--exclude-module",
+        "pytest",
+        "--exclude-module",
+        "IPython",
+        "--exclude-module",
+        "matplotlib",
+        "--exclude-module",
+        "tkinter",
+        "--exclude-module",
+        "yt_dlp",
+        "--exclude-module",
+        "mutagen",
+        "--exclude-module",
+        "curl_cffi",
+        "--hidden-import",
+        "PySide6.QtCore",
+        "--hidden-import",
+        "PySide6.QtGui",
+        "--hidden-import",
+        "PySide6.QtWidgets",
+        "--distpath",
+        str(paths["dist_dir"]),
+        "--workpath",
+        str(paths["build_dir"]),
+        "--specpath",
+        str(paths["artifacts_dir"]),
+        str(root / "src" / "main.py"),
     ]
 
-    print("\n執行 PyInstaller...")
-    result = subprocess.run(cmd, cwd=root)
+    print("\nrunning PyInstaller...")
+    subprocess.run(cmd, cwd=root, check=True)
 
-    if result.returncode != 0:
-        print(f"\n打包失敗，返回碼：{result.returncode}")
-        sys.exit(1)
 
-    exe_mb = os.path.getsize(out_exe) / 1024 / 1024
-    print(f"\nOK 打包成功！")
-    print(f"  EXE：{out_exe}  ({exe_mb:.1f} MB)")
+def write_release_readme(path: Path) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write(f"{APP_DISPLAY_NAME} v{APP_VERSION}\n")
+        handle.write("=" * 40 + "\n\n")
+        handle.write("執行方式:\n")
+        handle.write(f"  直接雙擊 {versioned_exe_name()}\n\n")
+        handle.write("注意事項:\n")
+        handle.write("  - 設定、資料與日誌會寫到 release 目錄旁的 config/data/logs。\n")
+        handle.write("  - 第一次啟動需要幾秒鐘載入 OCR 模型。\n\n")
+        handle.write("快捷鍵:\n")
+        handle.write("  Ctrl+Shift+O  框選 OCR\n")
+        handle.write("  Ctrl+Shift+S  框選截圖\n")
+        handle.write("  Ctrl+Shift+F  全螢幕擷取\n")
+        handle.write("  Ctrl+Shift+Space  顯示或隱藏浮動視窗\n")
+        handle.write("  Ctrl+Shift+M  開啟主控台\n")
 
-    # --- 建立發佈 ZIP ---
-    zip_name = 'DesktopOCRTool-v1.1.0'
-    zip_dir  = os.path.join(root, 'artifacts', zip_name)
-    zip_path = os.path.join(root, 'artifacts', f'{zip_name}.zip')
 
-    if os.path.exists(zip_dir):
-        shutil.rmtree(zip_dir)
-    os.makedirs(zip_dir)
-
-    # 把 EXE 複製進資料夾
-    shutil.copy2(out_exe, zip_dir)
-
-    # 建立簡易 README
-    readme = os.path.join(zip_dir, 'README.txt')
-    with open(readme, 'w', encoding='utf-8') as f:
-        f.write("桌面 OCR 擷取工具 v1.1.0\n")
-        f.write("=" * 40 + "\n\n")
-        f.write("使用方式：\n")
-        f.write("  直接雙擊 DesktopOCRTool.exe 啟動\n\n")
-        f.write("首次啟動：\n")
-        f.write("  - 系統匣圖示 + 浮動視窗自動出現\n")
-        f.write("  - data/ config/ logs/ 自動建立於 EXE 旁\n\n")
-        f.write("熱鍵：\n")
-        f.write("  Ctrl+Shift+O  框選 OCR\n")
-        f.write("  Ctrl+Shift+S  框選截圖\n")
-        f.write("  Ctrl+Shift+F  全螢幕截圖\n")
-        f.write("  Ctrl+Shift+Space  顯示/隱藏浮動窗\n")
-        f.write("  Ctrl+Shift+M  開啟主控台\n\n")
-        f.write("系統需求：Windows 10/11 x64\n")
-        f.write("無需安裝 Python 或任何套件\n")
-
-    if os.path.exists(zip_path):
-        os.remove(zip_path)
+def package_release(paths: dict[str, Path]) -> None:
+    shutil.copy2(paths["out_exe"], paths["release_exe"])
+    write_release_readme(paths["release_dir"] / "README.txt")
     shutil.make_archive(
-        os.path.join(root, 'artifacts', zip_name),
-        'zip',
-        os.path.join(root, 'artifacts'),
-        zip_name,
+        str(paths["zip_path"]).removesuffix(".zip"),
+        "zip",
+        str(paths["artifacts_dir"]),
+        paths["release_dir"].name,
     )
 
-    zip_mb = os.path.getsize(zip_path) / 1024 / 1024
-    print(f"  ZIP：{zip_path}  ({zip_mb:.1f} MB)")
-    print(f"\n內容物：")
-    print(f"  {zip_name}/DesktopOCRTool.exe")
-    print(f"  {zip_name}/README.txt")
-    print(f"\n解壓縮後直接執行 DesktopOCRTool.exe 即可，無需網路/Python。")
+
+def main() -> int:
+    if sys.version_info < (3, 11):
+        print(f"error: Python 3.11+ required, got {sys.version}")
+        return 1
+
+    print(f"Python {sys.version_info.major}.{sys.version_info.minor} OK")
+    print(f"building {APP_NAME} v{APP_VERSION}")
+
+    try:
+        verify_models(ROOT)
+        paths = resolve_release_paths(ROOT)
+        assert_output_writable(paths["out_exe"])
+        reset_output_dirs(paths)
+        build_with_pyinstaller(ROOT, paths)
+
+        exe_size_mb = paths["out_exe"].stat().st_size / 1024 / 1024
+        print(f"\nexe ready: {paths['out_exe']} ({exe_size_mb:.1f} MB)")
+
+        package_release(paths)
+        zip_size_mb = paths["zip_path"].stat().st_size / 1024 / 1024
+
+        print(f"release dir: {paths['release_dir']}")
+        print(f"release exe: {paths['release_exe'].name}")
+        print(f"release zip: {paths['zip_path']} ({zip_size_mb:.1f} MB)")
+        return 0
+    except subprocess.CalledProcessError as exc:
+        print(f"build failed with exit code {exc.returncode}")
+        return exc.returncode
+    except Exception as exc:
+        print(f"build failed: {exc}")
+        return 1
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    raise SystemExit(main())

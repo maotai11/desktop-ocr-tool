@@ -2,6 +2,7 @@
 import sys
 import os
 import logging
+from src.core.version import APP_DISPLAY_NAME, APP_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,11 @@ def main() -> int:
 
     from src.core.logger import setup_logger
     setup_logger()
-    logger.info("===== 桌面OCR擷取工具 v1.1.0 啟動 =====")
+    logger.info(f"===== {APP_DISPLAY_NAME} v{APP_VERSION} 啟動 =====")
 
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("桌面OCR擷取工具")
+    app.setApplicationName(APP_DISPLAY_NAME)
+    app.setApplicationVersion(APP_VERSION)
     app.setQuitOnLastWindowClosed(False)
 
     try:

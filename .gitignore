@@ -65,6 +65,18 @@ test_data/
 data/captures/
 data/thumbnails/
 
+# Local app state and test output
+config/settings.json
+data/
+artifacts/
+models/paddleocr/
+models/**/.cache/
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.dll
+
 # Backup files
 *.bak
 *.backup
