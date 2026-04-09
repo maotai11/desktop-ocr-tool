@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from scripts.build import resolve_release_paths, reset_output_dirs
+from src.core.version import versioned_exe_name
 
 
 def test_reset_output_dirs_removes_stale_release_contents(tmp_path):
@@ -10,7 +11,7 @@ def test_reset_output_dirs_removes_stale_release_contents(tmp_path):
     stale_release = paths["release_dir"]
     stale_release.mkdir(parents=True)
     (stale_release / "DesktopOCRTool-v1.5.0.exe").write_text("old", encoding="utf-8")
-    (stale_release / "DesktopOCRTool-v1.6.0.exe").write_text("new", encoding="utf-8")
+    (stale_release / versioned_exe_name()).write_text("new", encoding="utf-8")
     paths["zip_path"].parent.mkdir(parents=True, exist_ok=True)
     paths["zip_path"].write_text("zip", encoding="utf-8")
 

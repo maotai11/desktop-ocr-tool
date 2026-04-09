@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-APP_NAME = "桌面OCR擷取工具"
-APP_NAME_EN = "DesktopOCRTool"
-APP_VERSION = "1.1.0"  # 與 README 同步
+from .version import APP_DISPLAY_NAME, APP_NAME as APP_NAME_EN, APP_VERSION
+
+APP_NAME = APP_DISPLAY_NAME
 APP_MUTEX_NAME = "Global\\DesktopOCRToolInstance"
 APP_REGISTRY_KEY = "DesktopOCRTool"
 
@@ -24,6 +24,6 @@ ITEM_TYPE_TEXT = "text"
 ITEM_TYPE_IMAGE = "image"
 ITEM_TYPE_MIXED = "mixed"
 
-SCHEMA_VERSION = 4  # v4: 新增效能索引
+SCHEMA_VERSION = 4
 DEDUP_SECONDS = 60
 CUSTOM_MIME_TYPE = "application/x-desktopocrtool-id"
