@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import ctypes
+import ctypes.wintypes
 import logging
 from .constants import APP_MUTEX_NAME
 
@@ -10,7 +11,13 @@ _mutex_handle = None
 def acquire_instance_lock() -> bool:
     global _mutex_handle
     kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.wintypes.BOOL, ctypes.wintypes.LPCWSTR]
+    kernel32.CreateMutexW.restype = ctypes.wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    kernel32.ReleaseMutex.argtypes = [ctypes.wintypes.HANDLE]
     _mutex_handle = kernel32.CreateMutexW(None, True, APP_MUTEX_NAME)
+    if not _mutex_handle:
+        raise ctypes.WinError()
     last_err = kernel32.GetLastError()
     if last_err == 183:  # ERROR_ALREADY_EXISTS
         logger.info("已有另一個實例在執行")

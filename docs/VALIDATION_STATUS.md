@@ -5,10 +5,11 @@
 **候選版本；尚不可宣稱所有問題解決或已通過 Production Release。**
 
 - CONFIRMED：基準測試 133 collected、116 passed、17 failed。
-- CONFIRMED：修復候選本機完整 pytest 已執行；最新精確結果見 `docs/evidence/full.xml`，涵蓋原測試修正與新增對抗性測試。測試數量不是功能完成證據。
+- CONFIRMED：修復候選本機完整 pytest 已執行；目前153 passed、0 failed、0 skipped；最新精確結果見 `docs/evidence/full.xml`，涵蓋原測試修正與新增對抗性測試。測試數量不是功能完成證據。
 - CONFIRMED：Linux Qt offscreen 的 source self-test 真實載入三個固定模型、OCR known text、SQLite 寫入；結果見 `docs/evidence/source-selftest.json`。
 - CONFIRMED：實際 QThread 排程與 shutdown barrier 測試；模型載入期間要求退出，40 個 capture→DB→OCR→DB 工作全部持久化。
-- UNKNOWN：Windows Actions 結果、乾淨 Windows 離線電腦、mixed DPI、原始 Microsoft 連線 payload。
+- CONFIRMED：commit `08f227e` 的 Windows Actions 單元測試、source self-test、PyInstaller one-file build 及 outbound-blocked frozen self-test 通過；後續 commit 仍須重跑。
+- UNKNOWN：乾淨 Windows 離線電腦、mixed DPI、原始 Microsoft 連線 payload。
 - 尚未結案：稀有字／小字 Detection 漏辨、domain correction、旋轉／表格 fusion、長條圖片切片、retention、未接線設定、Windows lifecycle 現場行為。
 
 ## 已實作的修復
@@ -40,3 +41,5 @@ flowchart TD
 ```
 
 本次沒有用新的 abstraction 宣稱已消除全部根因；QueueWorker／Pipeline 分別承擔唯一 worker lifetime 與 Qt dispatch/shutdown ownership。對沒有 runtime 證據的 Windows／optional provider／memory leak freedom 維持 UNKNOWN。每一個開放項目仍需對應 Ground Truth、profiler 或現場 gate。
+
+完整49項逐項狀態：[MASTER_FINDINGS](MASTER_FINDINGS.md)。效能原始量測：[PERFORMANCE_VALIDATION](PERFORMANCE_VALIDATION.md)；模型與spacing證據：[OCR_REPAIR_VALIDATION](OCR_REPAIR_VALIDATION.md)。

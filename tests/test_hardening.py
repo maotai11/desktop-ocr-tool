@@ -19,6 +19,7 @@ def box(x, text, width=40, confidence=.9):
 @pytest.mark.parametrize('left,right,expected',[
     ('臺灣','稅務','臺灣稅務'), ('OCR','結果','OCR 結果'),
     ('稅務','API','稅務 API'), ('hello','world','hello world'),
+    ('12345678','10','12345678 10'),
     ('12','kg','12 kg'), ('12','元','12元'), ('5','%','5%'),
     ('（','已繳稅','（已繳稅'), ('稅款','）','稅款）'),
     ('稅款','，','稅款，'), ('2026/','10/02','2026/10/02'),
@@ -195,3 +196,11 @@ def test_default_settings_match_packaged_manifest():
     root=Path(__file__).resolve().parents[1]
     assert json.loads((root/'config/default_settings.json').read_text())==DEFAULT_SETTINGS
     assert DEFAULT_SETTINGS['clipboard']['monitor_clipboard'] is False
+
+
+def test_pipeline_returns_original_image_coordinates(monkeypatch):
+    engine=OcrEngine(max_image_short_side=100,enable_second_pass=False)
+    engine._ready=True
+    monkeypatch.setattr(engine,'_do_ocr_array',lambda image:[([[0,0],[100,0],[100,100],[0,100]],'臺灣',.9)])
+    result=engine.run_ocr(np.zeros((50,50,3),np.uint8))
+    assert result['detail'][0]['box']==[[0.,0.],[50.,0.],[50.,50.],[0.,50.]]

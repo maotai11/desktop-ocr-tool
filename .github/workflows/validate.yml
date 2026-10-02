@@ -24,9 +24,13 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest -q --junitxml=test-results.xml
       - run: python src/main.py --self-test source-selftest.json
+      - if: runner.os == 'Windows'
+        run: python src/main.py --smoke-app source-app-smoke.json
       - if: runner.os == 'Windows'
         run: python scripts/build.py
       - if: runner.os == 'Windows'
@@ -42,6 +46,12 @@ jobs:
             if ($proc.ExitCode -ne 0) { throw "Frozen self-test failed: $($proc.ExitCode)" }
             $result = Get-Content $report -Raw | ConvertFrom-Json
             if (-not $result.passed -or -not $result.frozen) { throw 'Invalid frozen self-test result' }
+            $appReport = Join-Path $PWD 'frozen-app-smoke.json'
+            $appProc = Start-Process -FilePath $exe -ArgumentList @('--smoke-app', "`"$appReport`"") -PassThru
+            if (-not $appProc.WaitForExit(180000)) { Stop-Process -Id $appProc.Id; throw 'Application smoke timeout' }
+            if ($appProc.ExitCode -ne 0) { throw 'Application startup/shutdown failed' }
+            $appResult = Get-Content $appReport -Raw | ConvertFrom-Json
+            if (-not $appResult.engine_ready -or -not $appResult.shutdown_clean) { throw 'Incomplete app lifecycle' }
           } finally {
             Remove-NetFirewallRule -DisplayName $rule
           }
@@ -52,6 +62,7 @@ jobs:
           path: |
             test-results.xml
             *selftest.json
+            *app-smoke.json
             artifacts/*.zip
             artifacts/*.sha256
           if-no-files-found: warn

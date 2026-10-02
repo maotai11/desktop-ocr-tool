@@ -90,6 +90,8 @@ DEFAULT_SETTINGS = {
 
 
 def get_project_root() -> str:
+    if os.environ.get("DESKTOP_OCR_HOME"):
+        return os.path.abspath(os.environ["DESKTOP_OCR_HOME"])
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))

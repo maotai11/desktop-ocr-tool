@@ -19,7 +19,7 @@ def _setup_font(app, priority: list):
     logger.info("使用 Qt 預設字型")
 
 
-def main() -> int:
+def main(smoke_report=None) -> int:
     from PySide6.QtWidgets import QApplication, QMessageBox
     from PySide6.QtCore import Qt, QTimer
 
@@ -233,6 +233,26 @@ def main() -> int:
         ocr_worker.engine_ready.connect(widget.on_ocr_engine_ready)
         ocr_worker.engine_failed.connect(widget.on_ocr_engine_failed)
 
+        if smoke_report is not None:
+            import json
+            from pathlib import Path
+            smoke = {'phase_a': True, 'engine_ready': False, 'shutdown_clean': False,
+                     'frozen': bool(getattr(sys, 'frozen', False)), 'platform': sys.platform}
+            def smoke_ready():
+                smoke['engine_ready'] = True
+                pipeline.shutdown()
+            def smoke_failed(error):
+                smoke['error'] = error
+                pipeline.shutdown()
+            def smoke_finished():
+                smoke['shutdown_clean'] = pipeline.closed
+                Path(smoke_report).write_text(json.dumps(smoke, indent=2), encoding='utf-8')
+            ocr_worker.engine_ready.connect(smoke_ready)
+            ocr_worker.engine_failed.connect(smoke_failed)
+            pipeline.shutdown_finished.connect(smoke_finished)
+            QTimer.singleShot(30000, widget, lambda: smoke_failed('startup timeout')
+                              if not pipeline.closed else None)
+
         # Phase B: background model loading
         ocr_worker.start_loading()
 
@@ -243,7 +263,10 @@ def main() -> int:
                 set_autostart(True)
 
         logger.info("Phase A 完成，進入事件迴圈")
-        return app.exec()
+        code = app.exec()
+        if smoke_report is not None and not (smoke['engine_ready'] and smoke['shutdown_clean']):
+            return 1
+        return code
 
     except Exception as e:
         logger.critical(f"啟動失敗: {e}", exc_info=True)

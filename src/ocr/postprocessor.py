@@ -42,7 +42,9 @@ def boundary_separator(left, right):
     if a.endswith(('NT$', 'US$', 'NT＄')) and y.isdigit():
         return ''
     if x.isdigit() and y.isdigit():
-        return '' if gap <= height * 0.25 else ' '
+        # Adjacent numbers may be an account ID followed by a quantity.
+        # A small gap alone is insufficient evidence to concatenate them.
+        return ' '
     if _cjk(x) and _cjk(y):
         return ''
     if x.isdigit() and y in '元圓年月日時分秒億萬仟佰拾':

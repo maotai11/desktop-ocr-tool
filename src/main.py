@@ -15,4 +15,12 @@ if __name__ == '__main__' and len(sys.argv) == 3 and sys.argv[1] == '--self-test
 from src.app import main
 
 if __name__ == '__main__':
+    if len(sys.argv) == 3 and sys.argv[1] == '--smoke-app':
+        import tempfile
+        import logging
+        with tempfile.TemporaryDirectory(prefix='desktop-ocr-smoke-') as directory:
+            os.environ['DESKTOP_OCR_HOME'] = directory
+            code = main(smoke_report=os.path.abspath(sys.argv[2]))
+            logging.shutdown()
+        sys.exit(code)
     sys.exit(main())

@@ -142,6 +142,7 @@ class OcrEngine:
             return {'text': '', 'confidence': 0, 'status': 'failed',
                     'detail': [], 'elapsed_ms': 0, 'error': 'OCR 引擎未就緒'}
         t0 = time.time()
+        original_hw = image.shape[:2]
         try:
             # Step 1: upscale 小圖 (10%)
             if self._progress_callback:
@@ -161,7 +162,7 @@ class OcrEngine:
                         candidate.update(engine=self._secondary.name,
                                          elapsed_ms=int((time.time()-t0)*1000))
                         candidate.setdefault('model_version','unknown')
-                        return candidate
+                        return self._original_coordinates(candidate, original_hw, image.shape[:2])
                 raise
 
             # Step 3: 判斷是否需要 second pass (70%)
@@ -198,17 +199,26 @@ class OcrEngine:
                     secondary_result.setdefault('model_version', 'unknown')
                     logger.debug("第二引擎結果較優 (conf=%.3f > %.3f)，採用",
                                  secondary_result['confidence'], primary_result['confidence'])
-                    return secondary_result
+                    return self._original_coordinates(secondary_result, original_hw, image.shape[:2])
                 logger.debug("第二引擎結果未優於主引擎，保留主引擎結果")
 
             primary_result["elapsed_ms"] = int((time.time() - t0) * 1000)
             primary_result.update(engine="rapidocr_onnxruntime", model_version=self._model_version)
-            return primary_result
+            return self._original_coordinates(primary_result, original_hw, image.shape[:2])
         except Exception as e:
             elapsed_ms = int((time.time() - t0) * 1000)
             logger.error(f"OCR 執行失敗: {e}", exc_info=True)
             return {'text': '', 'confidence': 0, 'status': 'failed',
                     'detail': [], 'elapsed_ms': elapsed_ms, 'error': str(e)}
+
+    @staticmethod
+    def _original_coordinates(result, original_hw, processed_hw):
+        sy, sx = original_hw[0]/processed_hw[0], original_hw[1]/processed_hw[1]
+        for detail in result.get('detail', []):
+            box = detail.get('box')
+            if box is not None:
+                detail['box'] = [[float(p[0])*sx, float(p[1])*sy] for p in box]
+        return result
 
     def _do_ocr_array(self, image: np.ndarray):
         result, _ = self._engine(image)

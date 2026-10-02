@@ -1,0 +1,3751 @@
+{
+  "rows": [
+    {
+      "id": "syn-Sans-tax-8-clean",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Sans-tax-8-clean.png",
+      "sha256": "fed250634b00a271fc5731a6ed299909af734aa3d7a935a2c725f767587edc97",
+      "targets": [
+        {
+          "id": "syn-Sans-tax-8-clean",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            152,
+            22
+          ]
+        }
+      ],
+      "size": [
+        164,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Sans",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        164
+      ],
+      "resized_hw": [
+        960,
+        4630
+      ],
+      "resized_bytes": 13334400,
+      "ocr_ms": [
+        2253.3862640002553,
+        758.9185429997087
+      ],
+      "det_only_ms": 718.5896729997694,
+      "boxes": [
+        [
+          [
+            10.663307114141807,
+            10.951923243204753
+          ],
+          [
+            153.17137933652808,
+            11.360576756795247
+          ],
+          [
+            153.17137933652808,
+            23.211537297566732
+          ],
+          [
+            10.663307114141807,
+            22.802883783976235
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "营兼税5%桶充保微置2.11%115/10/02"
+      ],
+      "converted_texts": [
+        "營兼稅5%桶充保微置2.11%115/10/02"
+      ],
+      "scores": [
+        0.8816731156160434
+      ],
+      "merged_text": "營兼稅5%桶充保微置2.11%115/10/02",
+      "detection_boxes": [
+        [
+          [
+            10.663307114141807,
+            10.951923243204753
+          ],
+          [
+            153.17137933652808,
+            11.360576756795247
+          ],
+          [
+            153.17137933652808,
+            23.211537297566732
+          ],
+          [
+            10.663307114141807,
+            22.802883783976235
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-tax-8-clean",
+          "iou": 0.8289627551783177,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-tax-8-clean",
+          "iou": 0.8289627551783177,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "營兼稅5%桶充保微置2.11%115/10/02",
+          "metrics": {
+            "N": 26,
+            "S": 4,
+            "D": 2,
+            "I": 0,
+            "whitespace_edits": 2,
+            "errors": 6,
+            "CER": 0.23076923076923078,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 260788224,
+      "sample_peak_rss": 785289216,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 4,
+        "D": 2,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 6,
+        "CER": 0.23076923076923078,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-tax-8-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Sans-tax-8-lowcontrast_blur.png",
+      "sha256": "16535f71fbe9cbcccb3d56c7b3991b14f0dc7a3ddad6f9e4d10d2f4e81bcc156",
+      "targets": [
+        {
+          "id": "syn-Sans-tax-8-lowcontrast_blur",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            152,
+            22
+          ]
+        }
+      ],
+      "size": [
+        164,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Sans",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        164
+      ],
+      "resized_hw": [
+        960,
+        4630
+      ],
+      "resized_bytes": 13334400,
+      "ocr_ms": [
+        761.2204580000252,
+        760.6571179994717
+      ],
+      "det_only_ms": 711.7916679999325,
+      "boxes": [
+        [
+          [
+            114.89919829069925,
+            13.730768648783366
+          ],
+          [
+            127.38105173461123,
+            14.139423243204753
+          ],
+          [
+            127.21573278044006,
+            19.37019297281901
+          ],
+          [
+            114.81653448974082,
+            18.961537297566732
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "115"
+      ],
+      "converted_texts": [
+        "115"
+      ],
+      "scores": [
+        0.9985036452611288
+      ],
+      "merged_text": "115",
+      "detection_boxes": [
+        [
+          [
+            114.89919829069925,
+            13.730768648783366
+          ],
+          [
+            127.38105173461123,
+            14.139423243204753
+          ],
+          [
+            127.21573278044006,
+            19.37019297281901
+          ],
+          [
+            114.81653448974082,
+            18.961537297566732
+          ]
+        ],
+        [
+          [
+            97.45766380095843,
+            14.956730270385743
+          ],
+          [
+            103.82258622435205,
+            14.956730270385743
+          ],
+          [
+            103.82258622435205,
+            18.389423243204753
+          ],
+          [
+            97.45766380095843,
+            18.389423243204753
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-tax-8-lowcontrast_blur",
+          "iou": 0.04651727794089313,
+          "matched_iou50": false,
+          "union_coverage": 0.0621235811375513,
+          "coverage80": false,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-tax-8-lowcontrast_blur",
+          "iou": 0.04651727794089313,
+          "matched_iou50": false,
+          "union_coverage": 0.04651727794089313,
+          "coverage80": false,
+          "match_index": 0,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "",
+          "metrics": {
+            "N": 26,
+            "S": 0,
+            "D": 26,
+            "I": 0,
+            "whitespace_edits": 2,
+            "errors": 26,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 260886528,
+      "sample_peak_rss": 777613312,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 23,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 23,
+        "CER": 0.8846153846153846,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-tax-14-clean",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Sans-tax-14-clean.png",
+      "sha256": "e5860f22b7c8df6250187c9211d9ec4158ef3b332c15fc9b43a56e940317fd41",
+      "targets": [
+        {
+          "id": "syn-Sans-tax-14-clean",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            257,
+            27
+          ]
+        }
+      ],
+      "size": [
+        269,
+        39
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Sans",
+      "font_size": 14,
+      "input_hw": [
+        39,
+        269
+      ],
+      "resized_hw": [
+        960,
+        6621
+      ],
+      "resized_bytes": 19068480,
+      "ocr_ms": [
+        2116.085075999763,
+        1108.6483490007595
+      ],
+      "det_only_ms": 1088.1312470000921,
+      "boxes": [
+        [
+          [
+            8.40625,
+            7.447916460037232
+          ],
+          [
+            260.864916155155,
+            8.125
+          ],
+          [
+            260.864916155155,
+            30.604165840148926
+          ],
+          [
+            8.40625,
+            29.927081680297853
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "管业税5% 補充保费2.11% 115/10/02"
+      ],
+      "converted_texts": [
+        "管業稅5% 補充保費2.11% 115/10/02"
+      ],
+      "scores": [
+        0.9066001641750335
+      ],
+      "merged_text": "管業稅5% 補充保費2.11% 115/10/02",
+      "detection_boxes": [
+        [
+          [
+            8.40625,
+            7.447916460037232
+          ],
+          [
+            260.864916155155,
+            8.125
+          ],
+          [
+            260.864916155155,
+            30.604165840148926
+          ],
+          [
+            8.40625,
+            29.927081680297853
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-tax-14-clean",
+          "iou": 0.6475702292894088,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-tax-14-clean",
+          "iou": 0.6475702292894088,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "管業稅5% 補充保費2.11% 115/10/02",
+          "metrics": {
+            "N": 26,
+            "S": 1,
+            "D": 1,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 2,
+            "CER": 0.07692307692307693,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 302309376,
+      "sample_peak_rss": 1000054784,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 1,
+        "D": 1,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 2,
+        "CER": 0.07692307692307693,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-tax-14-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Sans-tax-14-lowcontrast_blur.png",
+      "sha256": "916ecddf960afaa1a925d009223e24441593bbbdae37683340ab8a76b7dc93c7",
+      "targets": [
+        {
+          "id": "syn-Sans-tax-14-lowcontrast_blur",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            257,
+            27
+          ]
+        }
+      ],
+      "size": [
+        269,
+        39
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Sans",
+      "font_size": 14,
+      "input_hw": [
+        39,
+        269
+      ],
+      "resized_hw": [
+        960,
+        6621
+      ],
+      "resized_bytes": 19068480,
+      "ocr_ms": [
+        1154.995494999639,
+        1156.6718290005156
+      ],
+      "det_only_ms": 1064.9594940005045,
+      "boxes": [
+        [
+          [
+            71.724291155155,
+            8.395832920074463
+          ],
+          [
+            260.322583844845,
+            8.53125
+          ],
+          [
+            260.322583844845,
+            29.791665840148926
+          ],
+          [
+            71.724291155155,
+            29.520831680297853
+          ]
+        ],
+        [
+          [
+            10.16885046648522,
+            10.291666460037233
+          ],
+          [
+            80.26612919224225,
+            8.9375
+          ],
+          [
+            80.67288338448449,
+            27.895831680297853
+          ],
+          [
+            10.440019721333812,
+            29.25
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "補充保费2.11% 115/10/02",
+        "營業税5%"
+      ],
+      "converted_texts": [
+        "補充保費2.11% 115/10/02",
+        "營業稅5%"
+      ],
+      "scores": [
+        0.9501930977168837,
+        0.8845214962959289
+      ],
+      "merged_text": "營業稅5% 補充保費2.11% 115/10/02",
+      "detection_boxes": [
+        [
+          [
+            71.724291155155,
+            8.395832920074463
+          ],
+          [
+            260.322583844845,
+            8.53125
+          ],
+          [
+            260.322583844845,
+            29.791665840148926
+          ],
+          [
+            71.724291155155,
+            29.520831680297853
+          ]
+        ],
+        [
+          [
+            10.16885046648522,
+            10.291666460037233
+          ],
+          [
+            80.26612919224225,
+            8.9375
+          ],
+          [
+            80.67288338448449,
+            27.895831680297853
+          ],
+          [
+            10.440019721333812,
+            29.25
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-tax-14-lowcontrast_blur",
+          "iou": 0.5680083169027678,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-tax-14-lowcontrast_blur",
+          "iou": 0.5680083169027678,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "補充保費2.11% 115/10/02",
+          "metrics": {
+            "N": 26,
+            "S": 0,
+            "D": 7,
+            "I": 0,
+            "whitespace_edits": 1,
+            "errors": 7,
+            "CER": 0.2692307692307692,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 302419968,
+      "sample_peak_rss": 1000165376,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 1,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 1,
+        "CER": 0.038461538461538464,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-complex-8-clean",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Sans-complex-8-clean.png",
+      "sha256": "20637336868bd4e34f531ea626a4da1f34a7b2c2ecee7e9f6e1dce87259132dc",
+      "targets": [
+        {
+          "id": "syn-Sans-complex-8-clean",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            108,
+            22
+          ]
+        }
+      ],
+      "size": [
+        120,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Sans",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        120
+      ],
+      "resized_hw": [
+        960,
+        3388
+      ],
+      "resized_bytes": 9757440,
+      "ocr_ms": [
+        852.1122689999174,
+        532.5727640001787
+      ],
+      "det_only_ms": 502.8602630000023,
+      "boxes": [],
+      "raw_texts": [],
+      "converted_texts": [],
+      "scores": [],
+      "merged_text": "",
+      "detection_boxes": [
+        [
+          [
+            10.403225841319548,
+            10.684027417500813
+          ],
+          [
+            110.14112596387987,
+            10.50694408416748
+          ],
+          [
+            110.14112596387987,
+            22.784721501668294
+          ],
+          [
+            10.403225841319548,
+            22.90277633666992
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-complex-8-clean",
+          "iou": 0.7858442930027071,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-complex-8-clean",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "",
+          "metrics": {
+            "N": 12,
+            "S": 0,
+            "D": 12,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 12,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 261324800,
+      "sample_peak_rss": 632328192,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12,
+        "CER": 1.0,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-complex-8-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Sans-complex-8-lowcontrast_blur.png",
+      "sha256": "d999242699c1e98c8f2d55f191b0511d366f696f8d174626957e2455edaafee2",
+      "targets": [
+        {
+          "id": "syn-Sans-complex-8-lowcontrast_blur",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            108,
+            22
+          ]
+        }
+      ],
+      "size": [
+        120,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Sans",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        120
+      ],
+      "resized_hw": [
+        960,
+        3388
+      ],
+      "resized_bytes": 9757440,
+      "ocr_ms": [
+        509.20714199946815,
+        487.63892500028305
+      ],
+      "det_only_ms": 487.81158800011326,
+      "boxes": [],
+      "raw_texts": [],
+      "converted_texts": [],
+      "scores": [],
+      "merged_text": "",
+      "detection_boxes": [],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-complex-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-complex-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "",
+          "metrics": {
+            "N": 12,
+            "S": 0,
+            "D": 12,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 12,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 261373952,
+      "sample_peak_rss": 632442880,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12,
+        "CER": 1.0,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-complex-14-clean",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Sans-complex-14-clean.png",
+      "sha256": "824e16e22dcd66ee3ef9a5cbd4ce87eebe7359dde956c4a78145a3d278682911",
+      "targets": [
+        {
+          "id": "syn-Sans-complex-14-clean",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            180,
+            28
+          ]
+        }
+      ],
+      "size": [
+        192,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Sans",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        192
+      ],
+      "resized_hw": [
+        960,
+        4608
+      ],
+      "resized_bytes": 13271040,
+      "ocr_ms": [
+        728.012784999919,
+        761.1230390002675
+      ],
+      "det_only_ms": 717.4743309997211,
+      "boxes": [
+        [
+          [
+            8.516128540039062,
+            8.84615389506022
+          ],
+          [
+            184.258056640625,
+            9.038461685180664
+          ],
+          [
+            184.258056640625,
+            30.961537679036457
+          ],
+          [
+            8.516128540039062,
+            30.673077901204426
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "策郁釀缴齿據税"
+      ],
+      "converted_texts": [
+        "策鬱釀繳齒據稅"
+      ],
+      "scores": [
+        0.8287292548588344
+      ],
+      "merged_text": "策鬱釀繳齒據稅",
+      "detection_boxes": [
+        [
+          [
+            8.516128540039062,
+            8.84615389506022
+          ],
+          [
+            184.258056640625,
+            9.038461685180664
+          ],
+          [
+            184.258056640625,
+            30.961537679036457
+          ],
+          [
+            8.516128540039062,
+            30.673077901204426
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-complex-14-clean",
+          "iou": 0.6992070778332966,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-complex-14-clean",
+          "iou": 0.6992070778332966,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "策鬱釀繳齒據稅",
+          "metrics": {
+            "N": 12,
+            "S": 1,
+            "D": 5,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 6,
+            "CER": 0.5,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 261414912,
+      "sample_peak_rss": 778141696,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 6,
+        "CER": 0.5,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-complex-14-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Sans-complex-14-lowcontrast_blur.png",
+      "sha256": "fe93cc48c10b82d50d5e703c532566610477525e6d330d8554b7cdda7fac99fc",
+      "targets": [
+        {
+          "id": "syn-Sans-complex-14-lowcontrast_blur",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            180,
+            28
+          ]
+        }
+      ],
+      "size": [
+        192,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Sans",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        192
+      ],
+      "resized_hw": [
+        960,
+        4608
+      ],
+      "resized_bytes": 13271040,
+      "ocr_ms": [
+        765.2987309993478,
+        827.3430089993781
+      ],
+      "det_only_ms": 779.2269720002878,
+      "boxes": [
+        [
+          [
+            46.354838053385414,
+            8.84615389506022
+          ],
+          [
+            183.77419026692706,
+            8.84615389506022
+          ],
+          [
+            183.77419026692706,
+            30.76923116048177
+          ],
+          [
+            46.354838053385414,
+            30.76923116048177
+          ]
+        ],
+        [
+          [
+            10.161289850870768,
+            10.673076629638672
+          ],
+          [
+            56.70967610677083,
+            10.865384419759113
+          ],
+          [
+            56.70967610677083,
+            29.03846232096354
+          ],
+          [
+            10.161289850870768,
+            28.846153259277344
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "釀缴據税赋",
+        "策蕾"
+      ],
+      "converted_texts": [
+        "釀繳據稅賦",
+        "策蕾"
+      ],
+      "scores": [
+        0.7567899584770202,
+        0.6407610327005386
+      ],
+      "merged_text": "策蕾 釀繳據稅賦",
+      "detection_boxes": [
+        [
+          [
+            46.354838053385414,
+            8.84615389506022
+          ],
+          [
+            183.77419026692706,
+            8.84615389506022
+          ],
+          [
+            183.77419026692706,
+            30.76923116048177
+          ],
+          [
+            46.354838053385414,
+            30.76923116048177
+          ]
+        ],
+        [
+          [
+            10.161289850870768,
+            10.673076629638672
+          ],
+          [
+            56.70967610677083,
+            10.865384419759113
+          ],
+          [
+            56.70967610677083,
+            29.03846232096354
+          ],
+          [
+            10.161289850870768,
+            28.846153259277344
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-complex-14-lowcontrast_blur",
+          "iou": 0.6002591279820676,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-complex-14-lowcontrast_blur",
+          "iou": 0.6002591279820676,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "釀繳據稅賦",
+          "metrics": {
+            "N": 12,
+            "S": 0,
+            "D": 7,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 7,
+            "CER": 0.5833333333333334,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 261472256,
+      "sample_peak_rss": 778199040,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 3,
+        "D": 4,
+        "I": 0,
+        "whitespace_edits": 1,
+        "errors": 7,
+        "CER": 0.5833333333333334,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-8-clean",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Sans-mixed-8-clean.png",
+      "sha256": "3931af3b6991d0f0c2e52a7c3d51eb867d0b4f71e3de5c103837857776d347d1",
+      "targets": [
+        {
+          "id": "syn-Sans-mixed-8-clean",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            168,
+            22
+          ]
+        }
+      ],
+      "size": [
+        180,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Sans",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        180
+      ],
+      "resized_hw": [
+        960,
+        5082
+      ],
+      "resized_bytes": 14636160,
+      "ocr_ms": [
+        1646.8859739998152,
+        878.2417499996882
+      ],
+      "det_only_ms": 787.8079020001678,
+      "boxes": [
+        [
+          [
+            10.161289904165438,
+            11.864583333333332
+          ],
+          [
+            168.8407269222255,
+            11.776041666666666
+          ],
+          [
+            168.8407269222255,
+            23.197916666666664
+          ],
+          [
+            10.161289904165438,
+            23.286458333333332
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "API_key AB-12345678 10 kg (1,234) -5.00%%"
+      ],
+      "converted_texts": [
+        "API_key AB-12345678 10 kg (1,234) -5.00%%"
+      ],
+      "scores": [
+        0.9309831552389192
+      ],
+      "merged_text": "API_key AB-12345678 10 kg (1,234) -5.00%%",
+      "detection_boxes": [
+        [
+          [
+            10.161289904165438,
+            11.864583333333332
+          ],
+          [
+            168.8407269222255,
+            11.776041666666666
+          ],
+          [
+            168.8407269222255,
+            23.197916666666664
+          ],
+          [
+            10.161289904165438,
+            23.286458333333332
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-mixed-8-clean",
+          "iou": 0.8607292156212799,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-mixed-8-clean",
+          "iou": 0.8607292156212799,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "API_key AB-12345678 10 kg (1,234) -5.00%%",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 0,
+            "I": 1,
+            "whitespace_edits": 0,
+            "errors": 1,
+            "CER": 0.025,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 322428928,
+      "sample_peak_rss": 814313472,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 1,
+        "whitespace_edits": 0,
+        "errors": 1,
+        "CER": 0.025,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-8-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Sans-mixed-8-lowcontrast_blur.png",
+      "sha256": "584fdcd829f3f073ff7ce5409f395ab9098b38a25ba549a13e47c9acc6f2c24e",
+      "targets": [
+        {
+          "id": "syn-Sans-mixed-8-lowcontrast_blur",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            168,
+            22
+          ]
+        }
+      ],
+      "size": [
+        180,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Sans",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        180
+      ],
+      "resized_hw": [
+        960,
+        5082
+      ],
+      "resized_bytes": 14636160,
+      "ocr_ms": [
+        840.6683789999079,
+        917.1685829996932
+      ],
+      "det_only_ms": 785.341000999324,
+      "boxes": [
+        [
+          [
+            95.5342730777745,
+            14.697916666666666
+          ],
+          [
+            101.61290768890201,
+            14.697916666666666
+          ],
+          [
+            101.61290768890201,
+            18.682291666666668
+          ],
+          [
+            95.5342730777745,
+            18.682291666666668
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "10"
+      ],
+      "converted_texts": [
+        "10"
+      ],
+      "scores": [
+        0.8458229005336761
+      ],
+      "merged_text": "10",
+      "detection_boxes": [
+        [
+          [
+            49.26411346111276,
+            15.140625
+          ],
+          [
+            52.258067305563756,
+            15.583333333333332
+          ],
+          [
+            51.98588653888725,
+            18.0625
+          ],
+          [
+            48.901210095834564,
+            17.619791666666668
+          ]
+        ],
+        [
+          [
+            54.97984038333826,
+            15.229166666666666
+          ],
+          [
+            58.33669326944363,
+            15.229166666666666
+          ],
+          [
+            58.33669326944363,
+            18.239583333333332
+          ],
+          [
+            54.97984038333826,
+            18.239583333333332
+          ]
+        ],
+        [
+          [
+            95.5342730777745,
+            14.697916666666666
+          ],
+          [
+            101.61290768890201,
+            14.697916666666666
+          ],
+          [
+            101.61290768890201,
+            18.682291666666668
+          ],
+          [
+            95.5342730777745,
+            18.682291666666668
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-mixed-8-lowcontrast_blur",
+          "iou": 0.015525358832507176,
+          "matched_iou50": false,
+          "union_coverage": 0.026923482671325476,
+          "coverage80": false,
+          "match_index": 2
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-mixed-8-lowcontrast_blur",
+          "iou": 0.015525358832507176,
+          "matched_iou50": false,
+          "union_coverage": 0.015525358832507176,
+          "coverage80": false,
+          "match_index": 0,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 40,
+            "I": 0,
+            "whitespace_edits": 5,
+            "errors": 40,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 322510848,
+      "sample_peak_rss": 814395392,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 38,
+        "I": 0,
+        "whitespace_edits": 5,
+        "errors": 38,
+        "CER": 0.95,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-14-clean",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Sans-mixed-14-clean.png",
+      "sha256": "76ae57a6c760202fb6e18d9f4a5b2895e26bf2db41ebb8b1fe21fcd1e0fdc204",
+      "targets": [
+        {
+          "id": "syn-Sans-mixed-14-clean",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            285,
+            28
+          ]
+        }
+      ],
+      "size": [
+        297,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Sans",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        297
+      ],
+      "resized_hw": [
+        960,
+        7128
+      ],
+      "resized_bytes": 20528640,
+      "ocr_ms": [
+        2635.095124000145,
+        1422.7570120001474
+      ],
+      "det_only_ms": 1320.6002580000131,
+      "boxes": [
+        [
+          [
+            35.47832743326823,
+            7.65625
+          ],
+          [
+            289.66481526692706,
+            7.8125
+          ],
+          [
+            289.5151163736979,
+            32.8125
+          ],
+          [
+            35.47832743326823,
+            32.65625
+          ]
+        ],
+        [
+          [
+            10.329133351643879,
+            9.6875
+          ],
+          [
+            45.957158406575516,
+            11.40625
+          ],
+          [
+            45.208669026692704,
+            27.65625
+          ],
+          [
+            9.580645243326822,
+            25.9375
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "_key AB-12345678 10 kg (1,234) -5.00%",
+        "API_k"
+      ],
+      "converted_texts": [
+        "_key AB-12345678 10 kg (1,234) -5.00%",
+        "API_k"
+      ],
+      "scores": [
+        0.9805696091136417,
+        0.8627356886863708
+      ],
+      "merged_text": "API_k _key AB-12345678 10 kg (1,234) -5.00%",
+      "detection_boxes": [
+        [
+          [
+            35.47832743326823,
+            7.65625
+          ],
+          [
+            289.66481526692706,
+            7.8125
+          ],
+          [
+            289.5151163736979,
+            32.8125
+          ],
+          [
+            35.47832743326823,
+            32.65625
+          ]
+        ],
+        [
+          [
+            10.329133351643879,
+            9.6875
+          ],
+          [
+            45.957158406575516,
+            11.40625
+          ],
+          [
+            45.208669026692704,
+            27.65625
+          ],
+          [
+            9.580645243326822,
+            25.9375
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-mixed-14-clean",
+          "iou": 0.5933525944230481,
+          "matched_iou50": true,
+          "union_coverage": 0.9925852369755381,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-mixed-14-clean",
+          "iou": 0.5933525944230481,
+          "matched_iou50": true,
+          "union_coverage": 0.9925852369755381,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "_key AB-12345678 10 kg (1,234) -5.00%",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 3,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 3,
+            "CER": 0.075,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 298954752,
+      "sample_peak_rss": 1068240896,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 3,
+        "whitespace_edits": 1,
+        "errors": 3,
+        "CER": 0.075,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-14-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Sans-mixed-14-lowcontrast_blur.png",
+      "sha256": "a4e2bbefddd940af305356da553e9cc4b591f73609aa540d313cf68acaa8b244",
+      "targets": [
+        {
+          "id": "syn-Sans-mixed-14-lowcontrast_blur",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            285,
+            28
+          ]
+        }
+      ],
+      "size": [
+        297,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Sans",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        297
+      ],
+      "resized_hw": [
+        960,
+        7128
+      ],
+      "resized_bytes": 20528640,
+      "ocr_ms": [
+        1551.1697579995598,
+        1559.6354760000395
+      ],
+      "det_only_ms": 1294.4314460000896,
+      "boxes": [
+        [
+          [
+            36.675908406575516,
+            7.5
+          ],
+          [
+            194.60685221354166,
+            8.75
+          ],
+          [
+            194.4571533203125,
+            32.8125
+          ],
+          [
+            36.52620951334635,
+            31.5625
+          ]
+        ],
+        [
+          [
+            10.927923838297525,
+            11.09375
+          ],
+          [
+            33.98135121663411,
+            11.09375
+          ],
+          [
+            33.98135121663411,
+            25.3125
+          ],
+          [
+            10.927923838297525,
+            25.3125
+          ]
+        ],
+        [
+          [
+            186.22379557291666,
+            11.40625
+          ],
+          [
+            236.2227783203125,
+            10.46875
+          ],
+          [
+            236.52217610677081,
+            26.25
+          ],
+          [
+            186.523193359375,
+            27.34375
+          ]
+        ],
+        [
+          [
+            241.7615966796875,
+            11.71875
+          ],
+          [
+            286.07208251953125,
+            11.40625
+          ],
+          [
+            286.07208251953125,
+            25.15625
+          ],
+          [
+            241.91129557291666,
+            25.46875
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "key AB-12345678 10 kg",
+        "API",
+        "(1,234)",
+        "-5.00%"
+      ],
+      "converted_texts": [
+        "key AB-12345678 10 kg",
+        "API",
+        "(1,234)",
+        "-5.00%"
+      ],
+      "scores": [
+        0.9946702520052592,
+        0.9677862922350565,
+        0.9201035499572754,
+        0.9338484108448029
+      ],
+      "merged_text": "API key AB-12345678 10 kg (1,234) -5.00%",
+      "detection_boxes": [
+        [
+          [
+            36.675908406575516,
+            7.5
+          ],
+          [
+            194.60685221354166,
+            8.75
+          ],
+          [
+            194.4571533203125,
+            32.8125
+          ],
+          [
+            36.52620951334635,
+            31.5625
+          ]
+        ],
+        [
+          [
+            10.927923838297525,
+            11.09375
+          ],
+          [
+            33.98135121663411,
+            11.09375
+          ],
+          [
+            33.98135121663411,
+            25.3125
+          ],
+          [
+            10.927923838297525,
+            25.3125
+          ]
+        ],
+        [
+          [
+            186.22379557291666,
+            11.40625
+          ],
+          [
+            236.2227783203125,
+            10.46875
+          ],
+          [
+            236.52217610677081,
+            26.25
+          ],
+          [
+            186.523193359375,
+            27.34375
+          ]
+        ],
+        [
+          [
+            241.7615966796875,
+            11.71875
+          ],
+          [
+            286.07208251953125,
+            11.40625
+          ],
+          [
+            286.07208251953125,
+            25.15625
+          ],
+          [
+            241.91129557291666,
+            25.46875
+          ]
+        ],
+        [
+          [
+            242.06099446614581,
+            16.5625
+          ],
+          [
+            246.10282389322916,
+            15.9375
+          ],
+          [
+            246.851318359375,
+            21.5625
+          ],
+          [
+            242.80946858723956,
+            22.03125
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Sans-mixed-14-lowcontrast_blur",
+          "iou": 0.4479434301592205,
+          "matched_iou50": false,
+          "union_coverage": 0.9180452193974827,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Sans-mixed-14-lowcontrast_blur",
+          "iou": 0.4479434301592205,
+          "matched_iou50": false,
+          "union_coverage": 0.9180452193974827,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "key AB-12345678 10 kg",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 19,
+            "I": 0,
+            "whitespace_edits": 2,
+            "errors": 19,
+            "CER": 0.475,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 299073536,
+      "sample_peak_rss": 1085140992,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 1,
+        "D": 0,
+        "I": 0,
+        "whitespace_edits": 1,
+        "errors": 1,
+        "CER": 0.025,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-tax-8-clean",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Serif-tax-8-clean.png",
+      "sha256": "11555d5ef73c47fdbc6d3ff7ff22f7aa90d3fe63e3ba1abc8f2b9ca67799aa21",
+      "targets": [
+        {
+          "id": "syn-Serif-tax-8-clean",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            149,
+            22
+          ]
+        }
+      ],
+      "size": [
+        161,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Serif",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        161
+      ],
+      "resized_hw": [
+        960,
+        4545
+      ],
+      "resized_bytes": 13089600,
+      "ocr_ms": [
+        956.5583249996052,
+        762.7631269997437
+      ],
+      "det_only_ms": 775.4481830006625,
+      "boxes": [
+        [
+          [
+            10.955141268521382,
+            10.788461621602377
+          ],
+          [
+            150.36946066676978,
+            11.278846486409504
+          ],
+          [
+            150.28830477774338,
+            23.45673027038574
+          ],
+          [
+            10.955141268521382,
+            22.966346486409506
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "营巢税5%精充保微背2.11%115/10/02"
+      ],
+      "converted_texts": [
+        "營巢稅5%精充保微背2.11%115/10/02"
+      ],
+      "scores": [
+        0.8571507769326369
+      ],
+      "merged_text": "營巢稅5%精充保微背2.11%115/10/02",
+      "detection_boxes": [
+        [
+          [
+            10.955141268521382,
+            10.788461621602377
+          ],
+          [
+            150.36946066676978,
+            11.278846486409504
+          ],
+          [
+            150.28830477774338,
+            23.45673027038574
+          ],
+          [
+            10.955141268521382,
+            22.966346486409506
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-tax-8-clean",
+          "iou": 0.807165651333291,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-tax-8-clean",
+          "iou": 0.807165651333291,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "營巢稅5%精充保微背2.11%115/10/02",
+          "metrics": {
+            "N": 26,
+            "S": 4,
+            "D": 2,
+            "I": 0,
+            "whitespace_edits": 2,
+            "errors": 6,
+            "CER": 0.23076923076923078,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 262012928,
+      "sample_peak_rss": 778739712,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 4,
+        "D": 2,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 6,
+        "CER": 0.23076923076923078,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-tax-8-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Serif-tax-8-lowcontrast_blur.png",
+      "sha256": "959a1a5c90c2f4dba6ab7a7f50433db00e5483c37b5634b55c334fb6839009ad",
+      "targets": [
+        {
+          "id": "syn-Serif-tax-8-lowcontrast_blur",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            149,
+            22
+          ]
+        }
+      ],
+      "size": [
+        161,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Serif",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        161
+      ],
+      "resized_hw": [
+        960,
+        4545
+      ],
+      "resized_bytes": 13089600,
+      "ocr_ms": [
+        762.0814820002124,
+        791.0316509996846
+      ],
+      "det_only_ms": 794.8747600003117,
+      "boxes": [],
+      "raw_texts": [],
+      "converted_texts": [],
+      "scores": [],
+      "merged_text": "",
+      "detection_boxes": [],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-tax-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-tax-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "",
+          "metrics": {
+            "N": 26,
+            "S": 0,
+            "D": 26,
+            "I": 0,
+            "whitespace_edits": 2,
+            "errors": 26,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 262094848,
+      "sample_peak_rss": 778817536,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 26,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 26,
+        "CER": 1.0,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-tax-14-clean",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Serif-tax-14-clean.png",
+      "sha256": "e91a9a83ec2830fd41d7f9f36d6f3f64d76934a8f7c35e19c796ffd9369bf1be",
+      "targets": [
+        {
+          "id": "syn-Serif-tax-14-clean",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            251,
+            28
+          ]
+        }
+      ],
+      "size": [
+        263,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Serif",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        263
+      ],
+      "resized_hw": [
+        960,
+        6312
+      ],
+      "resized_bytes": 18178560,
+      "ocr_ms": [
+        2296.126625999932,
+        1028.0721829994945
+      ],
+      "det_only_ms": 947.1676969997134,
+      "boxes": [
+        [
+          [
+            8.616431554158527,
+            8.125
+          ],
+          [
+            255.0463663736979,
+            9.0
+          ],
+          [
+            255.0463663736979,
+            31.625
+          ],
+          [
+            8.483870824178059,
+            30.75
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "营業税5%補充保费2.11%115/10/02"
+      ],
+      "converted_texts": [
+        "營業稅5%補充保費2.11%115/10/02"
+      ],
+      "scores": [
+        0.944024453992429
+      ],
+      "merged_text": "營業稅5%補充保費2.11%115/10/02",
+      "detection_boxes": [
+        [
+          [
+            8.616431554158527,
+            8.125
+          ],
+          [
+            255.0463663736979,
+            9.0
+          ],
+          [
+            255.0463663736979,
+            31.625
+          ],
+          [
+            8.483870824178059,
+            30.75
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-tax-14-clean",
+          "iou": 0.6856690146898073,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-tax-14-clean",
+          "iou": 0.6856690146898073,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "營業稅5%補充保費2.11%115/10/02",
+          "metrics": {
+            "N": 26,
+            "S": 0,
+            "D": 3,
+            "I": 0,
+            "whitespace_edits": 2,
+            "errors": 3,
+            "CER": 0.11538461538461539,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 289284096,
+      "sample_peak_rss": 903946240,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 3,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 3,
+        "CER": 0.11538461538461539,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-tax-14-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "tax",
+      "image_path": "phase2/dataset/syn-Serif-tax-14-lowcontrast_blur.png",
+      "sha256": "88f0bdb422e02b94e27127f3f9b706dbb1763b355b595bec297566015543499e",
+      "targets": [
+        {
+          "id": "syn-Serif-tax-14-lowcontrast_blur",
+          "text": "營業稅5% 補充保險費2.11% 115/10/02",
+          "bbox": [
+            12,
+            12,
+            251,
+            28
+          ]
+        }
+      ],
+      "size": [
+        263,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Serif",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        263
+      ],
+      "resized_hw": [
+        960,
+        6312
+      ],
+      "resized_bytes": 18178560,
+      "ocr_ms": [
+        1021.090987000207,
+        1053.2436229996165
+      ],
+      "det_only_ms": 936.983417999727,
+      "boxes": [
+        [
+          [
+            31.284273783365883,
+            11.25
+          ],
+          [
+            75.02923075358072,
+            11.5
+          ],
+          [
+            74.89667256673177,
+            27.625
+          ],
+          [
+            31.151713053385414,
+            27.375
+          ]
+        ],
+        [
+          [
+            80.06653340657552,
+            10.625
+          ],
+          [
+            194.9964599609375,
+            9.125
+          ],
+          [
+            195.2615966796875,
+            28.625
+          ],
+          [
+            80.33164978027344,
+            30.125
+          ]
+        ],
+        [
+          [
+            188.23588053385416,
+            11.375
+          ],
+          [
+            252.6602783203125,
+            12.125
+          ],
+          [
+            252.39516194661456,
+            28.125
+          ],
+          [
+            187.97076416015625,
+            27.25
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "紫税5%",
+        "補充保费2.11% 1",
+        "115/10/02"
+      ],
+      "converted_texts": [
+        "紫稅5%",
+        "補充保費2.11% 1",
+        "115/10/02"
+      ],
+      "scores": [
+        0.8516353294253349,
+        0.9303903146223589,
+        0.9998515182071261
+      ],
+      "merged_text": "紫稅5% 補充保費2.11% 1 115/10/02",
+      "detection_boxes": [
+        [
+          [
+            31.284273783365883,
+            11.25
+          ],
+          [
+            75.02923075358072,
+            11.5
+          ],
+          [
+            74.89667256673177,
+            27.625
+          ],
+          [
+            31.151713053385414,
+            27.375
+          ]
+        ],
+        [
+          [
+            80.06653340657552,
+            10.625
+          ],
+          [
+            194.9964599609375,
+            9.125
+          ],
+          [
+            195.2615966796875,
+            28.625
+          ],
+          [
+            80.33164978027344,
+            30.125
+          ]
+        ],
+        [
+          [
+            188.23588053385416,
+            11.375
+          ],
+          [
+            252.6602783203125,
+            12.125
+          ],
+          [
+            252.39516194661456,
+            28.125
+          ],
+          [
+            187.97076416015625,
+            27.25
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-tax-14-lowcontrast_blur",
+          "iou": 0.4351782699955887,
+          "matched_iou50": false,
+          "union_coverage": 0.8877840240897782,
+          "coverage80": true,
+          "match_index": 1
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-tax-14-lowcontrast_blur",
+          "iou": 0.4351782699955887,
+          "matched_iou50": false,
+          "union_coverage": 0.8877840240897782,
+          "coverage80": true,
+          "match_index": 1,
+          "gt": "營業稅5% 補充保險費2.11% 115/10/02",
+          "prediction": "補充保費2.11% 1",
+          "metrics": {
+            "N": 26,
+            "S": 0,
+            "D": 15,
+            "I": 0,
+            "whitespace_edits": 1,
+            "errors": 15,
+            "CER": 0.5769230769230769,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 289284096,
+      "sample_peak_rss": 920788992,
+      "transcript_metrics": {
+        "N": 26,
+        "S": 1,
+        "D": 2,
+        "I": 2,
+        "whitespace_edits": 1,
+        "errors": 5,
+        "CER": 0.19230769230769232,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-complex-8-clean",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Serif-complex-8-clean.png",
+      "sha256": "46efa3c3673146a4233a18c6e87f859aa4581ddce6c84703e0d8d7d08b62e259",
+      "targets": [
+        {
+          "id": "syn-Serif-complex-8-clean",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            109,
+            22
+          ]
+        }
+      ],
+      "size": [
+        121,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Serif",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        121
+      ],
+      "resized_hw": [
+        960,
+        3416
+      ],
+      "resized_bytes": 9838080,
+      "ocr_ms": [
+        507.119982000404,
+        551.8323139995118
+      ],
+      "det_only_ms": 511.42479999998613,
+      "boxes": [],
+      "raw_texts": [],
+      "converted_texts": [],
+      "scores": [],
+      "merged_text": "",
+      "detection_boxes": [
+        [
+          [
+            10.855846530101338,
+            10.684027417500813
+          ],
+          [
+            110.14415238891887,
+            10.802083333333334
+          ],
+          [
+            110.14415238891887,
+            22.84375
+          ],
+          [
+            10.855846530101338,
+            22.666666666666664
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-complex-8-clean",
+          "iou": 0.8133037600276475,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-complex-8-clean",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "",
+          "metrics": {
+            "N": 12,
+            "S": 0,
+            "D": 12,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 12,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 262459392,
+      "sample_peak_rss": 633528320,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12,
+        "CER": 1.0,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-complex-8-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Serif-complex-8-lowcontrast_blur.png",
+      "sha256": "d101ceae049dd585b177a38995d1efbf90b89c42acda472957769b262c04130e",
+      "targets": [
+        {
+          "id": "syn-Serif-complex-8-lowcontrast_blur",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            109,
+            22
+          ]
+        }
+      ],
+      "size": [
+        121,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Serif",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        121
+      ],
+      "resized_hw": [
+        960,
+        3416
+      ],
+      "resized_bytes": 9838080,
+      "ocr_ms": [
+        482.62815499947465,
+        487.004022000292
+      ],
+      "det_only_ms": 500.71761600065656,
+      "boxes": [],
+      "raw_texts": [],
+      "converted_texts": [],
+      "scores": [],
+      "merged_text": "",
+      "detection_boxes": [],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-complex-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-complex-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "",
+          "metrics": {
+            "N": 12,
+            "S": 0,
+            "D": 12,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 12,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 262463488,
+      "sample_peak_rss": 633532416,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12,
+        "CER": 1.0,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-complex-14-clean",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Serif-complex-14-clean.png",
+      "sha256": "3b1c82af8751419989edf012f7667a515e8fa9d2f2b73675301f38d4f95efe85",
+      "targets": [
+        {
+          "id": "syn-Serif-complex-14-clean",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            181,
+            28
+          ]
+        }
+      ],
+      "size": [
+        193,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Serif",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        193
+      ],
+      "resized_hw": [
+        960,
+        4632
+      ],
+      "resized_bytes": 13340160,
+      "ocr_ms": [
+        721.502886000053,
+        752.4839310008247
+      ],
+      "det_only_ms": 707.9255789994932,
+      "boxes": [
+        [
+          [
+            8.560483932495117,
+            8.75
+          ],
+          [
+            184.34224446614581,
+            8.557692209879557
+          ],
+          [
+            184.34224446614581,
+            30.76923116048177
+          ],
+          [
+            8.560483932495117,
+            30.961537679036457
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "郁釀缴菌據税赋"
+      ],
+      "converted_texts": [
+        "鬱釀繳菌據稅賦"
+      ],
+      "scores": [
+        0.8942069326128278
+      ],
+      "merged_text": "鬱釀繳菌據稅賦",
+      "detection_boxes": [
+        [
+          [
+            8.560483932495117,
+            8.75
+          ],
+          [
+            184.34224446614581,
+            8.557692209879557
+          ],
+          [
+            184.34224446614581,
+            30.76923116048177
+          ],
+          [
+            8.560483932495117,
+            30.961537679036457
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-complex-14-clean",
+          "iou": 0.6925549532163859,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-complex-14-clean",
+          "iou": 0.6925549532163859,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "鬱釀繳菌據稅賦",
+          "metrics": {
+            "N": 12,
+            "S": 1,
+            "D": 5,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 6,
+            "CER": 0.5,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 262463488,
+      "sample_peak_rss": 779190272,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 6,
+        "CER": 0.5,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-complex-14-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "complex",
+      "image_path": "phase2/dataset/syn-Serif-complex-14-lowcontrast_blur.png",
+      "sha256": "9e925e3a6bad85baa09576ec214f42ae698d3c3041fc53fe4b721fc58934fbf8",
+      "targets": [
+        {
+          "id": "syn-Serif-complex-14-lowcontrast_blur",
+          "text": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "bbox": [
+            12,
+            12,
+            181,
+            28
+          ]
+        }
+      ],
+      "size": [
+        193,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Serif",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        193
+      ],
+      "resized_hw": [
+        960,
+        4632
+      ],
+      "resized_bytes": 13340160,
+      "ocr_ms": [
+        846.5375880005013,
+        766.0204909998356
+      ],
+      "det_only_ms": 732.780673999514,
+      "boxes": [
+        [
+          [
+            87.25856526692708,
+            10.865384419759113
+          ],
+          [
+            182.9803466796875,
+            9.807692209879557
+          ],
+          [
+            183.27217610677081,
+            29.423077901204426
+          ],
+          [
+            87.55040486653645,
+            30.480768839518227
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "缴菌據税赋"
+      ],
+      "converted_texts": [
+        "繳菌據稅賦"
+      ],
+      "scores": [
+        0.8543824672698974
+      ],
+      "merged_text": "繳菌據稅賦",
+      "detection_boxes": [
+        [
+          [
+            87.25856526692708,
+            10.865384419759113
+          ],
+          [
+            182.9803466796875,
+            9.807692209879557
+          ],
+          [
+            183.27217610677081,
+            29.423077901204426
+          ],
+          [
+            87.55040486653645,
+            30.480768839518227
+          ]
+        ],
+        [
+          [
+            52.14112854003906,
+            13.846153259277344
+          ],
+          [
+            75.09879048665364,
+            13.846153259277344
+          ],
+          [
+            75.09879048665364,
+            26.0576909383138
+          ],
+          [
+            52.14112854003906,
+            26.0576909383138
+          ]
+        ],
+        [
+          [
+            15.75907262166341,
+            15.192307790120442
+          ],
+          [
+            25.09778340657552,
+            15.192307790120442
+          ],
+          [
+            25.09778340657552,
+            23.5576909383138
+          ],
+          [
+            15.75907262166341,
+            23.5576909383138
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-complex-14-lowcontrast_blur",
+          "iou": 0.48559405451485027,
+          "matched_iou50": false,
+          "union_coverage": 0.6864492278979986,
+          "coverage80": false,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-complex-14-lowcontrast_blur",
+          "iou": 0.48559405451485027,
+          "matched_iou50": false,
+          "union_coverage": 0.5538788700172217,
+          "coverage80": false,
+          "match_index": 0,
+          "gt": "籤簽鬱龜鑑釀繳齒議據稅賦",
+          "prediction": "繳菌據稅賦",
+          "metrics": {
+            "N": 12,
+            "S": 1,
+            "D": 7,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 8,
+            "CER": 0.6666666666666666,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 262479872,
+      "sample_peak_rss": 779206656,
+      "transcript_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 7,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 8,
+        "CER": 0.6666666666666666,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-8-clean",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Serif-mixed-8-clean.png",
+      "sha256": "564ef5518239015e767b1965abfbe96065bfac9663d5799745c8644880581cf9",
+      "targets": [
+        {
+          "id": "syn-Serif-mixed-8-clean",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            174,
+            22
+          ]
+        }
+      ],
+      "size": [
+        186,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Serif",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        186
+      ],
+      "resized_hw": [
+        960,
+        5251
+      ],
+      "resized_bytes": 15122880,
+      "ocr_ms": [
+        1723.5330250005063,
+        884.7642509999787
+      ],
+      "det_only_ms": 826.2694869999905,
+      "boxes": [
+        [
+          [
+            10.312499686164688,
+            11.10795415242513
+          ],
+          [
+            174.9375117165183,
+            11.6875
+          ],
+          [
+            174.9375117165183,
+            23.85795415242513
+          ],
+          [
+            10.312499686164688,
+            23.27840830485026
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "API_key AB-12345678 10 kg (1,234) -5.00%"
+      ],
+      "converted_texts": [
+        "API_key AB-12345678 10 kg (1,234) -5.00%"
+      ],
+      "scores": [
+        0.9819904193282127
+      ],
+      "merged_text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "detection_boxes": [
+        [
+          [
+            10.312499686164688,
+            11.10795415242513
+          ],
+          [
+            174.9375117165183,
+            11.6875
+          ],
+          [
+            174.9375117165183,
+            23.85795415242513
+          ],
+          [
+            10.312499686164688,
+            23.27840830485026
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-mixed-8-clean",
+          "iou": 0.8085602932046005,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-mixed-8-clean",
+          "iou": 0.8085602932046005,
+          "matched_iou50": true,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 0,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "whitespace_edits": 0,
+            "errors": 0,
+            "CER": 0.0,
+            "exact": true
+          }
+        }
+      ],
+      "rss_after": 320602112,
+      "sample_peak_rss": 857767936,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 0,
+        "CER": 0.0,
+        "exact": true
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-8-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Serif-mixed-8-lowcontrast_blur.png",
+      "sha256": "1a99baf43742fc757599cf24f814af3e7d538e82539ee4fb4f389fef2bd0c716",
+      "targets": [
+        {
+          "id": "syn-Serif-mixed-8-lowcontrast_blur",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            174,
+            22
+          ]
+        }
+      ],
+      "size": [
+        186,
+        34
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Serif",
+      "font_size": 8,
+      "input_hw": [
+        34,
+        186
+      ],
+      "resized_hw": [
+        960,
+        5251
+      ],
+      "resized_bytes": 15122880,
+      "ocr_ms": [
+        813.9599160003854,
+        1117.8674960001445
+      ],
+      "det_only_ms": 1077.4581940004282,
+      "boxes": [],
+      "raw_texts": [],
+      "converted_texts": [],
+      "scores": [],
+      "merged_text": "",
+      "detection_boxes": [],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-mixed-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-mixed-8-lowcontrast_blur",
+          "iou": 0,
+          "matched_iou50": false,
+          "union_coverage": 0.0,
+          "coverage80": false,
+          "match_index": null,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 40,
+            "I": 0,
+            "whitespace_edits": 5,
+            "errors": 40,
+            "CER": 1.0,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 320684032,
+      "sample_peak_rss": 858038272,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 40,
+        "I": 0,
+        "whitespace_edits": 5,
+        "errors": 40,
+        "CER": 1.0,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-14-clean",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Serif-mixed-14-clean.png",
+      "sha256": "b71d98233e6a5373dcc9e70c84a74c625d714c8cf460367a4e4fa035942220a7",
+      "targets": [
+        {
+          "id": "syn-Serif-mixed-14-clean",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            294,
+            28
+          ]
+        }
+      ],
+      "size": [
+        306,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "clean",
+      "font": "Serif",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        306
+      ],
+      "resized_hw": [
+        960,
+        7344
+      ],
+      "resized_bytes": 21150720,
+      "ocr_ms": [
+        1332.010776000061,
+        1241.5576780003903
+      ],
+      "det_only_ms": 1199.3131320004977,
+      "boxes": [
+        [
+          [
+            156.23891194661456,
+            5.46875
+          ],
+          [
+            204.05141194661456,
+            11.09375
+          ],
+          [
+            201.7379150390625,
+            32.34375
+          ],
+          [
+            153.7711690266927,
+            26.875
+          ]
+        ],
+        [
+          [
+            7.711693445841471,
+            7.1875
+          ],
+          [
+            165.03024291992188,
+            8.59375
+          ],
+          [
+            164.87600708007812,
+            33.125
+          ],
+          [
+            7.403226216634114,
+            31.71875
+          ]
+        ],
+        [
+          [
+            194.02620442708331,
+            10.0
+          ],
+          [
+            297.054443359375,
+            9.375
+          ],
+          [
+            297.20867919921875,
+            29.0625
+          ],
+          [
+            194.02620442708331,
+            29.6875
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "10 kg(",
+        "API_key AB-12345678 1",
+        "(1,234) -5.00%"
+      ],
+      "converted_texts": [
+        "10 kg(",
+        "API_key AB-12345678 1",
+        "(1,234) -5.00%"
+      ],
+      "scores": [
+        0.8376569549242655,
+        0.9691330336389088,
+        0.9895738916737693
+      ],
+      "merged_text": "API_key AB-12345678 1 10 kg( (1,234) -5.00%",
+      "detection_boxes": [
+        [
+          [
+            156.23891194661456,
+            5.46875
+          ],
+          [
+            204.05141194661456,
+            11.09375
+          ],
+          [
+            201.7379150390625,
+            32.34375
+          ],
+          [
+            153.7711690266927,
+            26.875
+          ]
+        ],
+        [
+          [
+            7.711693445841471,
+            7.1875
+          ],
+          [
+            165.03024291992188,
+            8.59375
+          ],
+          [
+            164.87600708007812,
+            33.125
+          ],
+          [
+            7.403226216634114,
+            31.71875
+          ]
+        ],
+        [
+          [
+            194.02620442708331,
+            10.0
+          ],
+          [
+            297.054443359375,
+            9.375
+          ],
+          [
+            297.20867919921875,
+            29.0625
+          ],
+          [
+            194.02620442708331,
+            29.6875
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-mixed-14-clean",
+          "iou": 0.41297580438559267,
+          "matched_iou50": false,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 1
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-mixed-14-clean",
+          "iou": 0.41297580438559267,
+          "matched_iou50": false,
+          "union_coverage": 1.0,
+          "coverage80": true,
+          "match_index": 1,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "API_key AB-12345678 1",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 19,
+            "I": 0,
+            "whitespace_edits": 3,
+            "errors": 19,
+            "CER": 0.475,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 304709632,
+      "sample_peak_rss": 1069805568,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 3,
+        "whitespace_edits": 1,
+        "errors": 3,
+        "CER": 0.075,
+        "exact": false
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-14-lowcontrast_blur",
+      "group": "synthetic_page",
+      "domain": "mixed",
+      "image_path": "phase2/dataset/syn-Serif-mixed-14-lowcontrast_blur.png",
+      "sha256": "699f2edcfda39ab4e76db085962a76d5136435faf6b5480359fa1224f0448415",
+      "targets": [
+        {
+          "id": "syn-Serif-mixed-14-lowcontrast_blur",
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "bbox": [
+            12,
+            12,
+            294,
+            28
+          ]
+        }
+      ],
+      "size": [
+        306,
+        40
+      ],
+      "gt_scope": "all rendered text",
+      "condition": "lowcontrast_blur",
+      "font": "Serif",
+      "font_size": 14,
+      "input_hw": [
+        40,
+        306
+      ],
+      "resized_hw": [
+        960,
+        7344
+      ],
+      "resized_bytes": 21150720,
+      "ocr_ms": [
+        1419.0036600002713,
+        1391.7893219995676
+      ],
+      "det_only_ms": 1202.2347780002747,
+      "boxes": [
+        [
+          [
+            161.94556681315103,
+            7.34375
+          ],
+          [
+            199.11592610677081,
+            12.8125
+          ],
+          [
+            196.648193359375,
+            29.84375
+          ],
+          [
+            159.47782389322916,
+            24.21875
+          ]
+        ],
+        [
+          [
+            13.418346405029297,
+            12.1875
+          ],
+          [
+            39.63810475667317,
+            12.1875
+          ],
+          [
+            39.63810475667317,
+            25.15625
+          ],
+          [
+            13.418346405029297,
+            25.15625
+          ]
+        ],
+        [
+          [
+            43.49395243326823,
+            10.9375
+          ],
+          [
+            66.9375,
+            14.0625
+          ],
+          [
+            65.24092610677083,
+            27.1875
+          ],
+          [
+            41.79737854003906,
+            24.0625
+          ]
+        ],
+        [
+          [
+            71.25604756673177,
+            12.1875
+          ],
+          [
+            91.76915486653645,
+            13.125
+          ],
+          [
+            91.30645751953125,
+            24.6875
+          ],
+          [
+            70.79334513346353,
+            23.90625
+          ]
+        ],
+        [
+          [
+            93.61996459960938,
+            11.09375
+          ],
+          [
+            158.70665486653644,
+            11.25
+          ],
+          [
+            158.70665486653644,
+            25.9375
+          ],
+          [
+            93.61996459960938,
+            25.78125
+          ]
+        ],
+        [
+          [
+            252.32661946614581,
+            11.09375
+          ],
+          [
+            288.4173380533854,
+            12.5
+          ],
+          [
+            287.95463053385413,
+            26.71875
+          ],
+          [
+            251.86391194661456,
+            25.3125
+          ]
+        ],
+        [
+          [
+            215.00201416015625,
+            13.59375
+          ],
+          [
+            239.679443359375,
+            13.59375
+          ],
+          [
+            239.679443359375,
+            24.6875
+          ],
+          [
+            215.00201416015625,
+            24.6875
+          ]
+        ]
+      ],
+      "raw_texts": [
+        "10 kg",
+        "API",
+        "key",
+        "AB",
+        "12345678",
+        "5.00%",
+        "234"
+      ],
+      "converted_texts": [
+        "10 kg",
+        "API",
+        "key",
+        "AB",
+        "12345678",
+        "5.00%",
+        "234"
+      ],
+      "scores": [
+        0.9917396187782288,
+        0.8506837487220764,
+        0.9777656396230062,
+        0.9962449669837952,
+        0.9998833686113358,
+        0.9938823103904724,
+        0.9996126691500345
+      ],
+      "merged_text": "API key AB 12345678 10 kg 234 5.00%",
+      "detection_boxes": [
+        [
+          [
+            161.94556681315103,
+            7.34375
+          ],
+          [
+            199.11592610677081,
+            12.8125
+          ],
+          [
+            196.648193359375,
+            29.84375
+          ],
+          [
+            159.47782389322916,
+            24.21875
+          ]
+        ],
+        [
+          [
+            13.418346405029297,
+            12.1875
+          ],
+          [
+            39.63810475667317,
+            12.1875
+          ],
+          [
+            39.63810475667317,
+            25.15625
+          ],
+          [
+            13.418346405029297,
+            25.15625
+          ]
+        ],
+        [
+          [
+            43.49395243326823,
+            10.9375
+          ],
+          [
+            66.9375,
+            14.0625
+          ],
+          [
+            65.24092610677083,
+            27.1875
+          ],
+          [
+            41.79737854003906,
+            24.0625
+          ]
+        ],
+        [
+          [
+            71.25604756673177,
+            12.1875
+          ],
+          [
+            91.76915486653645,
+            13.125
+          ],
+          [
+            91.30645751953125,
+            24.6875
+          ],
+          [
+            70.79334513346353,
+            23.90625
+          ]
+        ],
+        [
+          [
+            93.61996459960938,
+            11.09375
+          ],
+          [
+            158.70665486653644,
+            11.25
+          ],
+          [
+            158.70665486653644,
+            25.9375
+          ],
+          [
+            93.61996459960938,
+            25.78125
+          ]
+        ],
+        [
+          [
+            252.32661946614581,
+            11.09375
+          ],
+          [
+            288.4173380533854,
+            12.5
+          ],
+          [
+            287.95463053385413,
+            26.71875
+          ],
+          [
+            251.86391194661456,
+            25.3125
+          ]
+        ],
+        [
+          [
+            215.00201416015625,
+            13.59375
+          ],
+          [
+            239.679443359375,
+            13.59375
+          ],
+          [
+            239.679443359375,
+            24.6875
+          ],
+          [
+            215.00201416015625,
+            24.6875
+          ]
+        ]
+      ],
+      "detection_targets": [
+        {
+          "id": "syn-Serif-mixed-14-lowcontrast_blur",
+          "iou": 0.19756474400154503,
+          "matched_iou50": false,
+          "union_coverage": 0.6923978800260486,
+          "coverage80": false,
+          "match_index": 4
+        }
+      ],
+      "retrieval_targets": [
+        {
+          "id": "syn-Serif-mixed-14-lowcontrast_blur",
+          "iou": 0.19756474400154503,
+          "matched_iou50": false,
+          "union_coverage": 0.6923978800260486,
+          "coverage80": false,
+          "match_index": 4,
+          "gt": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "prediction": "12345678",
+          "metrics": {
+            "N": 40,
+            "S": 0,
+            "D": 32,
+            "I": 0,
+            "whitespace_edits": 5,
+            "errors": 32,
+            "CER": 0.8,
+            "exact": false
+          }
+        }
+      ],
+      "rss_after": 304820224,
+      "sample_peak_rss": 1090887680,
+      "transcript_metrics": {
+        "N": 40,
+        "S": 2,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 7,
+        "CER": 0.175,
+        "exact": false
+      }
+    }
+  ],
+  "load_ms": 250.16766699991422
+}
