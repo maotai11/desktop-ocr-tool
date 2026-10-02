@@ -14,7 +14,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: ${{ matrix.os == 'windows-latest' && 'windows' || 'offscreen' }}
       ORT_DISABLE_TELEMETRY: '1'
       OMP_NUM_THREADS: '2'
       OPENBLAS_NUM_THREADS: '2'

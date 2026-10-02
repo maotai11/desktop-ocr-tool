@@ -8,7 +8,7 @@
 - CONFIRMED：修復候選本機完整 pytest 已執行；目前156 passed、0 failed、0 skipped；最新精確結果見 `docs/evidence/full.xml`，涵蓋原測試修正與新增對抗性測試。測試數量不是功能完成證據。
 - CONFIRMED：Linux Qt offscreen 的 source self-test 真實載入三個固定模型、OCR known text、SQLite 寫入；結果見 `docs/evidence/source-selftest.json`。
 - CONFIRMED：實際 QThread 排程與 shutdown barrier 測試；模型載入期間要求退出，40 個 capture→DB→OCR→DB 工作全部持久化。
-- CONFIRMED：commit `1a843fe` 的 Linux／Windows CI、source self-test、Windows full app startup/shutdown、PyInstaller one-file build 及 outbound-blocked frozen self-test／app smoke 全部通過；見 Actions run 37008203276。後續 commit 仍須重跑。
+- CONFIRMED：commit `1a843fe` 的 Linux／Windows CI、source self-test、Windows full app startup/shutdown、PyInstaller one-file build 及 outbound-blocked frozen self-test／app smoke 全部通過；見 Actions run 37008203276。此 run 的 Qt platform 為 offscreen；後續 CI 將 Windows 改為 qwindows 原生平台並重跑，不把 offscreen 當原生視窗驗收。
 - UNKNOWN：乾淨 Windows 離線電腦、mixed DPI、原始 Microsoft 連線 payload。
 - 尚未結案：稀有字／小字 Detection 漏辨、domain correction、旋轉／表格 fusion、長條圖片切片、retention、未接線設定、Windows lifecycle 現場行為。
 
