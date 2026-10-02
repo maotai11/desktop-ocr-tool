@@ -1,14 +1,20 @@
-PySide6>=6.8
-onnxruntime>=1.20
-onnx>=1.16
-opencv-python-headless>=4.10
-numpy>=2.0
-Pillow>=10
-mss>=9
-rapidocr-onnxruntime>=1.4
-deskew>=0.10
-zhconv>=1.4
-
-# 第二引擎（可選）
-# cnocr>=2.3  # 繁體中文 OCR，ONNX 後端（約 +200MB）
-# paddleocr>=2.7  # PaddleOCR v5 引擎（約 +500MB）
+# Core runtime, validated with Python 3.12. Separate optional providers are not bundled.
+PySide6-Essentials==6.11.2
+shiboken6==6.11.2
+onnxruntime==1.30.0
+opencv-python==4.10.0.84
+numpy==2.2.6
+pillow==12.1.1
+mss==10.2.0
+rapidocr-onnxruntime==1.4.4
+zhconv==1.4.3
+flatbuffers==25.12.19
+packaging==26.3
+protobuf==7.36.2
+pyclipper==1.4.0
+PyYAML==6.0.3
+shapely==2.1.2
+six==1.17.0
+tqdm==4.70.1
+typing_extensions==4.16.0
+setuptools==84.0.0

@@ -4,6 +4,7 @@ import os
 import random
 import string
 from datetime import datetime
+from pathlib import Path, PureWindowsPath
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class FileManager:
     def __init__(self, data_dir: str, thumbnail_size: tuple = (80, 80)):
-        self._data_dir = data_dir
+        self._data_dir = str(Path(data_dir).resolve())
         self._thumb_size = thumbnail_size
         for sub in ('captures', 'thumbnails', 'annotations', 'exports'):
             os.makedirs(os.path.join(data_dir, sub), exist_ok=True)
@@ -54,9 +55,9 @@ class FileManager:
         thumb_filename = f"{name}_thumb.png"
         abs_path = os.path.join(sub, thumb_filename)
         try:
-            img = Image.open(image_path)
-            img.thumbnail(self._thumb_size, Image.LANCZOS)
-            img.save(abs_path, 'PNG')
+            with Image.open(image_path) as img:
+                img.thumbnail(self._thumb_size, Image.LANCZOS)
+                img.save(abs_path, 'PNG')
             rel_path = os.path.relpath(abs_path, self._data_dir)
             return abs_path, rel_path
         except Exception as e:
@@ -65,23 +66,27 @@ class FileManager:
 
     def delete_item_files(self, item) -> list:
         failed = []
-        for rel_path in [item.raw_image_path, item.thumbnail_path, item.annotation_path]:
+        for rel_path in [getattr(item, name, None) for name in ('raw_image_path', 'thumbnail_path', 'annotation_path')]:
             if rel_path:
-                abs_path = self.get_abs_path(rel_path)
-                if os.path.exists(abs_path):
-                    try:
+                try:
+                    abs_path = self.get_abs_path(rel_path)
+                    if os.path.exists(abs_path):
                         os.remove(abs_path)
-                    except Exception as e:
-                        logger.warning(f"刪除檔案失敗 {abs_path}: {e}")
-                        failed.append(abs_path)
+                except (OSError, ValueError) as e:
+                    logger.warning('刪除檔案失敗: %s', e)
+                    failed.append(rel_path)
         return failed
 
     def get_abs_path(self, rel_path: str) -> str:
         if not rel_path:
             return ''
-        if os.path.isabs(rel_path):
-            return rel_path
-        return os.path.join(self._data_dir, rel_path)
+        if Path(rel_path).is_absolute() or PureWindowsPath(rel_path).drive:
+            raise ValueError('Stored image path must be relative')
+        root = Path(self._data_dir).resolve()
+        target = (root / rel_path.replace('\\', '/')).resolve()
+        if target == root or not target.is_relative_to(root):
+            raise ValueError('Image path escapes the data directory')
+        return str(target)
 
     def get_export_dir(self) -> str:
         d = os.path.join(self._data_dir, 'exports')

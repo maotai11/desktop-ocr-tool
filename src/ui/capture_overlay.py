@@ -12,11 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class CaptureOverlay(QWidget):
+    cancelled = Signal()
     region_selected = Signal(int, int, int, int, int)  # x, y, w, h, monitor_idx
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._callback: Optional[Callable] = None
+        self._capture_generation = 0
         self._origin = QPoint()
         self._rubber_band: Optional[QRubberBand] = None
         self._is_drawing = False
@@ -33,6 +35,7 @@ class CaptureOverlay(QWidget):
         self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 
     def start_capture(self, callback: Callable):
+        self._capture_generation += 1
         self._callback = callback
         self._setup_fullscreen()
         self.show()
@@ -83,6 +86,7 @@ class CaptureOverlay(QWidget):
         self.hide()
         if rect.width() < 5 or rect.height() < 5:
             logger.debug("框選區域太小，取消")
+            self.cancelled.emit()
             return
 
         dpr = QApplication.primaryScreen().devicePixelRatio()
@@ -96,11 +100,15 @@ class CaptureOverlay(QWidget):
         logger.info(f"框選區域: x={x} y={y} w={w} h={h} monitor={self._monitor_idx}")
         if self._callback:
             # 延遲 150ms：讓 OS 重繪（移除半透明遮罩），避免截圖包含 overlay 圖層
-            QTimer.singleShot(150, lambda: self._callback(x, y, w, h, self._monitor_idx))
+            callback, monitor, generation = self._callback, self._monitor_idx, self._capture_generation
+            QTimer.singleShot(150, self, lambda: callback(x,y,w,h,monitor)
+                              if generation == self._capture_generation else None)
 
     def _cancel(self):
+        self._capture_generation += 1
         self.releaseKeyboard()
         if self._rubber_band:
             self._rubber_band.hide()
         self.hide()
+        self.cancelled.emit()
         logger.debug("框選已取消")

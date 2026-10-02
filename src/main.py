@@ -8,8 +8,9 @@ if not getattr(sys, 'frozen', False):
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
 
-from src.core.logger import setup_logger
-setup_logger()
+if __name__ == '__main__' and len(sys.argv) == 3 and sys.argv[1] == '--self-test':
+    from src.self_test import run_self_test
+    sys.exit(run_self_test(sys.argv[2]))
 
 from src.app import main
 

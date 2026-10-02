@@ -4,6 +4,7 @@ import time
 import cv2
 import numpy as np
 from .postprocessor import sort_boxes_and_merge
+from .fusion import fuse_passes
 from .preprocess import enhance_for_ocr, upscale_if_small
 from .secondary_engine import SecondaryEngineBase, NullSecondaryEngine
 
@@ -39,6 +40,7 @@ class OcrEngine:
         self._enable_handwriting = enable_handwriting_mode
         self._engine = None
         self._ready = False
+        self._model_version = "unknown"
         # Patch H1: pluggable second engine slot（預設 Null，不影響現有 pipeline）
         self._secondary: SecondaryEngineBase = NullSecondaryEngine()
         self._enable_secondary_engine: bool = False
@@ -61,8 +63,16 @@ class OcrEngine:
         t0 = time.time()
 
         _progress(20, "載入 RapidOCR PP-OCRv4 (ONNX)...")
+        # Opt out before importing the wrapper or creating any ORT session.
+        import onnxruntime as ort
+        ort.disable_telemetry_events()
+        from .model_validator import verified_model_manifest
+        manifest = verified_model_manifest()
         from rapidocr_onnxruntime import RapidOCR
-        self._engine = RapidOCR()
+        self._engine = RapidOCR(**{f'{key}_model_path': info['absolute_path']
+                                  for key, info in manifest.items()},
+                                intra_op_num_threads=2, inter_op_num_threads=1)
+        self._model_version = ';'.join(f'{key}:{info["sha256"]}' for key,info in sorted(manifest.items()))
         logger.info("RapidOCR PP-OCRv4 引擎已建立")
 
         _progress(90, "暖機推論...")
@@ -141,7 +151,18 @@ class OcrEngine:
             # Step 2: 第一次推論（raw BGR） (50%)
             if self._progress_callback:
                 self._progress_callback(30, "文字辨識中...")
-            results = self._do_ocr_array(image)
+            try:
+                results = self._do_ocr_array(image)
+            except Exception as primary_error:
+                failed = dict(text='',confidence=0.,status='failed',error=str(primary_error))
+                if self._should_use_secondary(failed, mode):
+                    candidate = self._secondary.recognize(image,mode)
+                    if self._is_better(candidate,failed):
+                        candidate.update(engine=self._secondary.name,
+                                         elapsed_ms=int((time.time()-t0)*1000))
+                        candidate.setdefault('model_version','unknown')
+                        return candidate
+                raise
 
             # Step 3: 判斷是否需要 second pass (70%)
             needs_second = self._enable_second_pass and self._should_retry(results)
@@ -165,15 +186,23 @@ class OcrEngine:
             # 僅在開關開啟、第二引擎可用、且主引擎結果不佳時觸發
             if self._should_use_secondary(primary_result, mode):
                 logger.debug("觸發第二引擎 fallback [%s], mode=%s", self._secondary.name, mode)
-                secondary_result = self._secondary.recognize(image, mode)
+                try:
+                    secondary_result = self._secondary.recognize(image, mode)
+                except Exception:
+                    logger.exception('第二引擎失敗，保留第一引擎結果')
+                    secondary_result = {'text':'', 'status':'failed'}
                 # 若第二引擎有更好的結果，採用之；否則保留主引擎結果
                 if self._is_better(secondary_result, primary_result):
-                    secondary_result['elapsed_ms'] += primary_result['elapsed_ms']
+                    secondary_result['elapsed_ms'] = int((time.time() - t0) * 1000)
+                    secondary_result['engine'] = self._secondary.name
+                    secondary_result.setdefault('model_version', 'unknown')
                     logger.debug("第二引擎結果較優 (conf=%.3f > %.3f)，採用",
                                  secondary_result['confidence'], primary_result['confidence'])
                     return secondary_result
                 logger.debug("第二引擎結果未優於主引擎，保留主引擎結果")
 
+            primary_result["elapsed_ms"] = int((time.time() - t0) * 1000)
+            primary_result.update(engine="rapidocr_onnxruntime", model_version=self._model_version)
             return primary_result
         except Exception as e:
             elapsed_ms = int((time.time() - t0) * 1000)
@@ -289,6 +318,8 @@ class OcrEngine:
         優先比較 text 是否有內容，再比較 confidence。
         baseline status='failed' 時，任何有 text 的 candidate 都算優。
         """
+        if candidate.get("status") == "failed":
+            return False
         cand_text = candidate.get('text', '')
         base_text = baseline.get('text', '')
         base_status = baseline.get('status', '')
@@ -301,12 +332,7 @@ class OcrEngine:
 
     @staticmethod
     def _merge_results(r1, r2):
-        """合併兩次推論結果：以簡單聯集為主，不做 NMS。
-        若 r1 和 r2 有重複的文字框，兩者均保留（_process_results 的 box 排序會自然去重疊）。
-        """
-        merged = list(r1 or [])
-        merged.extend(r2 or [])
-        return merged
+        return fuse_passes(r1, r2)
 
     def run_ocr_from_path(self, image_path: str, mode: str = 'screen') -> dict:
         # cv2.imread 不支援 UNC 路徑（\\server\...）或含中文路徑，

@@ -1,13 +1,11 @@
-# -*- coding: utf-8 -*-
+"""Validate the exact three bundled ONNX assets before creating sessions."""
 import hashlib
 import json
-import logging
-import os
-
-logger = logging.getLogger(__name__)
+import sys
+from pathlib import Path
 
 
-def sha256_file(path: str) -> str:
+def sha256_file(path):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         for chunk in iter(lambda: f.read(65536), b''):
@@ -15,30 +13,28 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def validate_models(project_root: str) -> tuple:
-    lock_path = os.path.join(project_root, 'models', 'models.lock.json')
-    if not os.path.exists(lock_path):
-        logger.warning("models.lock.json 不存在，跳過模型驗證（開發模式）")
+def model_root():
+    return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[2]))
+
+
+def verified_model_manifest(root=None):
+    root = Path(root or model_root()).resolve()
+    lock = json.loads((root / 'models/models.lock.json').read_text(encoding='utf-8'))
+    if set(lock) != {'det', 'rec', 'cls'}:
+        raise ValueError('Model manifest must contain det, rec and cls')
+    for key, info in lock.items():
+        path = (root / info['path']).resolve()
+        if not path.is_relative_to(root / 'models'):
+            raise ValueError('Model path escapes bundle')
+        if not info.get('sha256') or sha256_file(path) != info['sha256']:
+            raise ValueError(f'Model SHA256 mismatch: {key}')
+        info['absolute_path'] = str(path)
+    return lock
+
+
+def validate_models(project_root):
+    try:
+        verified_model_manifest(project_root)
         return True, []
-
-    with open(lock_path, 'r', encoding='utf-8') as f:
-        lock = json.load(f)
-
-    errors = []
-    for model_key, info in lock.items():
-        rel_path = info.get('path', '')
-        expected_sha = info.get('sha256', '')
-        abs_path = os.path.join(project_root, rel_path)
-
-        if not os.path.exists(abs_path):
-            errors.append(f"模型檔案不存在: {rel_path}")
-            continue
-        if expected_sha:
-            actual_sha = sha256_file(abs_path)
-            if actual_sha != expected_sha:
-                errors.append(f"模型 SHA256 不符: {rel_path}")
-                logger.error(f"模型校驗失敗 {rel_path}")
-            else:
-                logger.info(f"模型校驗通過: {rel_path}")
-
-    return len(errors) == 0, errors
+    except (OSError, ValueError, KeyError) as exc:
+        return False, [str(exc)]

@@ -1,86 +1,63 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
-import queue as _queue_mod
-from PySide6.QtCore import QThread, Signal
-from ..ocr.engine import OcrEngine
+from PySide6.QtCore import Signal
+from .queue_worker import QueueWorker
 from ..data.models import OcrResultDTO
-from ..core.constants import OCR_STATUS_FAILED
 
 logger = logging.getLogger(__name__)
 
 
-class OcrWorker(QThread):
+class OcrWorker(QueueWorker):
     engine_loading = Signal()
-    engine_progress = Signal(int, str)   # pct, message
+    engine_progress = Signal(int, str)
     engine_ready = Signal()
     engine_failed = Signal(str)
-    ocr_done = Signal(int, object)    # item_id, OcrResultDTO
-    ocr_failed = Signal(int, str)     # item_id, error
-    ocr_progress = Signal(int, str)   # pct, message (OCR 辨識進度)
+    ocr_done = Signal(int, object)
+    ocr_failed = Signal(int, str)
+    ocr_progress = Signal(int, str)
 
-    def __init__(self, engine: OcrEngine, parent=None):
+    def __init__(self, engine, parent=None):
         super().__init__(parent)
         self._engine = engine
-        self._queue = _queue_mod.Queue()  # thread-safe; replaces plain list
-        self._mode = 'load'
+        self._engine.set_progress_callback(self.ocr_progress.emit)
 
     def start_loading(self):
-        self._mode = 'load'
-        # 設定 OCR 辨識進度回呼
-        self._engine.set_progress_callback(
-            lambda pct, msg: self.ocr_progress.emit(pct, msg)
-        )
-        self.start()
+        with self._submission_lock:
+            if self._accepting:
+                self._ensure_started()
 
-    def queue_ocr(self, item_id: int, image_path: str, mode: str = 'screen'):
-        self._queue.put((item_id, image_path, mode))
-        if not self.isRunning():
-            self._mode = 'ocr'
-            self.start()
-        # If already running in any mode the thread will drain the queue on its own.
+    def queue_ocr(self, item_id, image_path, mode='screen'):
+        try:
+            self.submit((item_id, image_path, mode))
+        except RuntimeError as exc:
+            self.ocr_failed.emit(item_id, str(exc))
 
     def run(self):
-        if self._mode == 'load':
-            self._run_load()
-        else:
-            self._run_ocr_queue()
-
-    def _run_load(self):
         self.engine_loading.emit()
         try:
-            self._engine.load(progress_cb=lambda pct, msg: self.engine_progress.emit(pct, msg))
+            if not self._engine.is_ready():
+                self._engine.load(progress_cb=self.engine_progress.emit)
             self.engine_ready.emit()
-            logger.info("OCR 引擎就緒")
-            # Process any queued items
-            if not self._queue.empty():
-                self._run_ocr_queue()
-        except Exception as e:
-            logger.error(f"OCR 引擎載入失敗: {e}", exc_info=True)
-            self.engine_failed.emit(str(e))
-
-    def _run_ocr_queue(self):
-        while True:
-            try:
-                # 50 ms window catches items enqueued just as the queue empties
-                item_id, image_path, mode = self._queue.get(timeout=0.05)
-            except _queue_mod.Empty:
-                break
+        except Exception as exc:
+            logger.exception('OCR 引擎載入失敗')
+            self.engine_failed.emit(str(exc))
+        for item_id, image_path, mode in self.tasks():
             try:
                 if not self._engine.is_ready():
-                    self.ocr_failed.emit(item_id, "OCR 引擎未就緒")
-                    continue
+                    raise RuntimeError('OCR 引擎未就緒')
                 result = self._engine.run_ocr_from_path(image_path, mode)
                 dto = OcrResultDTO(
                     text=result.get('text', ''),
                     confidence=result.get('confidence', 0.0),
-                    status=result.get('status', OCR_STATUS_FAILED),
-                    detail_json=json.dumps(result.get('detail', []),
-                                           ensure_ascii=False),
+                    status=result.get('status', 'failed'),
+                    detail_json=json.dumps(result.get('detail', []), ensure_ascii=False),
                     elapsed_ms=result.get('elapsed_ms', 0),
                     error_message=result.get('error'),
+                    engine=result.get('engine', 'unknown'),
+                    model_version=result.get('model_version', 'unknown'),
                 )
                 self.ocr_done.emit(item_id, dto)
-            except Exception as e:
-                logger.error(f"OCR 執行失敗 (item {item_id}): {e}", exc_info=True)
-                self.ocr_failed.emit(item_id, str(e))
+            except Exception as exc:
+                logger.exception('OCR 執行失敗 (item %s)', item_id)
+                self.ocr_failed.emit(item_id, str(exc))

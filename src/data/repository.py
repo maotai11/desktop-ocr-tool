@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from typing import Optional, List
-from .database import Database
+from .database import Database, write_transaction
 from .models import ItemDTO, ItemCreateDTO, OcrResultDTO, TagDTO, StatsDTO
 from .hasher import sha256_text
 from ..core.constants import DEDUP_SECONDS
@@ -59,6 +59,7 @@ class ItemRepository:
     def _now(self) -> str:
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+    @write_transaction
     def insert(self, dto: ItemCreateDTO) -> Optional[int]:
         now = self._now()
         try:
@@ -99,11 +100,14 @@ class ItemRepository:
         ).fetchone()
         return _row_to_item(row) if row else None
 
+    @write_transaction
     def update_ocr_result(self, item_id: int, result: OcrResultDTO):
         content_hash = sha256_text(result.text) if result.text else None
         now = self._now()
         new_type = 'mixed'
         item = self.get_by_id(item_id)
+        if item is None:
+            raise ValueError(f'Item {item_id} no longer exists')
         if item:
             if item.raw_image_path and result.text:
                 new_type = 'mixed'
@@ -133,6 +137,7 @@ class ItemRepository:
         ))
         self._conn.commit()
 
+    @write_transaction
     def update_edited_text(self, item_id: int, text: str):
         content_hash = sha256_text(text)
         now = self._now()
@@ -142,6 +147,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def update_note(self, item_id: int, richtext: str, plaintext: str):
         now = self._now()
         self._conn.execute(
@@ -150,6 +156,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def update_annotation(self, item_id: int, path: str):
         now = self._now()
         self._conn.execute(
@@ -158,17 +165,21 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def clear_image_paths(self, item_id: int):
         """清空 raw_image_path（暫存圖已刪除後的 DB 一致性補強）。
         thumbnail_path 保留，縮圖檔仍存在可供 detail panel 顯示。
         """
         now = self._now()
         self._conn.execute(
-            "UPDATE items SET raw_image_path=NULL, updated_at=? WHERE id=?",
+            "UPDATE items SET raw_image_path=NULL, "
+            "item_type=CASE WHEN COALESCE(edited_text,text_content,'')!='' "
+            "THEN 'text' ELSE 'image' END, updated_at=? WHERE id=?",
             (now, item_id)
         )
         self._conn.commit()
 
+    @write_transaction
     def update_ocr_status(self, item_id: int, status: str):
         now = self._now()
         self._conn.execute(
@@ -177,6 +188,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def confirm_review(self, item_id: int):
         now = self._now()
         self._conn.execute(
@@ -185,6 +197,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def set_pinned(self, item_id: int, pinned: bool):
         now = self._now()
         self._conn.execute(
@@ -193,6 +206,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def set_archived(self, item_id: int, archived: bool):
         now = self._now()
         self._conn.execute(
@@ -201,6 +215,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def soft_delete(self, item_id: int):
         now = self._now()
         self._conn.execute(
@@ -209,6 +224,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def restore(self, item_id: int):
         now = self._now()
         self._conn.execute(
@@ -217,6 +233,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def hard_delete(self, item_id: int) -> Optional[ItemDTO]:
         item = self.get_by_id(item_id)
         if item:
@@ -224,6 +241,7 @@ class ItemRepository:
             self._conn.commit()
         return item
 
+    @write_transaction
     def hard_delete_all_soft_deleted(self) -> tuple:
         rows = self._conn.execute(
             "SELECT * FROM items WHERE is_deleted=1"
@@ -256,7 +274,7 @@ class ItemRepository:
                         return True
                 except ValueError:
                     pass
-        if image_hash and last.image_hash == image_hash:
+        if image_hash and image_hash.startswith('sha256:') and last.image_hash == image_hash:
             if last.created_at:
                 try:
                     last_time = datetime.strptime(last.created_at, '%Y-%m-%d %H:%M:%S')
@@ -377,6 +395,7 @@ class TagRepository:
     def _conn(self):
         return self._db.get_connection()
 
+    @write_transaction
     def create(self, name: str, color: str = "#4A90D9") -> Optional[TagDTO]:
         try:
             cur = self._conn.execute(
@@ -388,14 +407,24 @@ class TagRepository:
             logger.warning(f"標籤 '{name}' 已存在")
             return None
 
+    @write_transaction
+    def update(self, tag_id: int, name: str, color: str):
+        self._conn.execute('UPDATE tags SET name=?,color=? WHERE id=?', (name, color, tag_id))
+        self._conn.commit()
+
+    def usage_count(self, tag_id: int) -> int:
+        return self._conn.execute('SELECT COUNT(*) FROM item_tags WHERE tag_id=?', (tag_id,)).fetchone()[0]
+
     def list_all(self) -> List[TagDTO]:
         rows = self._conn.execute("SELECT * FROM tags ORDER BY name").fetchall()
         return [TagDTO(id=r['id'], name=r['name'], color=r['color']) for r in rows]
 
+    @write_transaction
     def delete(self, tag_id: int):
         self._conn.execute("DELETE FROM tags WHERE id=?", (tag_id,))
         self._conn.commit()
 
+    @write_transaction
     def add_to_item(self, item_id: int, tag_id: int):
         self._conn.execute(
             "INSERT OR IGNORE INTO item_tags(item_id, tag_id) VALUES(?,?)",
@@ -403,6 +432,7 @@ class TagRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def remove_from_item(self, item_id: int, tag_id: int):
         self._conn.execute(
             "DELETE FROM item_tags WHERE item_id=? AND tag_id=?",

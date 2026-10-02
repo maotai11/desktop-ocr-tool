@@ -37,23 +37,8 @@ def sha256_file(path: Path) -> str:
 
 
 def verify_models(root: Path) -> None:
-    lock_path = root / "models" / "models.lock.json"
-    if not lock_path.exists():
-        print("warning: models.lock.json not found; skipping model hash verification")
-        return
-
-    with lock_path.open(encoding="utf-8") as handle:
-        lock = json.load(handle)
-
-    print("verifying model hashes...")
-    for info in lock.values():
-        model_path = root / info["path"]
-        if not model_path.exists():
-            raise FileNotFoundError(f"missing model file: {info['path']}")
-        expected = info.get("sha256")
-        if expected and sha256_file(model_path) != expected:
-            raise RuntimeError(f"sha256 mismatch: {info['path']}")
-        print(f"  ok {info['path']}")
+    from src.ocr.model_validator import verified_model_manifest
+    verified_model_manifest(root)
 
 
 def assert_output_writable(path: Path) -> None:
@@ -101,132 +86,28 @@ def reset_output_dirs(paths: dict[str, Path]) -> None:
         paths["zip_path"].unlink()
 
 
-def build_with_pyinstaller(root: Path, paths: dict[str, Path]) -> None:
-    sep = os.pathsep
-    cmd = [
-        sys.executable,
-        "-m",
-        "PyInstaller",
-        "--clean",
-        "--onefile",
-        "--windowed",
-        "--name",
-        APP_NAME,
-        "--add-data",
-        f"{root / 'config' / 'default_settings.json'}{sep}config",
-        "--paths",
-        str(root),
-        "--hidden-import",
-        "src",
-        "--hidden-import",
-        "src.app",
-        "--hidden-import",
-        "src.core",
-        "--hidden-import",
-        "src.data",
-        "--hidden-import",
-        "src.ui",
-        "--hidden-import",
-        "src.workers",
-        "--hidden-import",
-        "src.ocr",
-        "--hidden-import",
-        "src.capture",
-        "--hidden-import",
-        "src.clipboard",
-        "--collect-all",
-        "numpy",
-        "--collect-data",
-        "rapidocr_onnxruntime",
-        "--hidden-import",
-        "rapidocr_onnxruntime",
-        "--hidden-import",
-        "onnxruntime",
-        "--hidden-import",
-        "onnxruntime.capi",
-        "--hidden-import",
-        "onnxruntime.capi._pybind_state",
-        "--collect-data",
-        "onnxruntime",
-        "--collect-all",
-        "cv2",
-        "--hidden-import",
-        "PIL",
-        "--hidden-import",
-        "PIL.Image",
-        "--hidden-import",
-        "PIL.ImageOps",
-        "--hidden-import",
-        "PIL.ImageFilter",
-        "--hidden-import",
-        "mss",
-        "--hidden-import",
-        "mss.windows",
-        "--collect-all",
-        "zhconv",
-        "--collect-data",
-        "paddlex",
-        "--collect-binaries",
-        "paddle",
-        "--hidden-import",
-        "paddleocr",
-        "--hidden-import",
-        "paddle",
-        "--hidden-import",
-        "paddlex",
-        "--exclude-module",
-        "torch",
-        "--exclude-module",
-        "torchvision",
-        "--exclude-module",
-        "torchaudio",
-        "--exclude-module",
-        "cnocr",
-        "--exclude-module",
-        "cnstd",
-        "--exclude-module",
-        "pytorch_lightning",
-        "--exclude-module",
-        "torchmetrics",
-        "--exclude-module",
-        "tensorflow",
-        "--exclude-module",
-        "paddle",
-        "--exclude-module",
-        "paddleocr",
-        "--exclude-module",
-        "paddlex",
-        "--exclude-module",
-        "pytest",
-        "--exclude-module",
-        "IPython",
-        "--exclude-module",
-        "matplotlib",
-        "--exclude-module",
-        "tkinter",
-        "--exclude-module",
-        "yt_dlp",
-        "--exclude-module",
-        "mutagen",
-        "--exclude-module",
-        "curl_cffi",
-        "--hidden-import",
-        "PySide6.QtCore",
-        "--hidden-import",
-        "PySide6.QtGui",
-        "--hidden-import",
-        "PySide6.QtWidgets",
-        "--distpath",
-        str(paths["dist_dir"]),
-        "--workpath",
-        str(paths["build_dir"]),
-        "--specpath",
-        str(paths["artifacts_dir"]),
-        str(root / "src" / "main.py"),
-    ]
+def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
+    cmd = [sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm',
+           '--onefile' if onefile else '--onedir', '--windowed', '--name', APP_NAME,
+           '--paths', str(root), '--runtime-hook', str(root/'scripts/runtime_offline.py'),
+           '--add-data', f"{root/'models'}{os.pathsep}models",
+           '--collect-data', 'rapidocr_onnxruntime', '--collect-all', 'onnxruntime',
+           '--collect-all', 'zhconv', '--collect-all', 'cv2',
+           '--hidden-import', 'PySide6.QtCore', '--hidden-import', 'PySide6.QtGui',
+           '--hidden-import', 'PySide6.QtWidgets', '--hidden-import', 'mss.windows',
+           '--distpath', str(paths['dist_dir']), '--workpath', str(paths['build_dir']),
+           '--specpath', str(paths['artifacts_dir'])]
+    for name in ('paddle', 'paddleocr', 'paddlex', 'torch', 'torchvision', 'cnocr',
+                 'cnstd', 'pytest', 'IPython', 'matplotlib', 'tkinter'):
+        cmd += ['--exclude-module', name]
+    cmd.append(str(root/'src/main.py'))
+    return cmd
 
-    print("\nrunning PyInstaller...")
-    subprocess.run(cmd, cwd=root, check=True)
+
+def build_with_pyinstaller(root: Path, paths: dict[str, Path], onefile=True) -> None:
+    if sys.platform != 'win32':
+        raise RuntimeError('Windows executable must be built on Windows; cross-build is unsupported')
+    subprocess.run(pyinstaller_command(root, paths, onefile), cwd=root, check=True)
 
 
 def write_release_readme(path: Path) -> None:
@@ -237,7 +118,9 @@ def write_release_readme(path: Path) -> None:
         handle.write(f"  直接雙擊 {versioned_exe_name()}\n\n")
         handle.write("注意事項:\n")
         handle.write("  - 設定、資料與日誌會寫到 release 目錄旁的 config/data/logs。\n")
-        handle.write("  - 第一次啟動需要幾秒鐘載入 OCR 模型。\n\n")
+        handle.write("  - OCR 模型已內含；不需要 Python、pip 或首次下載。\n")
+        handle.write("  - 首次使用剪貼簿監聽預設關閉；歷史及截圖為明文，無自動到期刪除。\n")
+        handle.write("  - 此檔案是候選建置；是否可交付須核對 VALIDATION_STATUS.md 與對應 SHA256。\n\n")
         handle.write("快捷鍵:\n")
         handle.write("  Ctrl+Shift+O  框選 OCR\n")
         handle.write("  Ctrl+Shift+S  框選截圖\n")
@@ -249,6 +132,17 @@ def write_release_readme(path: Path) -> None:
 def package_release(paths: dict[str, Path]) -> None:
     shutil.copy2(paths["out_exe"], paths["release_exe"])
     write_release_readme(paths["release_dir"] / "README.txt")
+    import importlib.metadata as metadata
+    manifest = dict(version=APP_VERSION, python=sys.version, platform=sys.platform,
+                    executable_sha256=sha256_file(paths['release_exe']),
+                    models=json.loads((ROOT/'models/models.lock.json').read_text()),
+                    dependencies={d.metadata['Name']:d.version for d in metadata.distributions()},
+                    clean_machine_gate='NOT_RUN')
+    (paths['release_dir']/'BUILD_MANIFEST.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+    for name in ('README.md', 'PACKAGING_NOTES.md', 'SMOKE_TEST_CHECKLIST.md'):
+        shutil.copy2(ROOT/name, paths['release_dir']/name)
+    if (ROOT/'docs/VALIDATION_STATUS.md').exists():
+        shutil.copy2(ROOT/'docs/VALIDATION_STATUS.md', paths['release_dir']/'VALIDATION_STATUS.md')
     shutil.make_archive(
         str(paths["zip_path"]).removesuffix(".zip"),
         "zip",
@@ -281,6 +175,8 @@ def main() -> int:
         print(f"release dir: {paths['release_dir']}")
         print(f"release exe: {paths['release_exe'].name}")
         print(f"release zip: {paths['zip_path']} ({zip_size_mb:.1f} MB)")
+        (paths['zip_path'].with_suffix('.zip.sha256')).write_text(
+            f"{sha256_file(paths['zip_path'])}  {paths['zip_path'].name}\n",encoding='ascii')
         return 0
     except subprocess.CalledProcessError as exc:
         print(f"build failed with exit code {exc.returncode}")

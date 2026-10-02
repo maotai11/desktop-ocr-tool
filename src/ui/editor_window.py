@@ -266,7 +266,7 @@ class EditorWindow(QDialog):
 
     def _load_data(self):
         # OCR 文字：優先顯示 edited_text，沒有則顯示 text_content
-        text = self._item.edited_text or self._item.text_content or ''
+        text = self._item.get_effective_text() or ''
         self._text_edit.setPlainText(text)
 
         # 備注

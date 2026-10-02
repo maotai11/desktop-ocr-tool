@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "frozen": false,
+  "platform": "linux",
+  "telemetry_env": "1",
+  "clean_machine_verified": false,
+  "passed": true,
+  "qt_platform": "offscreen",
+  "load_seconds": 1.4606830749999062,
+  "models": {
+    "det": {
+      "path": "models/det/pp-ocrv4_det.onnx",
+      "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+      "version": "pp-ocrv4",
+      "size_bytes": 4745517,
+      "absolute_path": "/workspace/scratch/7fc3a8825270/repo/models/det/pp-ocrv4_det.onnx"
+    },
+    "rec": {
+      "path": "models/rec/pp-ocrv4_rec.onnx",
+      "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+      "version": "pp-ocrv4",
+      "size_bytes": 10857958,
+      "absolute_path": "/workspace/scratch/7fc3a8825270/repo/models/rec/pp-ocrv4_rec.onnx"
+    },
+    "cls": {
+      "path": "models/cls/pp-ocrv4_cls.onnx",
+      "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c",
+      "version": "pp-ocrv4",
+      "size_bytes": 585532,
+      "absolute_path": "/workspace/scratch/7fc3a8825270/repo/models/cls/pp-ocrv4_cls.onnx"
+    }
+  },
+  "ocr_result": {
+    "text": "Desktop OCR 12345",
+    "confidence": 0.9878932956665281,
+    "status": "done",
+    "detail": [
+      {
+        "box": [
+          [
+            58.064517974853516,
+            138.0
+          ],
+          [
+            1901.6129150390625,
+            228.0
+          ],
+          [
+            1875.48388671875,
+            783.0
+          ],
+          [
+            31.93548583984375,
+            693.0
+          ]
+        ],
+        "text": "Desktop",
+        "confidence": 0.9997121010507856
+      },
+      {
+        "box": [
+          [
+            1695.48388671875,
+            195.0
+          ],
+          [
+            4200.9677734375,
+            168.0
+          ],
+          [
+            4206.7744140625,
+            699.0
+          ],
+          [
+            1701.2904052734375,
+            729.0
+          ]
+        ],
+        "text": "OCR 12345",
+        "confidence": 0.9760744902822707
+      }
+    ],
+    "elapsed_ms": 2243,
+    "engine": "rapidocr_onnxruntime",
+    "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+  }
+}
