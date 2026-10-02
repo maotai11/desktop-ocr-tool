@@ -20,6 +20,9 @@ class Pipeline(QObject):
         self.repo, self.files, self.widget, self.cfg = repo, files, widget, cfg
         self.hotkeys, self.clipboard = hotkeys, clipboard
         self.closing = self.closed = False
+        self.hotkey_actions = {}
+        if hotkeys:
+            hotkeys.hotkey_pressed.connect(self.dispatch_hotkey)
         self.save_requested.connect(db_worker.save_item, Qt.ConnectionType.QueuedConnection)
         self.ocr_update_requested.connect(db_worker.update_ocr, Qt.ConnectionType.QueuedConnection)
         self.barrier_requested.connect(db_worker.barrier, Qt.ConnectionType.QueuedConnection)
@@ -35,6 +38,13 @@ class Pipeline(QObject):
         capture.finished.connect(self.capture_stopped)
         ocr.finished.connect(self.ocr_stopped)
         db_thread.finished.connect(self.db_stopped)
+
+    @Slot(str)
+    def dispatch_hotkey(self, name):
+        if not self.closing:
+            action = self.hotkey_actions.get(name)
+            if action:
+                action()
 
     @Slot(str, object)
     def captured(self, path, dto):

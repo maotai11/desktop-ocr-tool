@@ -21,3 +21,5 @@ CONFIRMED：Linux x86_64、Python 3.12.14、固定 Core dependency environment�
 方法修正：最初 `psutil.Process()` 在此容器 PID namespace 回報 462848 bytes／1 thread，與實際推論程序不符；已中止並廢棄该次。正式數據用 Linux `/proc/self/status` 的 Tgid，Windows 用 os.getpid()；沒有把錯誤低值当成記憶體改善。
 
 16M-pixel guard 在呼叫 cv2.resize 前檢查預估輸出像素。30×2000、50×1000、100×3000、20×500 均以 allocation spy 證明未進入超預算配置。這些案例現在回報 failed 並保留原圖，**不代表已完成長條圖片 OCR**；不得用這個 guard 取代有 GT 的 tiling／resize A/B gate。
+
+另有實際 Qt ownership 回歸：500次設定dialog建構/關閉（只替代使用者在modal的等待）後0個SettingsDialog child；100次editor開啟/關閉後dict及EditorWindow child皆為0。測試由Qt DeferredDelete實際釋放物件，不以Python GC推斷。尚未測量這兩個GUI情境的RSS時間序列，因此不宣稱整體記憶體改善。

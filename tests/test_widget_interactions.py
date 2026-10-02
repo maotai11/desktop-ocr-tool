@@ -144,3 +144,48 @@ def test_drag_host_moves_widget_and_persists_position(qapp, tmp_path):
     assert widget._cfg.get("ui", "widget_saved_x") == 150
     assert widget._cfg.get("ui", "widget_saved_y") == 150
     widget.close()
+
+
+def test_settings_repeated_close_releases_qobjects(qapp, tmp_path, monkeypatch):
+    from PySide6.QtCore import QCoreApplication
+    from src.ui.settings_dialog import SettingsDialog
+    widget=_make_widget(tmp_path)
+    # Only the human wait is substituted; real dialogs/children/cleanup run.
+    monkeypatch.setattr(SettingsDialog,'exec',lambda self: 0)
+    try:
+        for _ in range(500):
+            widget.open_settings()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+        assert len(widget.findChildren(SettingsDialog))==0
+    finally:
+        widget.deleteLater()
+        QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+
+
+def test_editor_close_releases_dictionary_and_qobject(qapp, tmp_path, item_repo, make_text_dto):
+    from PySide6.QtCore import QCoreApplication
+    from src.ui.editor_window import EditorWindow
+    widget=_make_widget(tmp_path);widget._item_repo=item_repo
+    try:
+        for i in range(100):
+            item=item_repo.get_by_id(item_repo.insert(make_text_dto(f'item {i}')))
+            widget._open_editor(item)
+            editor=widget._editor_windows[item.id]
+            editor.close()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+        assert not widget._editor_windows
+        assert not widget.findChildren(EditorWindow)
+    finally:
+        widget.deleteLater()
+        QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+
+
+def test_card_literal_text_and_keyboard(qtbot,tmp_path):
+    from src.ui.components.item_card import ItemCard
+    from PySide6.QtWidgets import QLabel
+    item=_Item(1,'<b>token</b>');card=ItemCard(item,str(tmp_path));qtbot.addWidget(card)
+    labels=[x for x in card.findChildren(QLabel) if x.text()=='<b>token</b>']
+    assert len(labels)==1 and labels[0].textFormat()==Qt.TextFormat.PlainText
+    selected=[];opened=[];card.clicked.connect(selected.append);card.double_clicked.connect(opened.append)
+    qtbot.keyClick(card,Qt.Key.Key_Space);qtbot.keyClick(card,Qt.Key.Key_Return)
+    assert selected==[1] and opened==[1]

@@ -210,19 +210,13 @@ def main(smoke_report=None) -> int:
         ]:
             hotkey_listener.register(name, hk.get(name, default_key))
 
-        def on_hotkey(name: str):
-            action = hotkey_actions.get(name)
-            if action:
-                action()
-
-        hotkey_listener.hotkey_pressed.connect(on_hotkey)
-        hotkey_listener.start()
-
         # QObject receiver affinity guarantees these slots execute on the GUI thread.
         from src.workers.pipeline import Pipeline
         pipeline = Pipeline(capture_worker, ocr_worker, db_worker, db_thread,
                             db, item_repo, file_mgr, widget, cfg,
                             hotkey_listener, clip_watcher)
+        pipeline.hotkey_actions = hotkey_actions
+        hotkey_listener.start()
         tray.set_quit_callback(pipeline.shutdown)
         pipeline.shutdown_finished.connect(app.quit)
         app.aboutToQuit.connect(pipeline.ensure_shutdown)

@@ -1,7 +1,7 @@
 # 桌面 OCR 擷取工具
 
 目前修復分支：**1.6.2-rc.1 候選版本，尚未通過乾淨 Windows 離線機器驗收。**
-最新可核對狀態：[VALIDATION_STATUS](docs/VALIDATION_STATUS.md)。舊版 v1.6.1 的問題不能因候選版本測試通過就全部視為結案。
+最新可核對狀態：[VALIDATION_STATUS](docs/VALIDATION_STATUS.md)、[49項修復追蹤](docs/MASTER_FINDINGS.md)、[實際架構](docs/CURRENT_ARCHITECTURE.md)、[設定矩陣](docs/CONFIG_WIRING_MATRIX.md)。舊版 v1.6.1 的問題不能因候選版本測試通過就全部視為結案。
 
 目標是 Windows x64 可攜式應用：在有網路的建置電腦準備完整套件，再將 ZIP 搬到離線電腦，解壓後執行 EXE。目標電腦不需要 Python、pip 或下載模型。實際相容 Windows 版本、DLL 需求及混合 DPI 必須由對應 EXE 的驗收紀錄證實。
 

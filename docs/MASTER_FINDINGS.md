@@ -18,8 +18,8 @@
 | [O10](audit-baseline/MASTER_FINDINGS.md#o10) | Medium | INFERRED | 開放 | 跨引擎 confidence 未校準，Core 不啟用此路徑 |
 | [P01](audit-baseline/MASTER_FINDINGS.md#p01) | High | CONFIRMED | 部分修復 | 16M pixels allocation guard；長條圖拒絕，tiling／accuracy 尚未解決 |
 | [P02](audit-baseline/MASTER_FINDINGS.md#p02) | Medium | CONFIRMED | 已驗證修復 | fallback 後總耗時在最終結果時計算 |
-| [P03](audit-baseline/MASTER_FINDINGS.md#p03) | Medium | CONFIRMED | 已實作待實測 | settings exec finally deleteLater；尚未重跑500次 GUI retain profiler |
-| [P04](audit-baseline/MASTER_FINDINGS.md#p04) | Medium | CONFIRMED | 已實作待實測 | editor WA_DeleteOnClose；尚未重跑100次 GUI retain profiler |
+| [P03](audit-baseline/MASTER_FINDINGS.md#p03) | Medium | CONFIRMED | 已驗證修復 | 500次settings close後SettingsDialog child count=0；不是整體RSS改善證明 |
+| [P04](audit-baseline/MASTER_FINDINGS.md#p04) | Medium | CONFIRMED | 已驗證修復 | 100次editor close後dict為空且EditorWindow child count=0 |
 | [C01](audit-baseline/MASTER_FINDINGS.md#c01) | High | CONFIRMED | 已驗證修復 | 真實 QThread idle resubmit／drain；持續 worker 單一 lifetime |
 | [C02](audit-baseline/MASTER_FINDINGS.md#c02) | High | CONFIRMED | 部分修復 | 40 工作 capture→DB→OCR→DB 退出 stress 通過；Windows forced shutdown 尚未驗收 |
 | [C03](audit-baseline/MASTER_FINDINGS.md#c03) | Medium | CONFIRMED | 部分修復 | thread-local connections／交易鎖與 rollback；UI 部分寫入仍同步，文件已改正 |
@@ -33,7 +33,7 @@
 | [S02](audit-baseline/MASTER_FINDINGS.md#s02) | Medium | CONFIRMED | 部分修復 | import 前 ORT opt-out／frozen runtime hook；歷史 payload UNKNOWN，Windows目的地歸因仍待驗收 |
 | [S03](audit-baseline/MASTER_FINDINGS.md#s03) | Medium | CONFIRMED | 已驗證修復 | CSV 危險字首文字化，JSON/TXT保留原值，負號影響已註明 |
 | [S04](audit-baseline/MASTER_FINDINGS.md#s04) | Medium | CONFIRMED | 部分修復 | FileManager／ZIP／刪除相對路徑 containment 及 symlink rejection；同使用者TOCTOU非權限隔離 |
-| [S05](audit-baseline/MASTER_FINDINGS.md#s05) | Low | CONFIRMED | 已實作待實測 | ItemCard text/meta Explicit PlainText；native accessibility／richtext UI全面仍未验收 |
+| [S05](audit-baseline/MASTER_FINDINGS.md#s05) | Low | CONFIRMED | 部分修復 | ItemCard PlainText／Enter／Space native Qt tests通過；完整accessibility仍待驗收 |
 | [F01](audit-baseline/MASTER_FINDINGS.md#f01) | High | CONFIRMED | 已驗證修復 | 真 TagRepository 設定對話框建構／統計測試，補齊 Qt imports |
 | [F02](audit-baseline/MASTER_FINDINGS.md#f02) | Medium | CONFIRMED | 已驗證修復 | 移除沒有 Runtime consumer 的 primary/autoswitch 控制項，不冒充支援 |
 | [F03](audit-baseline/MASTER_FINDINGS.md#f03) | High | CONFIRMED | 已驗證修復 | 移除雙套secondary UI，Core固定引擎；參數明示重啟套用，沒有GUI同時configure |
@@ -49,7 +49,7 @@
 | [B02](audit-baseline/MASTER_FINDINGS.md#b02) | Medium | CONFIRMED | 已驗證修復 | UI/README取消host pip即可擴充既有EXE的錯誤宣稱，部署方案保留分析 |
 | [B03](audit-baseline/MASTER_FINDINGS.md#b03) | Medium | CONFIRMED | 部分修復 | repo模型已進Runtime與build；舊download脚本／供應鏈hash gate待整理 |
 | [B04](audit-baseline/MASTER_FINDINGS.md#b04) | Medium | CONFIRMED | 部分修復 | Core版本固定且單一opencv-python；transitive/wheel hash lock及license仍開放 |
-| [T01](audit-baseline/MASTER_FINDINGS.md#t01) | High | CONFIRMED | 已驗證修復 | 本地完整套件153 passed；舊133/17failed原始證據保留 |
+| [T01](audit-baseline/MASTER_FINDINGS.md#t01) | High | CONFIRMED | 已驗證修復 | 本地完整套件156 passed；舊133/17failed原始證據保留 |
 | [T02](audit-baseline/MASTER_FINDINGS.md#t02) | Medium | CONFIRMED | 部分修復 | 新增CI、real Qt/SQLite adversarial與frozen smoke；非clean-machine替代 |
 | [X01](audit-baseline/MASTER_FINDINGS.md#x01) | Low | CONFIRMED | 部分修復 | 現行主要README/packaging/reviewer/smoke/OCR reports更新；baseline歷史文不改成現在狀態 |
 | [X02](audit-baseline/MASTER_FINDINGS.md#x02) | Low | CONFIRMED | 開放 | validator已接線，legacy preprocessor／signal bus／dictionary等保留為已知orphan |
