@@ -1,3 +1,11 @@
+# v1.6.2-rc.2 預發布啟用候選
+
+384本機tests passed、0 failed、0 skipped，9.03s；包含68個mocked publication contracts，沒有用mock tests冒充live GitHub發佈。前一dcad28c的push/PR Windows與Linux CI已成功，native Windows297 passed、2 POSIX-only skips，source/frozen/firewall全部passed；本次新增payload／ZIP byte核對與固定版本發布流程後，必須再次同一SHA native驗證。
+
+使用者核准v1.6.2-rc.2預發布測試版與限定的ephemeral Actions contents:write job。仅exact push marker／固定repo／repairbranch／tag生效；both validation jobs通過後才draft-first上傳與hash核對，不合併、不改寫tag／asset。乾淨Windows／mixed DPI／罕字field／native hang／license gates維持開放；不是stable。詳見[測試版使用說明](RELEASE_RC2.md)。
+
+---
+
 # 1.6.2-rc.2 恢復修復狀態（2026-10-03）
 
 從確實已推送的bba210ec重建；沒有取得先前未推送的192-test工作位元組。最終本機Linux完整suite：299 passed、0 failed、0 skipped，8.73s；`evidence/recovery/final-tests.xml`。Compileall、fatal/redefinition Ruff、pip check及diff-check均通過；不是全量style lint清零。

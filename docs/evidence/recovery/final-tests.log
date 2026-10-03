@@ -5,32 +5,36 @@ rootdir: /workspace/scratch/40b4883b300a/desktop-ocr-tool
 configfile: pytest.ini
 testpaths: tests
 plugins: qt-4.5.0
-collected 299 items
+collected 384 items
 
 tests/test_build_script.py ..                                            [  0%]
-tests/test_capture_backend_safety.py ..........                          [  4%]
-tests/test_capture_file_integrity.py .....                               [  5%]
-tests/test_capture_worker_drain.py .                                     [  6%]
+tests/test_candidate_evidence.py ................                        [  4%]
+tests/test_capture_backend_safety.py ..........                          [  7%]
+tests/test_capture_file_integrity.py .....                               [  8%]
+tests/test_capture_worker_drain.py .                                     [  8%]
 tests/test_data_integrity_regressions.py ............................... [ 16%]
 ....                                                                     [ 17%]
-tests/test_db_worker.py .......                                          [ 20%]
-tests/test_dedup_regressions.py ......                                   [ 22%]
-tests/test_h2_providers.py ............                                  [ 26%]
-tests/test_h3_config_wiring.py ...................                       [ 32%]
-tests/test_h4_fallback_edge_cases.py ......                              [ 34%]
-tests/test_hardening.py ............................................     [ 49%]
-tests/test_main_window_batch.py ...........                              [ 52%]
-tests/test_ocr_preprocess.py ................                            [ 58%]
-tests/test_ocr_regressions.py .......................................... [ 72%]
-..........                                                               [ 75%]
-tests/test_ocr_worker_progress.py .                                      [ 75%]
-tests/test_packaging_acceptance.py .............................         [ 85%]
-tests/test_pipeline_shutdown.py .                                        [ 85%]
-tests/test_repository.py ...........                                     [ 89%]
-tests/test_secondary_engine.py ...................                       [ 95%]
-tests/test_single_instance.py ......                                     [ 97%]
+tests/test_db_worker.py .......                                          [ 19%]
+tests/test_dedup_regressions.py ......                                   [ 21%]
+tests/test_h2_providers.py ............                                  [ 24%]
+tests/test_h3_config_wiring.py ...................                       [ 29%]
+tests/test_h4_fallback_edge_cases.py ......                              [ 30%]
+tests/test_hardening.py ............................................     [ 42%]
+tests/test_main_window_batch.py ...........                              [ 45%]
+tests/test_ocr_preprocess.py ................                            [ 49%]
+tests/test_ocr_regressions.py .......................................... [ 60%]
+..........                                                               [ 63%]
+tests/test_ocr_worker_progress.py .                                      [ 63%]
+tests/test_packaging_acceptance.py .............................         [ 70%]
+tests/test_pipeline_shutdown.py .                                        [ 71%]
+tests/test_release_publication.py ...................................... [ 80%]
+..............................                                           [ 88%]
+tests/test_release_workflow_guard.py .                                   [ 89%]
+tests/test_repository.py ...........                                     [ 91%]
+tests/test_secondary_engine.py ...................                       [ 96%]
+tests/test_single_instance.py ......                                     [ 98%]
 tests/test_version_constants.py .                                        [ 98%]
 tests/test_widget_interactions.py .....                                  [100%]
 
 - generated xml file: /workspace/scratch/40b4883b300a/desktop-ocr-tool/docs/evidence/recovery/final-tests.xml -
-============================= 299 passed in 8.91s ==============================
+============================= 384 passed in 9.03s ==============================

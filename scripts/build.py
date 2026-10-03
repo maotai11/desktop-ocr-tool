@@ -48,6 +48,10 @@ def source_manifest(root: Path):
     tree = git('rev-parse', 'HEAD^{tree}').decode().strip()
     names = sorted(set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
                        .decode('utf-8').split('\0')) - {''})
+    tracked = set(git('ls-files', '-z', '--cached').decode('utf-8').split('\0'))
+    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json'}
+    excluded = set(names) & generated - tracked
+    names = [name for name in names if name not in excluded]
     files = {}
     for name in names:
         path = root / name
@@ -59,8 +63,10 @@ def source_manifest(root: Path):
             files[name] = {'missing': True}
     snapshot = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(',', ':'))
                               .encode('utf-8')).hexdigest()
+    status = git('status', '--porcelain').decode('utf-8').splitlines()
+    dirty = any(line not in {'?? ' + name for name in excluded} for line in status if line.strip())
     return {'commit': commit, 'head_tree': tree, 'working_tree_sha256': snapshot,
-            'dirty': bool(git('status', '--porcelain').strip()), 'files': files}
+            'dirty': dirty, 'excluded_generated_validation_files': sorted(excluded), 'files': files}
 
 
 def assert_output_writable(path: Path) -> None:

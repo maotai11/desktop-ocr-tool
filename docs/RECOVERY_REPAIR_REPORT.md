@@ -53,3 +53,7 @@ GitHub runner的Windows frozen／firewall probe只支持該runner及EXE路徑；
 `b7fe454`的push run37086477286／PR run37086480755在兩個平台均於wheel inventory階段失敗：setuptools84帶有合法的vendored .dist-info/METADATA，helper誤當多個wheel identity。應用pytest／source probe／EXE build都被skip，不是新EXE啟動失敗。已改為只讀top-level distribution metadata，仍拒絕多個top-level identities；genuine setuptools84 wheel本機inventory通過，vendor／ambiguous-root regressions加入。下一個修正commit須重跑native CI，未以本機測試冒充Windows成品。
 
 `18f6730`的Linux CI已通過tests/source兩種probe；Windows為296 passed、2 POSIX-only skips、1 fixture failure。新測試以預設cp1252讀UTF-8中文error report失敗；product返回expected status，source/frozen stages因pytest失敗skip。已指定UTF-8讀取，不改寫或移除中文錯誤訊息；下一SHA仍須native驗證。
+
+## 核准的prerelease準備
+
+Latest local suite384 passed9.03s（含mocked publisher tests）。新增actual ZIP／EXE／embedded models／CPython／qwindows／ORT payload核對及小型transferable metadata。Source manifest只排除三個已知untracked generated validation reports，其餘dirty／unknown source仍拒絕發布。固定currentversion publisher由both-platform validation成功後執行，draft-first、四個assets（EXE／ZIP／SHA256SUMS／metadataZIP）verify GitHub digest後才公開為prerelease；未給stable latest。官方GitHub的workflow-changing target權限限制仍可能造成實際HTTP403，必須按live結果處理，不能靠mock解除。
