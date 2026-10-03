@@ -29,7 +29,7 @@ Schema v5為additive migration；既有items、人工文字、FTS均有保留測
 ## 驗證證據
 
 - baseline156 tests：`evidence/recovery/baseline-tests.xml`
-- 最終完整suite：297 passed、0 failed、0 skipped，9.35s；`evidence/recovery/final-tests.xml`
+- 最終完整suite：299 passed、0 failed、0 skipped，8.73s；`evidence/recovery/final-tests.xml`
 - source self-test／full app smoke：`evidence/recovery/source-selftest.json`、`source-app-smoke.json`
 - 上述兩個Linux source probes在per-process libseccomp網路syscall EPERM guard下執行，guard實際驗證IPv4／IPv6／Unix socket拒絕；對應`*-guard.json`。strace因環境ptrace權限限制未執行，沒有socket trace／wire payload觀察。seccomp不關閉既有descriptor，也不模擬乾淨Windows機器
 - smoke驗證connection lifetime：`evidence/recovery/sqlite-lifetime.json`，不靠gc釋放，Windows尚待native CI
@@ -47,3 +47,7 @@ Schema v5為additive migration；既有items、人工文字、FTS均有保留測
 - retention、完整dependency hash lock／license／signing、未接線設定及歷史Microsoft payload仍開放
 
 GitHub runner的Windows frozen／firewall probe只支持該runner及EXE路徑；不能代替乾淨離線使用者機器驗收。
+
+## 首次native CI failure及修正
+
+`b7fe454`的push run37086477286／PR run37086480755在兩個平台均於wheel inventory階段失敗：setuptools84帶有合法的vendored .dist-info/METADATA，helper誤當多個wheel identity。應用pytest／source probe／EXE build都被skip，不是新EXE啟動失敗。已改為只讀top-level distribution metadata，仍拒絕多個top-level identities；genuine setuptools84 wheel本機inventory通過，vendor／ambiguous-root regressions加入。下一個修正commit須重跑native CI，未以本機測試冒充Windows成品。

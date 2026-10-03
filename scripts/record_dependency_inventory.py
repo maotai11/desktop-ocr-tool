@@ -7,7 +7,7 @@ import re
 import sys
 import zipfile
 from email.parser import BytesParser
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def inventory_wheels(directory):
@@ -19,7 +19,13 @@ def inventory_wheels(directory):
             for chunk in iter(lambda: handle.read(1024 * 1024), b''):
                 digest.update(chunk)
         with zipfile.ZipFile(path) as archive:
-            names = [name for name in archive.namelist() if name.endswith('.dist-info/METADATA')]
+            # Vendored libraries may legitimately contain their own nested
+            # .dist-info/METADATA. Only the wheel's top-level distribution is
+            # its identity; multiple top-level identities are still rejected.
+            names = [name for name in archive.namelist()
+                     if len(PurePosixPath(name).parts) == 2
+                     and PurePosixPath(name).parts[0].endswith('.dist-info')
+                     and PurePosixPath(name).parts[1] == 'METADATA']
             if len(names) != 1 or archive.getinfo(names[0]).file_size > 2 * 1024 * 1024:
                 raise ValueError(f'Invalid wheel metadata: {path.name}')
             metadata = BytesParser().parsebytes(archive.read(names[0]))

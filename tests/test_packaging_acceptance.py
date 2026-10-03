@@ -199,6 +199,25 @@ def test_wheel_inventory_rejects_empty_or_duplicate_distributions(tmp_path):
         inventory_wheels(tmp_path)
 
 
+def test_wheel_inventory_ignores_nested_vendored_metadata(tmp_path):
+    path = wheel(tmp_path, 'example-1.0-py3-none-any.whl')
+    with zipfile.ZipFile(path, 'a') as archive:
+        archive.writestr('example/_vendor/library-2.0.dist-info/METADATA',
+                         'Name: VendoredLibrary\nVersion: 2.0\n')
+    [entry] = inventory_wheels(tmp_path)
+    assert entry['name'] == 'Example'
+    assert entry['version'] == '1.0'
+    assert entry['sha256'] == build.sha256_file(path)
+
+
+def test_wheel_inventory_rejects_multiple_top_level_metadata(tmp_path):
+    path = wheel(tmp_path, 'example-1.0-py3-none-any.whl')
+    with zipfile.ZipFile(path, 'a') as archive:
+        archive.writestr('other-2.0.dist-info/METADATA', 'Name: Other\nVersion: 2.0\n')
+    with pytest.raises(ValueError, match='Invalid wheel metadata'):
+        inventory_wheels(tmp_path)
+
+
 @pytest.mark.parametrize('args', [['--self-test'], ['--smoke-app'],
                                   ['--self-test', 'x', '--smoke-app', 'y'], ['--unknown']])
 def test_invalid_probe_cli_never_starts_application(args):
