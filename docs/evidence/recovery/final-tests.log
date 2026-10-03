@@ -33,4 +33,4 @@ tests/test_version_constants.py .                                        [ 98%]
 tests/test_widget_interactions.py .....                                  [100%]
 
 - generated xml file: /workspace/scratch/40b4883b300a/desktop-ocr-tool/docs/evidence/recovery/final-tests.xml -
-============================= 299 passed in 8.73s ==============================
+============================= 299 passed in 8.91s ==============================

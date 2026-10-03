@@ -51,3 +51,5 @@ GitHub runner的Windows frozen／firewall probe只支持該runner及EXE路徑；
 ## 首次native CI failure及修正
 
 `b7fe454`的push run37086477286／PR run37086480755在兩個平台均於wheel inventory階段失敗：setuptools84帶有合法的vendored .dist-info/METADATA，helper誤當多個wheel identity。應用pytest／source probe／EXE build都被skip，不是新EXE啟動失敗。已改為只讀top-level distribution metadata，仍拒絕多個top-level identities；genuine setuptools84 wheel本機inventory通過，vendor／ambiguous-root regressions加入。下一個修正commit須重跑native CI，未以本機測試冒充Windows成品。
+
+`18f6730`的Linux CI已通過tests/source兩種probe；Windows為296 passed、2 POSIX-only skips、1 fixture failure。新測試以預設cp1252讀UTF-8中文error report失敗；product返回expected status，source/frozen stages因pytest失敗skip。已指定UTF-8讀取，不改寫或移除中文錯誤訊息；下一SHA仍須native驗證。

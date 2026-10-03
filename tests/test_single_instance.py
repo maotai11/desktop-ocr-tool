@@ -103,7 +103,7 @@ def test_smoke_startup_error_releases_lock_and_does_not_open_modal(qtbot, tmp_pa
     report = tmp_path / 'smoke.json'
     assert app.main(smoke_report=report) == 1
     import json
-    result = json.loads(report.read_text())
+    result = json.loads(report.read_text(encoding='utf-8'))
     assert result['passed'] is False and result['phase_a'] is False
     assert '無法寫入' in result['error']
     assert events == ['acquire', 'release']
