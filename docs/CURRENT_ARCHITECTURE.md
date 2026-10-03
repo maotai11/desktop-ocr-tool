@@ -34,7 +34,7 @@ flowchart TD
 
 ## Persistence
 
-Capture→保存raw／thumbnail→exact RGB hash→DbWorker dedup或insert。dedup拒收清理本次產生的圖，但刪檔失敗仍須後續reconciliation。OCR result帶入engine/model hash；失敗轉failed DTO而不刪原圖。commit成功後，只有`save_raw_image=false`且結果有文字且done/needs_review，才unlink raw並clear path／重算item_type。unlink失敗不clear path。縮圖仍保留到刪除項目。
+Capture→保存raw／thumbnail→exact RGBA hash→DbWorker dedup或insert。dedup拒收清理本次產生的圖，但刪檔失敗仍須後續reconciliation。OCR接受前保留durable job／base edit revision；OCR result帶入engine/model hash及raw/tile provenance。manual edits不被重跑清空，failed/empty attempt保存last-good文字；obsolete／deleted及duplicate delivery不發佈。GUI剪貼簿發佈前再次檢查row／job／edit revision。commit成功後，只有`save_raw_image=false`且結果有文字且done/needs_review，才先寫清理journal、unlink raw再clear path／重算item_type。unlink失敗不clear path；unlink成功而metadata失敗，重啟以journal對帳。縮圖仍保留到刪除項目。
 
 相對圖片路徑經FileManager containment，ZIP先驗證附件路徑，CSV危險字首文字化。SQLite/FTS仍為明文；沒有自動retention。硬刪除與檔案刪除不是跨媒介原子交易，崩潰／鎖檔仍有待修復窗口。
 
@@ -43,6 +43,8 @@ Capture→保存raw／thumbnail→exact RGB hash→DbWorker dedup或insert。ded
 Tray quit→Pipeline.shutdown：停止GUI接受新操作、暫停clip、停止Hotkey、Capture.stop sentinel。Capture finished在GUI收完先前capture_done後送DB barrier；DB的item_saved已排OCR後，barrier停止OCR。OCR finished後送第二DB barrier，完成所有結果寫入；Db thread quit＋join；最後Database.close→shutdown_finished→QApplication.quit。aboutToQuit以nested QEventLoop維持queued callbacks直到drain；不以忽略wait timeout或terminate當成功。
 
 ## 設定與包裝
+
+原圖header／compressed size先驗預算，長條／大圖逐片resize、padding、推論、回映與seam arbitration；全部切片輸出待覆核。普通圖片保留舊resize相容路徑。
 
 模型權重不變，實際manifest→RapidOCR kwargs；配置中`model_*`不再被說成可任意切換。Core application不instantiate optional providers，也不在設定dialog import它們。獨立adapter的3.x contract修复不等於native部署驗收。
 

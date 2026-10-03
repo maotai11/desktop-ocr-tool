@@ -18,19 +18,27 @@ class MssBackend:
         with mss.mss() as sct:
             return list(sct.monitors[1:])
 
+    @staticmethod
+    def _monitor(monitors, monitor_idx):
+        # Index 0 is the virtual desktop in MSS, not a physical monitor.
+        # Never silently redirect a stale/invalid selection to another screen.
+        if not isinstance(monitor_idx, int) or not 1 <= monitor_idx < len(monitors):
+            raise ValueError(f'無效的實體螢幕索引: {monitor_idx}')
+        return monitors[monitor_idx]
+
     def capture_region(self, x: int, y: int, w: int, h: int,
                        monitor_idx: int = 1) -> Optional[np.ndarray]:
         try:
             with mss.mss() as sct:
                 monitors = sct.monitors
-                if monitor_idx >= len(monitors):
-                    monitor_idx = 1
-                mon = monitors[monitor_idx]
+                mon = self._monitor(monitors, monitor_idx)
+                if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > mon['width'] or y + h > mon['height']:
+                    raise ValueError('框選區域超出所選螢幕；請重新框選')
                 region = {
                     'left': mon['left'] + x,
                     'top': mon['top'] + y,
-                    'width': max(w, 1),
-                    'height': max(h, 1),
+                    'width': w,
+                    'height': h,
                 }
                 screenshot = sct.grab(region)
                 img = np.array(screenshot)
@@ -43,9 +51,7 @@ class MssBackend:
         try:
             with mss.mss() as sct:
                 monitors = sct.monitors
-                if monitor_idx >= len(monitors):
-                    monitor_idx = 1
-                screenshot = sct.grab(monitors[monitor_idx])
+                screenshot = sct.grab(self._monitor(monitors, monitor_idx))
                 img = np.array(screenshot)
                 return img[:, :, :3]
         except Exception as e:
@@ -55,9 +61,7 @@ class MssBackend:
     def get_monitor_info(self, monitor_idx: int = 1) -> dict:
         with mss.mss() as sct:
             monitors = sct.monitors
-            if monitor_idx < len(monitors):
-                return dict(monitors[monitor_idx])
-        return {'left': 0, 'top': 0, 'width': 1920, 'height': 1080}
+            return dict(self._monitor(monitors, monitor_idx))
 
     def close(self):
         pass  # 不再持有 _sct，無需關閉

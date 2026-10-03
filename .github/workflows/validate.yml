@@ -26,32 +26,33 @@ jobs:
           cache: pip
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1
-      - run: python -m pip install -r requirements-dev.txt
+      - name: Resolve wheelhouse and record exact input hashes
+        run: |
+          python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt
+          python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
+      - name: Install only from recorded local wheels
+        run: |
+          python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt
+          python -m pip check
+          python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
       - run: python -m pytest -q --junitxml=test-results.xml
       - run: python src/main.py --self-test source-selftest.json
-      - if: runner.os == 'Windows'
-        run: python src/main.py --smoke-app source-app-smoke.json
+      - run: python src/main.py --smoke-app source-app-smoke.json
       - if: runner.os == 'Windows'
         run: python scripts/build.py
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $exe = (Get-ChildItem artifacts/release-*/*.exe | Select-Object -First 1).FullName
-          $report = Join-Path $PWD 'frozen-selftest.json'
-          $rule = 'DesktopOCR-candidate-test'
+          $bundles = @(Get-ChildItem artifacts/release-* -Directory)
+          if ($bundles.Count -ne 1) { throw 'Expected exactly one current release directory' }
+          $bundle = $bundles[0].FullName
+          $manifest = Get-Content (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw | ConvertFrom-Json
+          $exe = Join-Path $bundle $manifest.executable_name
+          $rule = 'DesktopOCR-candidate-' + [guid]::NewGuid().ToString()
           New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block -Profile Any | Out-Null
           try {
-            $proc = Start-Process -FilePath $exe -ArgumentList @('--self-test', "`"$report`"") -PassThru
-            if (-not $proc.WaitForExit(180000)) { Stop-Process -Id $proc.Id; throw 'Frozen self-test timeout' }
-            if ($proc.ExitCode -ne 0) { throw "Frozen self-test failed: $($proc.ExitCode)" }
-            $result = Get-Content $report -Raw | ConvertFrom-Json
-            if (-not $result.passed -or -not $result.frozen) { throw 'Invalid frozen self-test result' }
-            $appReport = Join-Path $PWD 'frozen-app-smoke.json'
-            $appProc = Start-Process -FilePath $exe -ArgumentList @('--smoke-app', "`"$appReport`"") -PassThru
-            if (-not $appProc.WaitForExit(180000)) { Stop-Process -Id $appProc.Id; throw 'Application smoke timeout' }
-            if ($appProc.ExitCode -ne 0) { throw 'Application startup/shutdown failed' }
-            $appResult = Get-Content $appReport -Raw | ConvertFrom-Json
-            if (-not $appResult.engine_ready -or -not $appResult.shutdown_clean) { throw 'Incomplete app lifecycle' }
+            & ./scripts/validate_windows_bundle.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
+            if ($LASTEXITCODE -ne 0) { throw 'Outbound-blocked frozen candidate gate failed' }
           } finally {
             Remove-NetFirewallRule -DisplayName $rule
           }
@@ -65,4 +66,7 @@ jobs:
             *app-smoke.json
             artifacts/*.zip
             artifacts/*.sha256
+            artifacts/dependency-inventory.json
+            artifacts/candidate-validation/*.json
+            artifacts/firewall-validation/*.json
           if-no-files-found: warn

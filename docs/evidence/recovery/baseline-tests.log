@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+PySide6 6.11.2 -- Qt runtime 6.11.2 -- Qt compiled 6.11.2
+rootdir: /tmp/desktop-ocr-baseline-bba210ec
+configfile: pytest.ini
+testpaths: tests
+plugins: qt-4.5.0
+collected 156 items
+
+tests/test_build_script.py ..                                            [  1%]
+tests/test_capture_worker_drain.py .                                     [  1%]
+tests/test_db_worker.py .......                                          [  6%]
+tests/test_h2_providers.py ............                                  [ 14%]
+tests/test_h3_config_wiring.py ...................                       [ 26%]
+tests/test_h4_fallback_edge_cases.py ......                              [ 30%]
+tests/test_hardening.py ............................................     [ 58%]
+tests/test_main_window_batch.py ...........                              [ 65%]
+tests/test_ocr_preprocess.py ................                            [ 75%]
+tests/test_ocr_worker_progress.py .                                      [ 76%]
+tests/test_pipeline_shutdown.py .                                        [ 76%]
+tests/test_repository.py ...........                                     [ 83%]
+tests/test_secondary_engine.py ...................                       [ 96%]
+tests/test_version_constants.py .                                        [ 96%]
+tests/test_widget_interactions.py .....                                  [100%]
+
+- generated xml file: /workspace/scratch/40b4883b300a/desktop-ocr-tool/docs/evidence/recovery/baseline-tests.xml -
+============================= 156 passed in 7.74s ==============================

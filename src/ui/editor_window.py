@@ -274,6 +274,7 @@ class EditorWindow(QDialog):
             self._note_edit.setHtml(self._item.note_richtext)
         else:
             self._note_edit.clear()
+        self._loaded_note_html = self._note_edit.toHtml()
 
     def _save(self):
         edited = self._text_edit.toPlainText()
@@ -281,12 +282,11 @@ class EditorWindow(QDialog):
         plaintext = self._note_edit.toPlainText()
 
         try:
-            self._repo.update_edited_text(self._item.id, edited)
-            self._repo.update_note(self._item.id, richtext, plaintext)
+            self._repo.save_editor_content(
+                self._item.id, edited, richtext, plaintext, self._item.edit_revision)
 
             # 修改文字後若為 needs_review → 自動 confirmed
             if self._item.ocr_status == 'needs_review':
-                self._repo.update_ocr_status(self._item.id, 'confirmed')
                 self._review_bar.setVisible(False)
 
             self.item_updated.emit(self._item.id)
@@ -308,11 +308,29 @@ class EditorWindow(QDialog):
     def _rerun_ocr(self):
         if not self._ocr_worker or not self._item.raw_image_path:
             return
-        abs_path = self._file_mgr.get_abs_path(self._item.raw_image_path)
-        self._repo.update_ocr_status(self._item.id, 'pending')
-        self._ocr_worker.queue_ocr(self._item.id, abs_path, 'screen')
-        self.item_updated.emit(self._item.id)
-        self.accept()
+        try:
+            # Preserve unsaved edits and notes before closing the dialog for a
+            # rerun. OCR updates the machine text, never this manual draft.
+            draft = self._text_edit.toPlainText()
+            text_dirty = draft != (self._item.get_effective_text() or '')
+            note_html = self._note_edit.toHtml()
+            if text_dirty or note_html != self._loaded_note_html:
+                # Both note-only and text drafts use the same revision check.
+                # An untouched stale editor never rewrites newer saved notes.
+                self._repo.save_editor_content(
+                    self._item.id, draft, note_html, self._note_edit.toPlainText(),
+                    self._item.edit_revision, update_text=text_dirty,
+                    confirm_review=text_dirty)
+            self._loaded_note_html = note_html
+            self._item = self._repo.get_by_id(self._item.id)
+            abs_path = self._file_mgr.get_abs_path(self._item.raw_image_path)
+            accepted = self._ocr_worker.queue_ocr(self._item.id, abs_path, 'screen')
+            self.item_updated.emit(self._item.id)
+            if accepted:
+                self.accept()
+        except Exception as exc:
+            logger.exception('重跑 OCR 未開始')
+            QMessageBox.warning(self, '重跑 OCR 未開始', str(exc))
 
     def _save_image_as(self):
         if not self._item.raw_image_path:

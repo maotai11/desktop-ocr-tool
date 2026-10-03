@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
+from statistics import median
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,8 @@ def box_bounds(box):
 
 
 def _cjk(char):
-    return ('\u3400' <= char <= '\u9fff') or ('\U00020000' <= char <= '\U000323af')
+    return (('\u3400' <= char <= '\u9fff') or ('\uf900' <= char <= '\ufaff')
+            or ('\U00020000' <= char <= '\U000323af'))
 
 
 def boundary_separator(left, right):
@@ -34,7 +36,10 @@ def boundary_separator(left, right):
     gap = bb[0] - ab[2]
     if gap > height * 0.75:
         return ' '
-    x,y = a[-1],b[0]
+    # Ideographic variation selectors belong to the preceding rare glyph.
+    visible_a = a.rstrip(''.join(chr(i) for i in range(0xfe00, 0xfe10))
+                         + ''.join(chr(i) for i in range(0xe0100, 0xe01f0)))
+    x, y = (visible_a[-1] if visible_a else a[-1]), b[0]
     if y in '，。；：！？、,.!?:;%％)]}）】」』' or x in '([{（【「『$＄￥¥':
         return ''
     if x in '/.-,' and y.isdigit() or x.isdigit() and y in '/.-,':
@@ -58,61 +63,39 @@ def sort_boxes_and_merge(results: List[Dict[str, Any]]) -> str:
     if not results:
         return ''
 
-    def get_center_y(r):
-        box = r.get('box', [])
-        if not box:
-            return 0
-        if isinstance(box[0], (list, tuple)):
-            return sum(p[1] for p in box) / len(box)
-        return (box[1] + box[3]) / 2 if len(box) >= 4 else 0
+    def geometry(row):
+        x1, y1, x2, y2 = box_bounds(row.get('box'))
+        return ((x1 + x2) / 2, (y1 + y2) / 2, max(1., y2 - y1))
 
-    def get_center_x(r):
-        box = r.get('box', [])
-        if not box:
-            return 0
-        if isinstance(box[0], (list, tuple)):
-            return sum(p[0] for p in box) / len(box)
-        return (box[0] + box[2]) / 2 if len(box) >= 4 else 0
-
-    heights = []
-    for r in results:
-        box = r.get('box', [])
-        if box and len(box) >= 4 and isinstance(box[0], (list, tuple)):
-            ys = [p[1] for p in box]
-            heights.append(max(ys) - min(ys))
-    avg_height = sum(heights) / len(heights) if heights else 20
-
-    sorted_results = sorted(results, key=get_center_y)
+    # A large heading must not set the row tolerance for every small body line.
+    # Compare with each line's local median, rather than a page-wide mean.
     lines = []
-    current_line = []
-    current_y = None
-
-    for r in sorted_results:
-        cy = get_center_y(r)
-        if current_y is None:
-            current_y = cy
-            current_line.append(r)
-        elif abs(cy - current_y) < avg_height * 0.7:
-            current_line.append(r)
+    for row in sorted(results, key=lambda r: geometry(r)[1]):
+        _, cy, height = geometry(row)
+        best, distance = None, float('inf')
+        for line in lines:
+            line_y = median(geometry(r)[1] for r in line)
+            line_h = median(geometry(r)[2] for r in line)
+            delta = abs(cy - line_y)
+            if delta < min(height, line_h) * .6 and delta < distance:
+                best, distance = line, delta
+        if best is None:
+            lines.append([row])
         else:
-            lines.append(sorted(current_line, key=get_center_x))
-            current_line = [r]
-            current_y = cy
-    if current_line:
-        lines.append(sorted(current_line, key=get_center_x))
+            best.append(row)
 
-    paragraphs = []
-    prev_y = None
-    for line in lines:
-        cy = get_center_y(line[0])
-        if prev_y is not None and abs(cy - prev_y) > avg_height * 2:
+    paragraphs, previous_y, previous_h = [], None, None
+    for line in sorted(lines, key=lambda ln: median(geometry(r)[1] for r in ln)):
+        line.sort(key=lambda r: geometry(r)[0])
+        cy = median(geometry(r)[1] for r in line)
+        height = median(geometry(r)[2] for r in line)
+        if previous_y is not None and cy - previous_y > max(height, previous_h) * 2:
             paragraphs.append('')
         line_text = line[0].get('text', '')
-        for previous, current in zip(line, line[1:]):
-            line_text += boundary_separator(previous, current) + current.get('text', '')
+        for left, right in zip(line, line[1:]):
+            line_text += boundary_separator(left, right) + right.get('text', '')
         paragraphs.append(line_text)
-        prev_y = cy
-
+        previous_y, previous_h = cy, height
     return '\n'.join(paragraphs)
 
 

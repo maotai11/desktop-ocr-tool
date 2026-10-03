@@ -1,3 +1,15 @@
+# 1.6.2-rc.2 恢復修復狀態（2026-10-03）
+
+從確實已推送的bba210ec重建；沒有取得先前未推送的192-test工作位元組。最終本機Linux完整suite：297 passed、0 failed、0 skipped，9.35s；`evidence/recovery/final-tests.xml`。Compileall、fatal/redefinition Ruff、pip check及diff-check均通過；不是全量style lint清零。
+
+最終source self-test／full app startup/shutdown在verified Linux seccomp native network-syscall EPERM guard下通過，模型／Qt／SQLite／所有worker停止受驗證。没有ptrace/network trace／Windows clean-machine證據。七張固定像素配對與52個OCR regressions、35個data regressions見[本輪報告](RECOVERY_REPAIR_REPORT.md)及[OCR明細](OCR_RECOVERY_20261003.md)。罕字仍失敗，models不變。
+
+本輪Windows CI及downloadable candidate尚待同一推送commit驗證；以PR／Actions實際結果為準。保持Draft；clean offline Windows、mixed DPI、field accuracy與native hang isolation仍阻擋正式交付。
+
+---
+
+下方為rc.1歷史紀錄，不是rc.2的新驗收結果。
+
 # 1.6.2-rc.1 修復與交付狀態
 
 基準 master：`f5af545cabc4e9a649cd57497fbf5bf42f2ff138`。修復分支：`fix/offline-release-hardening`。日期：2026-10-02。

@@ -2,7 +2,7 @@ import os
 
 APP_NAME = "DesktopOCRTool"
 APP_DISPLAY_NAME = "桌面 OCR 擷取工具"
-APP_VERSION = os.environ.get("DESKTOP_OCR_VERSION", "1.6.2-rc.1")
+APP_VERSION = os.environ.get("DESKTOP_OCR_VERSION", "1.6.2-rc.2")
 
 
 def release_dir_name() -> str:

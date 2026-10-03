@@ -1,14 +1,14 @@
-# -*- coding: utf-8 -*-
-import sys
-import os
 import logging
+import os
+import sys
+
 from src.core.version import APP_DISPLAY_NAME, APP_VERSION
 
 logger = logging.getLogger(__name__)
 
 
 def _setup_font(app, priority: list):
-    from PySide6.QtGui import QFontDatabase, QFont
+    from PySide6.QtGui import QFont, QFontDatabase
     for fname in priority:
         if not fname:
             break
@@ -20,26 +20,44 @@ def _setup_font(app, priority: list):
 
 
 def main(smoke_report=None) -> int:
-    from PySide6.QtWidgets import QApplication, QMessageBox
-    from PySide6.QtCore import Qt, QTimer
-
-    from src.core.logger import setup_logger
-
-    app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName(APP_DISPLAY_NAME)
-    app.setApplicationVersion(APP_VERSION)
-    app.setQuitOnLastWindowClosed(False)
-
+    from src.core.validation_report import database_integrity, executable_sha256, write_validation_report
+    smoke = {'schema': 2, 'probe': 'application_lifecycle', 'version': APP_VERSION,
+             'phase_a': False, 'engine_ready': False, 'shutdown_clean': False,
+             'passed': False, 'clean_machine_verified': False,
+             'network_observation': 'NOT_RUN',
+             'frozen': bool(getattr(sys, 'frozen', False)), 'platform': sys.platform}
+    instance_locked = False
     try:
+        if smoke_report is not None:
+            smoke['executable_sha256'] = executable_sha256()
+            write_validation_report(smoke_report, smoke)
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        from src.core.logger import setup_logger
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        app.setApplicationName(APP_DISPLAY_NAME)
+        app.setApplicationVersion(APP_VERSION)
+        app.setQuitOnLastWindowClosed(False)
+        smoke['qt_platform'] = app.platformName()
         setup_logger()
         logger.info(f"===== {APP_DISPLAY_NAME} v{APP_VERSION} 啟動 =====")
         from src.core.config import get_config
         cfg = get_config()
         # 1. Single instance
-        from src.core.single_instance import acquire_instance_lock, bring_existing_to_front
-        if cfg.get('general', 'single_instance', default=True) and not acquire_instance_lock():
-            bring_existing_to_front()
-            return 0
+        from src.core.single_instance import (
+            acquire_instance_lock,
+            bring_existing_to_front,
+        )
+        if cfg.get('general', 'single_instance', default=True):
+            instance_locked = acquire_instance_lock()
+            if not instance_locked:
+                if smoke_report is not None:
+                    smoke['error'] = 'another application instance holds the lock'
+                    return 1
+                bring_existing_to_front()
+                return 0
 
         # 2. Config
         from src.core.config import get_config
@@ -54,14 +72,9 @@ def main(smoke_report=None) -> int:
         data_dir = cfg.get_data_directory()
         parent_dir = os.path.dirname(data_dir) or '.'
         if not os.access(parent_dir, os.W_OK):
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                None, "權限不足",
-                f"無法寫入資料目錄：\n{data_dir}\n\n"
-                "請將程式移至有寫入權限的目錄（例如桌面或 Documents），"
-                "請勿以系統管理員身份執行可攜版本。"
-            )
-            return 1
+            raise PermissionError(
+                f"無法寫入資料目錄：{data_dir}。請將程式移至可寫入的目錄，"
+                "請勿以系統管理員身份執行可攜版本。")
         os.makedirs(data_dir, exist_ok=True)
 
         # 5. Database
@@ -105,14 +118,14 @@ def main(smoke_report=None) -> int:
         logger.info('OCR: bundled RapidOCR PP-OCRv4; secondary engines disabled in Core')
 
         # 10. Capture worker + overlay
-        from src.workers.capture_worker import CaptureWorker
         from src.ui.capture_overlay import CaptureOverlay
+        from src.workers.capture_worker import CaptureWorker
         capture_worker = CaptureWorker(file_mgr)
         overlay = CaptureOverlay()
 
         # 11. Main UI
-        from src.ui.widget import FloatingWidget
         from src.ui.tray_manager import TrayManager
+        from src.ui.widget import FloatingWidget
 
         widget = FloatingWidget(
             item_repo=item_repo,
@@ -141,9 +154,12 @@ def main(smoke_report=None) -> int:
             widget._clip_watcher = clip_watcher
 
             if cfg.get('clipboard', 'auto_save_text', default=True):
+                from src.core.constants import (
+                    ITEM_TYPE_TEXT,
+                    SOURCE_MODE_CLIPBOARD_TEXT,
+                )
                 from src.data.hasher import sha256_text
                 from src.data.models import ItemCreateDTO
-                from src.core.constants import SOURCE_MODE_CLIPBOARD_TEXT, ITEM_TYPE_TEXT
 
                 def on_clipboard_text(text: str):
                     max_len = cfg.get('clipboard', 'max_text_length', default=50000)
@@ -220,68 +236,96 @@ def main(smoke_report=None) -> int:
         tray.set_quit_callback(pipeline.shutdown)
         pipeline.shutdown_finished.connect(app.quit)
         app.aboutToQuit.connect(pipeline.ensure_shutdown)
-        from src.core.single_instance import release_instance_lock
-        pipeline.shutdown_finished.connect(release_instance_lock)
         ocr_worker.ocr_progress.connect(widget.set_ocr_progress)
         ocr_worker.engine_progress.connect(widget.on_ocr_engine_progress)
         ocr_worker.engine_ready.connect(widget.on_ocr_engine_ready)
         ocr_worker.engine_failed.connect(widget.on_ocr_engine_failed)
 
         if smoke_report is not None:
-            import json
-            from pathlib import Path
-            smoke = {'phase_a': True, 'engine_ready': False, 'shutdown_clean': False,
-                     'frozen': bool(getattr(sys, 'frozen', False)), 'platform': sys.platform}
+            smoke['phase_a'] = True
+            smoke_timer = QTimer(widget)
+            smoke_timer.setSingleShot(True)
             def smoke_ready():
+                smoke_timer.stop()
                 smoke['engine_ready'] = True
                 pipeline.shutdown()
             def smoke_failed(error):
+                smoke_timer.stop()
                 smoke['error'] = error
                 pipeline.shutdown()
             def smoke_finished():
-                smoke['shutdown_clean'] = pipeline.closed
-                Path(smoke_report).write_text(json.dumps(smoke, indent=2), encoding='utf-8')
+                import sqlite3
+                smoke['threads_stopped'] = {
+                    'capture': not capture_worker.isRunning(),
+                    'ocr': not ocr_worker.isRunning(),
+                    'database': not db_thread.isRunning(),
+                    'hotkeys': not hotkey_listener.isRunning(),
+                }
+                smoke['shutdown_clean'] = (pipeline.closed and db._closed
+                                           and all(smoke['threads_stopped'].values()))
+                try:
+                    smoke['database_integrity'] = database_integrity(db._db_path)
+                except (sqlite3.Error, OSError) as exc:
+                    smoke['error'] = f'database verification failed: {exc}'
+                smoke['passed'] = (smoke['engine_ready'] and smoke['shutdown_clean']
+                                   and smoke.get('database_integrity') == 'ok'
+                                   and 'error' not in smoke)
             ocr_worker.engine_ready.connect(smoke_ready)
             ocr_worker.engine_failed.connect(smoke_failed)
             pipeline.shutdown_finished.connect(smoke_finished)
-            QTimer.singleShot(30000, widget, lambda: smoke_failed('startup timeout')
-                              if not pipeline.closed else None)
+            smoke_timer.timeout.connect(lambda: smoke_failed('startup timeout'))
+            smoke_timer.start(30000)
 
         # Phase B: background model loading
         ocr_worker.start_loading()
 
         # Autostart
         if cfg.get('general', 'start_with_windows', default=False):
-            from src.core.autostart import set_autostart, is_autostart_enabled
+            from src.core.autostart import is_autostart_enabled, set_autostart
             if not is_autostart_enabled():
                 set_autostart(True)
 
         logger.info("Phase A 完成，進入事件迴圈")
         code = app.exec()
-        if smoke_report is not None and not (smoke['engine_ready'] and smoke['shutdown_clean']):
+        if smoke_report is not None and not smoke['passed']:
             return 1
         return code
 
     except Exception as e:
         logger.critical(f"啟動失敗: {e}", exc_info=True)
-        if 'pipeline' in locals():
-            pipeline.ensure_shutdown()
-        else:
-            for owner in ('hotkey_listener', 'capture_worker', 'ocr_worker'):
-                thread = locals().get(owner)
-                if thread is not None:
-                    thread.stop()
-                    thread.wait()
-            if 'db_thread' in locals():
-                db_thread.quit()
-                db_thread.wait()
-            if 'db' in locals():
-                db.close()
-        try:
-            QMessageBox.critical(
-                None, "啟動失敗",
-                f"應用程式啟動失敗：\n{str(e)}\n\n請檢查 logs/app.log 獲取詳細資訊。"
-            )
-        except Exception:
-            pass  # nosec B110 — last-resort crash dialog; if Qt itself fails here, nothing more can be done
+        smoke['error'] = str(e)
+        smoke['passed'] = False
+        if smoke_report is None:
+            try:
+                QMessageBox.critical(
+                    None, "啟動失敗",
+                    f"應用程式啟動失敗：\n{e!s}\n\n請檢查 logs/app.log 獲取詳細資訊。"
+                )
+            except Exception:  # noqa: BLE001 - Qt crash reporting is a last-resort path
+                logger.exception('無法顯示啟動失敗訊息')
         return 1
+    finally:
+        try:
+            if 'pipeline' in locals():
+                pipeline.ensure_shutdown()
+            else:
+                for owner in ('hotkey_listener', 'capture_worker', 'ocr_worker'):
+                    worker = locals().get(owner)
+                    if worker is not None:
+                        worker.stop()
+                        worker.wait()
+                if 'db_thread' in locals():
+                    db_thread.quit()
+                    db_thread.wait()
+                if 'db' in locals():
+                    db.close()
+        finally:
+            if instance_locked:
+                from src.core.single_instance import release_instance_lock
+                release_instance_lock()
+            if smoke_report is not None:
+                try:
+                    write_validation_report(smoke_report, smoke)
+                except OSError:
+                    logger.exception('無法寫入 application smoke 報告')
+                    return 1

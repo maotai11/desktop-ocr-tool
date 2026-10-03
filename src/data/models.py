@@ -21,6 +21,8 @@ class ItemDTO:
     content_hash: Optional[str] = None
     image_hash: Optional[str] = None
     ocr_status: str = "none"
+    edit_revision: int = 0
+    ocr_job_id: Optional[str] = None
     ocr_engine: Optional[str] = None
     ocr_model_version: Optional[str] = None
     ocr_confidence: float = 0.0
@@ -71,6 +73,9 @@ class OcrResultDTO:
     error_message: Optional[str] = None
     engine: str = "unknown"
     model_version: str = "unknown"
+    job_id: Optional[str] = None
+    base_edit_revision: Optional[int] = None
+    provenance_json: Optional[str] = None
 
 
 @dataclass

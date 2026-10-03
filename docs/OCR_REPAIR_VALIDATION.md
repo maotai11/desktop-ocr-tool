@@ -25,3 +25,7 @@ python scripts/replay_spacing.py --baseline docs/evidence/spacing-replay-input.j
 [Phase 2 模型決策](model-benchmark/MODEL_UPGRADE_DECISION.md)及[結果](model-benchmark/PHASE2_RESULTS.md)保留配對測量。v4 detector＋v6 recognizer 是後續整合候選，公開 cropped CER 5.88%→1.66%，但包含 12 個原本完全正確的 crop 回退，罕字 CER 仍為47.92%，小字漏偵測保留。這些數值屬 Phase 2 corpus，不能當目前候選应用的全流程指標。
 
 台灣 custom dictionary 仍未接入 Runtime。沒有加入全域 `己→已` 替換。Domain lexicon／人名／稅務／勞健保／法律詞彙修正須保留原文、候選、context score 與修改來源，先取得正確文字負例的 wrong-correction gate。
+
+## 2026-10-03 恢復修復增補
+
+在已推送 `bba210ec` 重新實作 weak-region retry、first-pass 失敗保護、union coverage 融合、局部字高行排序、可追溯 raw hypotheses 與有界切片，production v4 hashes 不變。7 張真實 v4 合成像素配對、52 個新 deterministic tests、回退限制與完整重跑命令見 [OCR_RECOVERY_20261003](OCR_RECOVERY_20261003.md)。本頁先前「只有整張 resize 超限拒絕」的說明屬前一修復點；現在長條／大圖可進入有限制且一律 needs_review 的切片路徑。罕字與既有 24 圖 spacing CER 未改善，沒有整體現場準確率或換模型成功宣稱。

@@ -30,19 +30,35 @@ class FileManager:
 
     def save_capture(self, image_data, ext: str = 'png') -> tuple:
         sub = self._dated_subdir(os.path.join(self._data_dir, 'captures'))
-        filename = self._make_filename(ext)
-        abs_path = os.path.join(sub, filename)
-
-        if isinstance(image_data, Image.Image):
-            image_data.save(abs_path)
-        elif hasattr(image_data, 'shape'):  # numpy array
-            import numpy as np
-            Image.fromarray(image_data).save(abs_path)
-        elif isinstance(image_data, bytes):
-            with open(abs_path, 'wb') as f:
-                f.write(image_data)
-        else:
+        if not (isinstance(image_data, (Image.Image, bytes)) or hasattr(image_data, 'shape')):
             raise ValueError(f"不支援的圖片格式: {type(image_data)}")
+        image_format = Image.registered_extensions().get('.' + ext.lower())
+        if image_format is None:
+            raise ValueError(f'不支援的圖片副檔名: {ext}')
+        # Exclusively create the destination. A filename collision must never
+        # overwrite another capture, including one referenced by SQLite.
+        for _ in range(100):
+            abs_path = os.path.join(sub, self._make_filename(ext))
+            try:
+                handle = open(abs_path, 'xb')
+            except FileExistsError:
+                continue
+            try:
+                with handle:
+                    if isinstance(image_data, bytes):
+                        handle.write(image_data)
+                    else:
+                        image = image_data if isinstance(image_data, Image.Image) else Image.fromarray(image_data)
+                        image.save(handle, format=image_format)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except Exception:
+                # This process owns this newly created incomplete file only.
+                Path(abs_path).unlink(missing_ok=True)
+                raise
+            break
+        else:
+            raise FileExistsError('無法建立唯一截圖檔名，請重試')
 
         rel_path = os.path.relpath(abs_path, self._data_dir)
         logger.debug(f"已儲存擷取圖片: {abs_path}")

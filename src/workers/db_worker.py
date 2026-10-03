@@ -57,26 +57,62 @@ class DbWorker(QObject):
             logger.error(f"DbWorker save_item 失敗: {e}", exc_info=True)
             self.save_failed.emit(str(e))
 
+    @Slot()
+    def reconcile_image_cleanup(self):
+        """Repair metadata after an interrupted unlink without deleting more data."""
+        from pathlib import Path
+        try:
+            for pending in self._repo.pending_image_cleanups():
+                path = pending['raw_image_path']
+                if not Path(self._file_manager.get_abs_path(path)).exists():
+                    self._repo.finish_image_cleanup(pending['item_id'], path)
+                    self.item_updated.emit(pending['item_id'])
+        except Exception as exc:
+            logger.exception('原圖清理記錄校正未完成')
+            self.save_failed.emit(f'原圖清理記錄校正未完成：{exc}')
+
+    def _cleanup_raw_image(self, item_id, result):
+        from pathlib import Path
+        path = None
+        try:
+            with self._repo.image_cleanup_guard():
+                path = self._repo.plan_image_cleanup(item_id, result.job_id)
+                if not path or not self._repo.is_current_ocr_job(item_id, result.job_id, path):
+                    return
+                Path(self._file_manager.get_abs_path(path)).unlink(missing_ok=True)
+                self._repo.finish_image_cleanup(item_id, path)
+        except Exception as exc:
+            # A journal written before unlink survives a later DB failure. Do
+            # not claim the original was retained after it may have been removed.
+            logger.exception('原圖清理未完成 (item %s)', item_id)
+            try:
+                self._repo.image_cleanup_failed(item_id, str(exc))
+            except Exception:
+                logger.exception('原圖清理錯誤記錄未寫入 (item %s)', item_id)
+            if path is None:
+                detail = '未建立清理記錄；尚未清理原圖'
+            else:
+                try:
+                    exists = Path(self._file_manager.get_abs_path(path)).exists()
+                    detail = '原圖仍存在' if exists else '原圖已移除；待校正資料庫記錄'
+                except (OSError, ValueError):
+                    detail = '無法確認原圖狀態；待人工檢查'
+            self.save_failed.emit(f'OCR #{item_id} 已儲存；清理未完成，{detail}')
+
     @Slot(int, object)
     def update_ocr(self, item_id: int, result: OcrResultDTO):
         try:
-            self._repo.update_ocr_result(item_id, result)
-            # The result transaction committed successfully before any unlink.
-            # Failed/empty OCR retains its source for retry and review.
+            applied = self._repo.update_ocr_result(item_id, result)
+            if not applied:
+                return  # Deleted, obsolete, or duplicate results never publish.
+            # Commit the result and a durable cleanup intent before any unlink.
             if not self._save_raw_image and result.text and result.status in ('done', 'needs_review'):
-                item = self._repo.get_by_id(item_id)
-                if item and item.raw_image_path:
-                    try:
-                        from pathlib import Path
-                        Path(self._file_manager.get_abs_path(item.raw_image_path)).unlink(missing_ok=True)
-                        self._repo.clear_image_paths(item_id)
-                    except (OSError, ValueError):
-                        logger.exception('保留原圖路徑：原圖清理未完成 (item %s)', item_id)
+                self._cleanup_raw_image(item_id, result)
             self.ocr_persisted.emit(item_id, result)
             self.item_updated.emit(item_id)
-        except Exception as e:
-            logger.error(f"DbWorker update_ocr 失敗: {e}", exc_info=True)
-            self.save_failed.emit(f'OCR #{item_id} 寫入失敗；原圖已保留')
+        except Exception as exc:
+            logger.error(f'DbWorker update_ocr 失敗: {exc}', exc_info=True)
+            self.save_failed.emit(f'OCR #{item_id} 寫入失敗；尚未清理原圖')
 
     @Slot(int, bool)
     def delete_item(self, item_id: int, delete_files: bool = True):
@@ -140,5 +176,6 @@ def create_db_worker_in_thread(repo: ItemRepository,
     worker = DbWorker(repo, file_manager, enable_dedup, save_raw_image)
     worker.moveToThread(thread)
     thread.finished.connect(worker.deleteLater)
+    thread.started.connect(worker.reconcile_image_cleanup)
     thread.start()
     return worker, thread

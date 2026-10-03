@@ -1,0 +1,48 @@
+[2026-10-03 09:25:16] [INFO] [app] ===== 桌面 OCR 擷取工具 v1.6.2-rc.2 啟動 =====
+[2026-10-03 09:25:16] [INFO] [config] 建立預設設定檔
+[2026-10-03 09:25:16] [INFO] [single_instance] 已取得單實例鎖
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+Fontconfig error: No writable cache directories
+[2026-10-03 09:25:16] [INFO] [app] 使用 Qt 預設字型
+[2026-10-03 09:25:16] [INFO] [database] 資料庫 Schema 已更新至 v5
+[2026-10-03 09:25:16] [INFO] [database] 資料庫初始化完成: /tmp/desktop-ocr-smoke-iw4l7w8u/data/app.db
+[2026-10-03 09:25:17] [INFO] [app] OCR: bundled RapidOCR PP-OCRv4; secondary engines disabled in Core
+qt.core.qobject.connect: QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)
+This plugin does not support raise()
+[2026-10-03 09:25:17] [INFO] [app] Phase A 完成，進入事件迴圈
+[2026-10-03 09:25:17] [INFO] [engine] 開始載入 OCR 引擎 [RapidOCR PP-OCRv4]...
+[2026-10-03 09:25:17] [DEBUG] [engine] OCR 載入進度 0%: 初始化...
+[2026-10-03 09:25:17] [DEBUG] [engine] OCR 載入進度 20%: 載入 RapidOCR PP-OCRv4 (ONNX)...
+[2026-10-03 09:25:17] [INFO] [engine] RapidOCR PP-OCRv4 引擎已建立
+[2026-10-03 09:25:17] [DEBUG] [engine] OCR 載入進度 90%: 暖機推論...
+[2026-10-03 09:25:18] [INFO] [engine] OCR 引擎載入完成，耗時 1.15s
+[2026-10-03 09:25:18] [DEBUG] [engine] OCR 載入進度 100%: 就緒
+[2026-10-03 09:25:18] [INFO] [widget] OCR 引擎就緒，按鈕已啟用

@@ -708,7 +708,6 @@ class FloatingWidget(QWidget):
     def _save_item_image(self, item):
         if not item.raw_image_path:
             return
-        import os
         from PySide6.QtWidgets import QFileDialog
         src = self._file_mgr.get_abs_path(item.raw_image_path)
         ext = os.path.splitext(src)[1] or '.png'
@@ -746,8 +745,6 @@ class FloatingWidget(QWidget):
     def _rerun_ocr(self, item):
         if item.raw_image_path:
             abs_path = self._file_mgr.get_abs_path(item.raw_image_path)
-            self._item_repo.update_ocr_status(item.id, 'pending')
-            self._ocr_worker._mode = 'ocr'
             self._ocr_worker.queue_ocr(item.id, abs_path, 'screen')
             self.refresh_list()
 
@@ -829,7 +826,7 @@ class FloatingWidget(QWidget):
 
     def set_ocr_progress(self, pct: int):
         """更新 OCR 進度條。"""
-        if pct > 0:
+        if 0 < pct < 100:
             self._ocr_progress_bar.show()
             self._ocr_progress_bar.setValue(pct)
         else:

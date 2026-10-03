@@ -68,6 +68,31 @@ _CREATE_TABLES = [
         created_at          TEXT DEFAULT (datetime('now','localtime')),
         updated_at          TEXT DEFAULT (datetime('now','localtime'))
     )""",
+    """CREATE TABLE IF NOT EXISTS ocr_attempts (
+        job_id TEXT PRIMARY KEY,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        base_edit_revision INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        text_content TEXT,
+        confidence REAL,
+        detail_json TEXT,
+        provenance_json TEXT,
+        elapsed_ms INTEGER,
+        error_message TEXT,
+        engine TEXT,
+        model_version TEXT,
+        disposition TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        completed_at TEXT
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_ocr_attempts_item ON ocr_attempts(item_id)""",
+    """CREATE TABLE IF NOT EXISTS image_cleanup (
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        raw_image_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        error_message TEXT,
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )""",
     """CREATE TABLE IF NOT EXISTS item_tags (
         item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
         tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
@@ -133,6 +158,17 @@ class Database:
     def _run_migrations(self):
         for stmt in _CREATE_TABLES:
             self._conn.execute(stmt)
+        # Additive migrations preserve existing items, edits, and FTS content.
+        columns = {row[1] for row in self._conn.execute('PRAGMA table_info(items)')}
+        for name, definition in (
+            ('edit_revision', 'INTEGER NOT NULL DEFAULT 0'),
+            ('ocr_job_id', 'TEXT'),
+        ):
+            if name not in columns:
+                self._conn.execute(f'ALTER TABLE items ADD COLUMN {name} {definition}')
+        attempt_columns = {row[1] for row in self._conn.execute('PRAGMA table_info(ocr_attempts)')}
+        if 'provenance_json' not in attempt_columns:
+            self._conn.execute('ALTER TABLE ocr_attempts ADD COLUMN provenance_json TEXT')
         self._conn.commit()
 
         cur = self._conn.execute(

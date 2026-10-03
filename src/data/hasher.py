@@ -11,9 +11,11 @@ logger = logging.getLogger(__name__)
 def sha256_image(image_path: str) -> str:
     """Exact decoded pixels; perceptual similarity must never discard an item."""
     with Image.open(image_path) as image:
-        rgb = image.convert('RGB')
-        digest = hashlib.sha256(f'{rgb.width}x{rgb.height}:RGB:'.encode())
-        digest.update(rgb.tobytes())
+        # Alpha changes visible output too. Canonical RGBA also allows an RGB
+        # file and an equivalent fully opaque RGBA file to compare equally.
+        rgba = image.convert('RGBA')
+        digest = hashlib.sha256(f'{rgba.width}x{rgba.height}:RGBA:'.encode())
+        digest.update(rgba.tobytes())
     return 'sha256:' + digest.hexdigest()
 
 

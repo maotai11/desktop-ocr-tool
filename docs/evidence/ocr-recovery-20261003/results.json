@@ -1,0 +1,2634 @@
+{
+  "baseline_ref": "bba210ec",
+  "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+  "source_sha256": {
+    "engine.py": "d6e71fbe5e3c3160c384cc40c1dffb9307a6e528924d2cfa0d2fde9573c584e7",
+    "preprocessor.py": "3a074d089e039130516e08fee8781b7a0c41f7c0b36b1a527b46f98c3ea8b9a8",
+    "fusion.py": "0c4d22985720d5d277e926c24231bc5d0cac3c879b99a0ee932aaa9f6900f013",
+    "postprocessor.py": "4835e1898c0137cb671f2c0d9a5ed4294e8e9800f6a8836f86211fc20b14b103"
+  },
+  "rows": [
+    {
+      "id": "ordinary_tw",
+      "ground_truth": "臺灣稅務申報 勞健保補充保險費",
+      "baseline": {
+        "result": {
+          "text": "臺灣稅務申報健保補充保費",
+          "confidence": 0.9166767299175262,
+          "status": "done",
+          "detail": [
+            {
+              "box": [
+                [
+                  12.903225421905518,
+                  67.1875
+                ],
+                [
+                  352.258046468099,
+                  66.5625
+                ],
+                [
+                  352.258046468099,
+                  90.625
+                ],
+                [
+                  12.903225421905518,
+                  91.25
+                ]
+              ],
+              "text": "臺灣稅務申報健保補充保費",
+              "confidence": 0.9166767299175262
+            }
+          ],
+          "elapsed_ms": 724,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+        },
+        "metrics": {
+          "N": 15,
+          "S": 0,
+          "D": 3,
+          "I": 0,
+          "whitespace_edits": 1,
+          "errors": 3
+        },
+        "measured_ms": 724.3697250000878,
+        "sampled_peak_rss_bytes": 450359296
+      },
+      "repaired": {
+        "result": {
+          "text": "臺灣稅務申報健保補充保費",
+          "confidence": 0.9166767299175262,
+          "status": "done",
+          "detail": [
+            {
+              "box": [
+                [
+                  12.903225421905518,
+                  67.1875
+                ],
+                [
+                  352.258046468099,
+                  66.5625
+                ],
+                [
+                  352.258046468099,
+                  90.625
+                ],
+                [
+                  12.903225421905518,
+                  91.25
+                ]
+              ],
+              "text": "臺灣稅務申報健保補充保費",
+              "raw_text": "臺灣税務申報健保補充保費",
+              "confidence": 0.9166767299175262
+            }
+          ],
+          "elapsed_ms": 476,
+          "hypotheses": {
+            "first_pass": [
+              {
+                "box": [
+                  [
+                    61.935482025146484,
+                    322.5
+                  ],
+                  [
+                    1690.838623046875,
+                    319.5
+                  ],
+                  [
+                    1690.838623046875,
+                    435.0
+                  ],
+                  [
+                    61.935482025146484,
+                    438.0
+                  ]
+                ],
+                "raw_text": "臺灣税務申報健保補充保費",
+                "confidence": 0.9166767299175262
+              }
+            ]
+          },
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "coordinate_transform": {
+            "source_hw": [
+              200,
+              640
+            ],
+            "processed_hw": [
+              960,
+              3072
+            ],
+            "scale_to_source_xy": [
+              0.20833333333333334,
+              0.20833333333333334
+            ],
+            "hypotheses_coordinate_space": "processed_image"
+          },
+          "preprocessing": {
+            "strategy": "whole_image",
+            "source_hw": [
+              200,
+              640
+            ]
+          }
+        },
+        "metrics": {
+          "N": 15,
+          "S": 0,
+          "D": 3,
+          "I": 0,
+          "whitespace_edits": 1,
+          "errors": 3
+        },
+        "measured_ms": 476.2675940000918,
+        "sampled_peak_rss_bytes": 558411776
+      }
+    },
+    {
+      "id": "ordinary_mixed",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "repaired": {
+        "result": {
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "confidence": 0.9674347206950188,
+          "status": "done",
+          "detail": [
+            {
+              "box": [
+                [
+                  11.612903277079266,
+                  65.3125
+                ],
+                [
+                  362.258046468099,
+                  64.6875
+                ],
+                [
+                  362.258046468099,
+                  85.3125
+                ],
+                [
+                  11.612903277079266,
+                  85.9375
+                ]
+              ],
+              "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+              "raw_text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+              "confidence": 0.9674347206950188
+            }
+          ],
+          "elapsed_ms": 467,
+          "hypotheses": {
+            "first_pass": [
+              {
+                "box": [
+                  [
+                    55.74193572998047,
+                    313.5
+                  ],
+                  [
+                    1738.838623046875,
+                    310.5
+                  ],
+                  [
+                    1738.838623046875,
+                    409.5
+                  ],
+                  [
+                    55.74193572998047,
+                    412.5
+                  ]
+                ],
+                "raw_text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+                "confidence": 0.9674347206950188
+              }
+            ]
+          },
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "coordinate_transform": {
+            "source_hw": [
+              200,
+              640
+            ],
+            "processed_hw": [
+              960,
+              3072
+            ],
+            "scale_to_source_xy": [
+              0.20833333333333334,
+              0.20833333333333334
+            ],
+            "hypotheses_coordinate_space": "processed_image"
+          },
+          "preprocessing": {
+            "strategy": "whole_image",
+            "source_hw": [
+              200,
+              640
+            ]
+          }
+        },
+        "metrics": {
+          "N": 40,
+          "S": 0,
+          "D": 0,
+          "I": 0,
+          "whitespace_edits": 0,
+          "errors": 0
+        },
+        "measured_ms": 467.91927499998565,
+        "sampled_peak_rss_bytes": 558428160
+      },
+      "baseline": {
+        "result": {
+          "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+          "confidence": 0.9674347206950188,
+          "status": "done",
+          "detail": [
+            {
+              "box": [
+                [
+                  11.612903277079266,
+                  65.3125
+                ],
+                [
+                  362.258046468099,
+                  64.6875
+                ],
+                [
+                  362.258046468099,
+                  85.3125
+                ],
+                [
+                  11.612903277079266,
+                  85.9375
+                ]
+              ],
+              "text": "API_key AB-12345678 10 kg (1,234) -5.00%",
+              "confidence": 0.9674347206950188
+            }
+          ],
+          "elapsed_ms": 502,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+        },
+        "metrics": {
+          "N": 40,
+          "S": 0,
+          "D": 0,
+          "I": 0,
+          "whitespace_edits": 0,
+          "errors": 0
+        },
+        "measured_ms": 502.46750299993437,
+        "sampled_peak_rss_bytes": 558452736
+      }
+    },
+    {
+      "id": "rare_tw",
+      "ground_truth": "己已巳 鬱 龘 爨 纛 𠮷 尞",
+      "baseline": {
+        "result": {
+          "text": "己已已鬱吉奈",
+          "confidence": 0.7187400162220001,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  10.645160675048828,
+                  41.71875
+                ],
+                [
+                  264.6773986816406,
+                  42.65625
+                ],
+                [
+                  264.6773986816406,
+                  75.9375
+                ],
+                [
+                  10.645160675048828,
+                  75.0
+                ]
+              ],
+              "text": "己已已鬱吉奈",
+              "confidence": 0.7187400162220001
+            }
+          ],
+          "elapsed_ms": 2007,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+        },
+        "metrics": {
+          "N": 15,
+          "S": 3,
+          "D": 9,
+          "I": 0,
+          "whitespace_edits": 6,
+          "errors": 12
+        },
+        "measured_ms": 2010.1691050003865,
+        "sampled_peak_rss_bytes": 859262976
+      },
+      "repaired": {
+        "result": {
+          "text": "己已已鬱吉奈",
+          "confidence": 0.7187400162220001,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  10.645160675048828,
+                  41.71875
+                ],
+                [
+                  264.6773986816406,
+                  42.65625
+                ],
+                [
+                  264.6773986816406,
+                  75.9375
+                ],
+                [
+                  10.645160675048828,
+                  75.0
+                ]
+              ],
+              "text": "己已已鬱吉奈",
+              "raw_text": "己已已郁吉奈",
+              "confidence": 0.7187400162220001
+            }
+          ],
+          "elapsed_ms": 1073,
+          "hypotheses": {
+            "first_pass": [
+              {
+                "box": [
+                  [
+                    85.16128540039062,
+                    333.75
+                  ],
+                  [
+                    2117.419189453125,
+                    341.25
+                  ],
+                  [
+                    2117.419189453125,
+                    607.5
+                  ],
+                  [
+                    85.16128540039062,
+                    600.0
+                  ]
+                ],
+                "raw_text": "己已已郁吉奈",
+                "confidence": 0.7187400162220001
+              }
+            ]
+          },
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "coordinate_transform": {
+            "source_hw": [
+              120,
+              960
+            ],
+            "processed_hw": [
+              960,
+              7680
+            ],
+            "scale_to_source_xy": [
+              0.125,
+              0.125
+            ],
+            "hypotheses_coordinate_space": "processed_image"
+          },
+          "preprocessing": {
+            "strategy": "whole_image",
+            "source_hw": [
+              120,
+              960
+            ]
+          }
+        },
+        "metrics": {
+          "N": 15,
+          "S": 3,
+          "D": 9,
+          "I": 0,
+          "whitespace_edits": 6,
+          "errors": 12
+        },
+        "measured_ms": 1073.1414419997236,
+        "sampled_peak_rss_bytes": 1033211904
+      }
+    },
+    {
+      "id": "long_strip",
+      "ground_truth": "臺灣稅務申報 API_key AB-12345678 10 kg",
+      "repaired": {
+        "result": {
+          "text": "壹灣稅務申報 API_key AB-12345678 10 kg",
+          "confidence": 0.951270267367363,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  10.666666666666666,
+                  6.333333333333333
+                ],
+                [
+                  312.6666666666667,
+                  8.333333333333334
+                ],
+                [
+                  312.6666666666667,
+                  27.0
+                ],
+                [
+                  10.666666666666666,
+                  25.0
+                ]
+              ],
+              "text": "壹灣稅務申報 API_key AB-12345678 10 kg",
+              "confidence": 0.951270267367363,
+              "text_source": "tile_fusion"
+            }
+          ],
+          "elapsed_ms": 389,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "warnings": [
+            "Tiled OCR: review text at tile boundaries"
+          ],
+          "hypotheses": {
+            "tiles": [
+              {
+                "tile_index": 0,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          32.0,
+                          342.0
+                        ],
+                        [
+                          938.0,
+                          348.0
+                        ],
+                        [
+                          938.0,
+                          404.0
+                        ],
+                        [
+                          32.0,
+                          398.0
+                        ]
+                      ],
+                      "raw_text": "壹灣税務申報 API_key AB-12345678 10 kg",
+                      "confidence": 0.951270267367363
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        32.0,
+                        342.0
+                      ],
+                      [
+                        938.0,
+                        348.0
+                      ],
+                      [
+                        938.0,
+                        404.0
+                      ],
+                      [
+                        32.0,
+                        398.0
+                      ]
+                    ],
+                    "text": "壹灣稅務申報 API_key AB-12345678 10 kg",
+                    "raw_text": "壹灣税務申報 API_key AB-12345678 10 kg",
+                    "confidence": 0.951270267367363
+                  }
+                ]
+              },
+              {
+                "tile_index": 1,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 2,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 3,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 4,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              }
+            ]
+          },
+          "preprocessing": {
+            "strategy": "overlapping_tiles",
+            "source_hw": [
+              30,
+              2000
+            ],
+            "tiles": [
+              {
+                "source_xywh": [
+                  0,
+                  0,
+                  512,
+                  30
+                ],
+                "resized_hw": [
+                  90,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  323
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  384,
+                  0,
+                  512,
+                  30
+                ],
+                "resized_hw": [
+                  90,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  323
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  768,
+                  0,
+                  512,
+                  30
+                ],
+                "resized_hw": [
+                  90,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  323
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  0,
+                  512,
+                  30
+                ],
+                "resized_hw": [
+                  90,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  323
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1488,
+                  0,
+                  512,
+                  30
+                ],
+                "resized_hw": [
+                  90,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  323
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              }
+            ]
+          }
+        },
+        "metrics": {
+          "N": 32,
+          "S": 1,
+          "D": 0,
+          "I": 0,
+          "whitespace_edits": 0,
+          "errors": 1
+        },
+        "measured_ms": 389.15167300001485,
+        "sampled_peak_rss_bytes": 382742528
+      },
+      "baseline": {
+        "result": {
+          "text": "",
+          "confidence": 0,
+          "status": "failed",
+          "detail": [],
+          "elapsed_ms": 0,
+          "error": "放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試"
+        },
+        "metrics": {
+          "N": 32,
+          "S": 0,
+          "D": 32,
+          "I": 0,
+          "whitespace_edits": 4,
+          "errors": 32
+        },
+        "measured_ms": 0.586652000038157,
+        "sampled_peak_rss_bytes": 256765952
+      }
+    },
+    {
+      "id": "long_seam",
+      "ground_truth": "臺灣稅務申報期限 已繳稅款 尚未繳納金額",
+      "baseline": {
+        "result": {
+          "text": "",
+          "confidence": 0,
+          "status": "failed",
+          "detail": [],
+          "elapsed_ms": 0,
+          "error": "放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試"
+        },
+        "metrics": {
+          "N": 20,
+          "S": 0,
+          "D": 20,
+          "I": 0,
+          "whitespace_edits": 2,
+          "errors": 20
+        },
+        "measured_ms": 0.2712380000957637,
+        "sampled_peak_rss_bytes": 256786432
+      },
+      "repaired": {
+        "result": {
+          "text": "臺灣稅務申報期限已繳稅款尚未納金額",
+          "confidence": 0.9170884279643788,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  421.6666666666667,
+                  19.0
+                ],
+                [
+                  788.0,
+                  19.0
+                ],
+                [
+                  788.0,
+                  37.666666666666664
+                ],
+                [
+                  421.6666666666667,
+                  37.666666666666664
+                ]
+              ],
+              "text": "臺灣稅務申報期限已繳稅款尚未納金額",
+              "confidence": 0.9170884279643788,
+              "text_source": "tile_fusion"
+            }
+          ],
+          "elapsed_ms": 1046,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "warnings": [
+            "Tiled OCR: review text at tile boundaries"
+          ],
+          "hypotheses": {
+            "tiles": [
+              {
+                "tile_index": 0,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          1258.0,
+                          343.0
+                        ],
+                        [
+                          1535.0,
+                          345.0
+                        ],
+                        [
+                          1535.0,
+                          413.0
+                        ],
+                        [
+                          1258.0,
+                          411.0
+                        ]
+                      ],
+                      "raw_text": "臺灣税務申",
+                      "confidence": 0.825502347946167
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        1258.0,
+                        343.0
+                      ],
+                      [
+                        1535.0,
+                        345.0
+                      ],
+                      [
+                        1535.0,
+                        413.0
+                      ],
+                      [
+                        1258.0,
+                        411.0
+                      ]
+                    ],
+                    "text": "臺灣稅務申",
+                    "raw_text": "臺灣税務申",
+                    "confidence": 0.825502347946167
+                  }
+                ]
+              },
+              {
+                "tile_index": 1,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          113.0,
+                          350.0
+                        ],
+                        [
+                          1212.0,
+                          350.0
+                        ],
+                        [
+                          1212.0,
+                          406.0
+                        ],
+                        [
+                          113.0,
+                          406.0
+                        ]
+                      ],
+                      "raw_text": "臺灣税務申報期限已缴税款尚未納金额",
+                      "confidence": 0.9170884279643788
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        113.0,
+                        350.0
+                      ],
+                      [
+                        1212.0,
+                        350.0
+                      ],
+                      [
+                        1212.0,
+                        406.0
+                      ],
+                      [
+                        113.0,
+                        406.0
+                      ]
+                    ],
+                    "text": "臺灣稅務申報期限已繳稅款尚未納金額",
+                    "raw_text": "臺灣税務申報期限已缴税款尚未納金额",
+                    "confidence": 0.9170884279643788
+                  }
+                ]
+              },
+              {
+                "tile_index": 2,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          1.0,
+                          341.0
+                        ],
+                        [
+                          70.0,
+                          341.0
+                        ],
+                        [
+                          70.0,
+                          417.0
+                        ],
+                        [
+                          1.0,
+                          417.0
+                        ]
+                      ],
+                      "raw_text": "额",
+                      "confidence": 0.9357950091362
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        1.0,
+                        341.0
+                      ],
+                      [
+                        70.0,
+                        341.0
+                      ],
+                      [
+                        70.0,
+                        417.0
+                      ],
+                      [
+                        1.0,
+                        417.0
+                      ]
+                    ],
+                    "text": "額",
+                    "raw_text": "额",
+                    "confidence": 0.9357950091362
+                  }
+                ]
+              },
+              {
+                "tile_index": 3,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 4,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              }
+            ]
+          },
+          "preprocessing": {
+            "strategy": "overlapping_tiles",
+            "source_hw": [
+              50,
+              2000
+            ],
+            "tiles": [
+              {
+                "source_xywh": [
+                  0,
+                  0,
+                  512,
+                  50
+                ],
+                "resized_hw": [
+                  150,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  293
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  384,
+                  0,
+                  512,
+                  50
+                ],
+                "resized_hw": [
+                  150,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  293
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  768,
+                  0,
+                  512,
+                  50
+                ],
+                "resized_hw": [
+                  150,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  293
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  0,
+                  512,
+                  50
+                ],
+                "resized_hw": [
+                  150,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  293
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1488,
+                  0,
+                  512,
+                  50
+                ],
+                "resized_hw": [
+                  150,
+                  1536
+                ],
+                "inference_hw": [
+                  736,
+                  1536
+                ],
+                "scale_xy": [
+                  3.0,
+                  3.0
+                ],
+                "padding_xy": [
+                  0,
+                  293
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              }
+            ]
+          }
+        },
+        "metrics": {
+          "N": 20,
+          "S": 0,
+          "D": 3,
+          "I": 0,
+          "whitespace_edits": 2,
+          "errors": 3
+        },
+        "measured_ms": 1046.6320610003095,
+        "sampled_peak_rss_bytes": 441524224
+      }
+    },
+    {
+      "id": "small_large",
+      "ground_truth": "臺灣稅務申報 API_key AB-12345678 10 kg",
+      "repaired": {
+        "result": {
+          "text": "壹灣稅務申報API_keyAB-1234567810 kg",
+          "confidence": 0.9613947066767462,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  499.0,
+                  209.0
+                ],
+                [
+                  690.5,
+                  211.0
+                ],
+                [
+                  690.5,
+                  227.5
+                ],
+                [
+                  499.0,
+                  225.5
+                ]
+              ],
+              "text": "壹灣稅務申報API_keyAB-1234567810 kg",
+              "confidence": 0.9613947066767462,
+              "text_source": "tile_fusion"
+            }
+          ],
+          "elapsed_ms": 1513,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "warnings": [
+            "Tiled OCR: review text at tile boundaries"
+          ],
+          "hypotheses": {
+            "tiles": [
+              {
+                "tile_index": 0,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          998.0,
+                          418.0
+                        ],
+                        [
+                          1381.0,
+                          422.0
+                        ],
+                        [
+                          1381.0,
+                          455.0
+                        ],
+                        [
+                          998.0,
+                          451.0
+                        ]
+                      ],
+                      "raw_text": "壹湾税務申報API_keyAB-1234567810 kg",
+                      "confidence": 0.9613947066767462
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        998.0,
+                        418.0
+                      ],
+                      [
+                        1381.0,
+                        422.0
+                      ],
+                      [
+                        1381.0,
+                        455.0
+                      ],
+                      [
+                        998.0,
+                        451.0
+                      ]
+                    ],
+                    "text": "壹灣稅務申報API_keyAB-1234567810 kg",
+                    "raw_text": "壹湾税務申報API_keyAB-1234567810 kg",
+                    "confidence": 0.9613947066767462
+                  }
+                ]
+              },
+              {
+                "tile_index": 1,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          1.0,
+                          419.0
+                        ],
+                        [
+                          229.0,
+                          423.0
+                        ],
+                        [
+                          229.0,
+                          456.0
+                        ],
+                        [
+                          1.0,
+                          453.0
+                        ]
+                      ],
+                      "raw_text": "_key AB-12345678 10 kg",
+                      "confidence": 0.9509881409731779
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        1.0,
+                        419.0
+                      ],
+                      [
+                        229.0,
+                        423.0
+                      ],
+                      [
+                        229.0,
+                        456.0
+                      ],
+                      [
+                        1.0,
+                        453.0
+                      ]
+                    ],
+                    "text": "_key AB-12345678 10 kg",
+                    "raw_text": "_key AB-12345678 10 kg",
+                    "confidence": 0.9509881409731779
+                  }
+                ]
+              },
+              {
+                "tile_index": 2,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 3,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              }
+            ]
+          },
+          "preprocessing": {
+            "strategy": "overlapping_tiles",
+            "source_hw": [
+              600,
+              2300
+            ],
+            "tiles": [
+              {
+                "source_xywh": [
+                  0,
+                  0,
+                  768,
+                  600
+                ],
+                "resized_hw": [
+                  1200,
+                  1536
+                ],
+                "inference_hw": [
+                  1200,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  576,
+                  0,
+                  768,
+                  600
+                ],
+                "resized_hw": [
+                  1200,
+                  1536
+                ],
+                "inference_hw": [
+                  1200,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  0,
+                  768,
+                  600
+                ],
+                "resized_hw": [
+                  1200,
+                  1536
+                ],
+                "inference_hw": [
+                  1200,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1532,
+                  0,
+                  768,
+                  600
+                ],
+                "resized_hw": [
+                  1200,
+                  1536
+                ],
+                "inference_hw": [
+                  1200,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              }
+            ]
+          }
+        },
+        "metrics": {
+          "N": 32,
+          "S": 1,
+          "D": 3,
+          "I": 0,
+          "whitespace_edits": 3,
+          "errors": 4
+        },
+        "measured_ms": 1513.1761339998775,
+        "sampled_peak_rss_bytes": 607113216
+      },
+      "baseline": {
+        "result": {
+          "text": "壹滿稅務申報AP1_key AB-12345678 10 kg",
+          "confidence": 0.8966324252467002,
+          "status": "done",
+          "detail": [
+            {
+              "box": [
+                [
+                  498.4878921508789,
+                  209.765625
+                ],
+                [
+                  692.0867156982422,
+                  210.9375
+                ],
+                [
+                  692.0867156982422,
+                  229.6875
+                ],
+                [
+                  498.4878921508789,
+                  228.515625
+                ]
+              ],
+              "text": "壹滿稅務申報AP1_key AB-12345678 10 kg",
+              "confidence": 0.8966324252467002
+            }
+          ],
+          "elapsed_ms": 817,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+        },
+        "metrics": {
+          "N": 32,
+          "S": 3,
+          "D": 1,
+          "I": 0,
+          "whitespace_edits": 1,
+          "errors": 4
+        },
+        "measured_ms": 817.777902999751,
+        "sampled_peak_rss_bytes": 553664512
+      }
+    },
+    {
+      "id": "small_4k",
+      "ground_truth": "臺灣稅務申報 API_key AB-12345678 10 kg",
+      "baseline": {
+        "result": {
+          "text": "原則核甲APLeyAB12345310kg",
+          "confidence": 0.6782833220703262,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  1002.5806429460885,
+                  495.64287185668945
+                ],
+                [
+                  1188.3870037357162,
+                  495.64287185668945
+                ],
+                [
+                  1188.3870037357162,
+                  522.6428718566895
+                ],
+                [
+                  1002.5806429460885,
+                  522.6428718566895
+                ]
+              ],
+              "text": "原則核甲APLeyAB12345310kg",
+              "confidence": 0.6782833220703262
+            }
+          ],
+          "elapsed_ms": 918,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+        },
+        "metrics": {
+          "N": 32,
+          "S": 6,
+          "D": 11,
+          "I": 0,
+          "whitespace_edits": 4,
+          "errors": 17
+        },
+        "measured_ms": 918.3330930000011,
+        "sampled_peak_rss_bytes": 614604800
+      },
+      "repaired": {
+        "result": {
+          "text": "壹灣稅務申報API_keyAB-1234567810 kg",
+          "confidence": 0.9619249454860029,
+          "status": "needs_review",
+          "detail": [
+            {
+              "box": [
+                [
+                  999.0,
+                  499.0
+                ],
+                [
+                  1191.0,
+                  501.5
+                ],
+                [
+                  1191.0,
+                  518.0
+                ],
+                [
+                  999.0,
+                  515.5
+                ]
+              ],
+              "text": "壹灣稅務申報API_keyAB-1234567810 kg",
+              "confidence": 0.9619249454860029,
+              "text_source": "tile_fusion"
+            }
+          ],
+          "elapsed_ms": 1789,
+          "engine": "rapidocr_onnxruntime",
+          "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "warnings": [
+            "Tiled OCR: review text at tile boundaries"
+          ],
+          "hypotheses": {
+            "tiles": [
+              {
+                "tile_index": 0,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 1,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          846.0,
+                          998.0
+                        ],
+                        [
+                          1230.0,
+                          1003.0
+                        ],
+                        [
+                          1230.0,
+                          1036.0
+                        ],
+                        [
+                          846.0,
+                          1031.0
+                        ]
+                      ],
+                      "raw_text": "壹湾税務申報API_keyAB-1234567810 kg",
+                      "confidence": 0.9619249454860029
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        846.0,
+                        998.0
+                      ],
+                      [
+                        1230.0,
+                        1003.0
+                      ],
+                      [
+                        1230.0,
+                        1036.0
+                      ],
+                      [
+                        846.0,
+                        1031.0
+                      ]
+                    ],
+                    "text": "壹灣稅務申報API_keyAB-1234567810 kg",
+                    "raw_text": "壹湾税務申報API_keyAB-1234567810 kg",
+                    "confidence": 0.9619249454860029
+                  }
+                ]
+              },
+              {
+                "tile_index": 2,
+                "hypotheses": {
+                  "first_pass": [
+                    {
+                      "box": [
+                        [
+                          0.0,
+                          997.0
+                        ],
+                        [
+                          81.0,
+                          1002.0
+                        ],
+                        [
+                          79.0,
+                          1041.0
+                        ],
+                        [
+                          0.0,
+                          1036.0
+                        ]
+                      ],
+                      "raw_text": "78 10 kg",
+                      "confidence": 0.9545605853199959
+                    }
+                  ]
+                },
+                "detail": [
+                  {
+                    "box": [
+                      [
+                        0.0,
+                        997.0
+                      ],
+                      [
+                        81.0,
+                        1002.0
+                      ],
+                      [
+                        79.0,
+                        1041.0
+                      ],
+                      [
+                        0.0,
+                        1036.0
+                      ]
+                    ],
+                    "text": "78 10 kg",
+                    "raw_text": "78 10 kg",
+                    "confidence": 0.9545605853199959
+                  }
+                ]
+              },
+              {
+                "tile_index": 3,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 4,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 5,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 6,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 7,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 8,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 9,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 10,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 11,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 12,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 13,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 14,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 15,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 16,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 17,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 18,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 19,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 20,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 21,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 22,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 23,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 24,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 25,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 26,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              },
+              {
+                "tile_index": 27,
+                "hypotheses": {
+                  "skipped": "exactly_uniform_source_tile"
+                },
+                "detail": []
+              }
+            ]
+          },
+          "preprocessing": {
+            "strategy": "overlapping_tiles",
+            "source_hw": [
+              2160,
+              3840
+            ],
+            "tiles": [
+              {
+                "source_xywh": [
+                  0,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  576,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": false,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1728,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2304,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2880,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  3072,
+                  0,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  0,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  576,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1728,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2304,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2880,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  3072,
+                  576,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  0,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  576,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1728,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2304,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2880,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  3072,
+                  1152,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  0,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  576,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1152,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  1728,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2304,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  2880,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              },
+              {
+                "source_xywh": [
+                  3072,
+                  1392,
+                  768,
+                  768
+                ],
+                "resized_hw": [
+                  1536,
+                  1536
+                ],
+                "inference_hw": [
+                  1536,
+                  1536
+                ],
+                "scale_xy": [
+                  2.0,
+                  2.0
+                ],
+                "padding_xy": [
+                  0,
+                  0
+                ],
+                "inference_skipped": true,
+                "engine": "rapidocr_onnxruntime",
+                "model_version": "cls:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9;rec:48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+              }
+            ]
+          }
+        },
+        "metrics": {
+          "N": 32,
+          "S": 1,
+          "D": 3,
+          "I": 0,
+          "whitespace_edits": 3,
+          "errors": 4
+        },
+        "measured_ms": 1789.7787409997363,
+        "sampled_peak_rss_bytes": 751611904
+      }
+    }
+  ],
+  "limitations": [
+    "Synthetic pixels from one TC font; not a held-out field corpus",
+    "Rare-glyph font coverage is not independently verified; inspect input pixels",
+    "No normalization beyond the existing zh-hant conversion and NFC edit metric",
+    "One timed observation per variant; same process/model session, not isolated RSS or latency percentiles",
+    "No Windows, packaged-app or real offline-machine acceptance in this report"
+  ]
+}

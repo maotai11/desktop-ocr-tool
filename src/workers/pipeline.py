@@ -1,6 +1,6 @@
 """Qt owner-thread dispatch and ordered, draining shutdown."""
 import logging
-from PySide6.QtCore import QObject, Signal, Slot, Qt, QEventLoop
+from PySide6.QtCore import QObject, Signal, Slot, Qt, QEventLoop, QTimer
 from ..data.models import OcrResultDTO
 
 logger = logging.getLogger(__name__)
@@ -11,6 +11,7 @@ class Pipeline(QObject):
     ocr_update_requested = Signal(int, object)
     barrier_requested = Signal(str)
     shutdown_finished = Signal()
+    shutdown_stalled = Signal(str)
 
     def __init__(self, capture, ocr, db_worker, db_thread, database,
                  repo, files, widget, cfg, hotkeys=None, clipboard=None):
@@ -19,7 +20,12 @@ class Pipeline(QObject):
         self.db_worker, self.db_thread, self.database = db_worker, db_thread, database
         self.repo, self.files, self.widget, self.cfg = repo, files, widget, cfg
         self.hotkeys, self.clipboard = hotkeys, clipboard
+        ocr.set_repository(repo, files)
         self.closing = self.closed = False
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setSingleShot(True)
+        self._shutdown_timer.setInterval(15000)
+        self._shutdown_timer.timeout.connect(self.report_shutdown_stall)
         self.hotkey_actions = {}
         if hotkeys:
             hotkeys.hotkey_pressed.connect(self.dispatch_hotkey)
@@ -34,7 +40,7 @@ class Pipeline(QObject):
         db_worker.ocr_persisted.connect(self.persisted)
         db_worker.barrier_reached.connect(self.barrier)
         ocr.ocr_done.connect(self.recognized)
-        ocr.ocr_failed.connect(self.recognition_failed)
+        ocr.submission_rejected.connect(self.submission_failed)
         capture.finished.connect(self.capture_stopped)
         ocr.finished.connect(self.ocr_stopped)
         db_thread.finished.connect(self.db_stopped)
@@ -80,23 +86,36 @@ class Pipeline(QObject):
         self.ocr_update_requested.emit(item_id, result)
 
     @Slot(int, str)
-    def recognition_failed(self, item_id, error):
-        self.ocr_update_requested.emit(item_id, OcrResultDTO(
-            text='', confidence=0.0, status='failed', error_message=error))
+    def submission_failed(self, item_id, error):
+        self.widget.set_ocr_status(f'OCR #{item_id} 未加入佇列：{error}')
+        if hasattr(self.widget, 'set_ocr_progress'):
+            self.widget.set_ocr_progress(0)
 
     @Slot(int, object)
     def persisted(self, item_id, result):
-        if result.status == 'failed':
-            self.widget.set_ocr_status(f'OCR #{item_id} 失敗；原圖已保留')
-        elif result.text and not self.closing:
-            from ..clipboard.writer import write_text_to_clipboard
-            write_text_to_clipboard(result.text)
+        # A queued acknowledgement may arrive after a GUI edit/delete/rerun.
+        # Re-read at the actual publication boundary, not only at DB commit.
+        item = self.repo.get_by_id(item_id)
+        if (not item or item.is_deleted or item.ocr_job_id != result.job_id):
+            return
+        if hasattr(self.widget, 'set_ocr_progress'):
+            self.widget.set_ocr_progress(0)
+        if result.status == 'failed' or not result.text:
+            self.widget.set_ocr_status(f'OCR #{item_id} 失敗；已保留先前文字')
+        else:
+            self.widget.set_ocr_status(f'OCR #{item_id} 完成')
+            if (not self.closing and item.edited_text is None and
+                    item.edit_revision == result.base_edit_revision and
+                    result.status in ('done', 'needs_review', 'confirmed')):
+                from ..clipboard.writer import write_text_to_clipboard
+                write_text_to_clipboard(item.get_effective_text())
 
     @Slot()
     def shutdown(self):
         if self.closing:
             return
         self.closing = True
+        self._shutdown_timer.start()
         self.widget.setEnabled(False)
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
@@ -106,6 +125,18 @@ class Pipeline(QObject):
         self.capture.stop()
         if not self.capture._started_once:
             self.capture_stopped()
+
+    @Slot()
+    def report_shutdown_stall(self):
+        if self.closed:
+            return
+        # Native in-process inference cannot safely be killed. Surface the
+        # delay without reporting success, terminating a QThread, or closing
+        # SQLite underneath a live writer. Process isolation is a separate gate.
+        message = '關閉仍在等待背景工作；資料庫尚未關閉，請勿強制結束程式'
+        logger.error(message)
+        self.widget.set_ocr_status(message)
+        self.shutdown_stalled.emit(message)
 
     @Slot()
     def capture_stopped(self):
@@ -135,6 +166,7 @@ class Pipeline(QObject):
         if self.hotkeys:
             self.hotkeys.wait()
         self.database.close()
+        self._shutdown_timer.stop()
         self.closed = True
         self.shutdown_finished.emit()
 
