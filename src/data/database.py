@@ -2,10 +2,22 @@
 import sqlite3
 import os
 import logging
+import threading
+from contextlib import contextmanager
+from functools import wraps
 from typing import Optional
 from ..core.constants import SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
+
+
+def write_transaction(method):
+    """Rollback failures before the next operation can commit them."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._db.transaction():
+            return method(self, *args, **kwargs)
+    return wrapped
 
 _CREATE_TABLES = [
     """CREATE TABLE IF NOT EXISTS app_meta (
@@ -56,6 +68,31 @@ _CREATE_TABLES = [
         created_at          TEXT DEFAULT (datetime('now','localtime')),
         updated_at          TEXT DEFAULT (datetime('now','localtime'))
     )""",
+    """CREATE TABLE IF NOT EXISTS ocr_attempts (
+        job_id TEXT PRIMARY KEY,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        base_edit_revision INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        text_content TEXT,
+        confidence REAL,
+        detail_json TEXT,
+        provenance_json TEXT,
+        elapsed_ms INTEGER,
+        error_message TEXT,
+        engine TEXT,
+        model_version TEXT,
+        disposition TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        completed_at TEXT
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_ocr_attempts_item ON ocr_attempts(item_id)""",
+    """CREATE TABLE IF NOT EXISTS image_cleanup (
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        raw_image_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        error_message TEXT,
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )""",
     """CREATE TABLE IF NOT EXISTS item_tags (
         item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
         tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
@@ -104,28 +141,34 @@ _CREATE_TABLES = [
 
 class Database:
     def __init__(self, db_path: str):
-        self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self._db_path = os.path.abspath(db_path)
+        self._local = threading.local()
+        self._connections = []
+        self._lock = threading.RLock()
+        self._write_lock = threading.RLock()
+        self._closed = False
         self._initialize()
 
     def _initialize(self):
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.execute("PRAGMA journal_mode = WAL")
-        self._conn.execute("PRAGMA synchronous = NORMAL")
-        self._conn.execute("PRAGMA busy_timeout = 5000")
+        self._conn = self.get_connection()
         self._run_migrations()
         logger.info(f"資料庫初始化完成: {self._db_path}")
 
     def _run_migrations(self):
         for stmt in _CREATE_TABLES:
-            try:
-                self._conn.execute(stmt)
-            except Exception as e:
-                if 'already exists' not in str(e):
-                    logger.error(f"Schema 執行錯誤: {e}")
+            self._conn.execute(stmt)
+        # Additive migrations preserve existing items, edits, and FTS content.
+        columns = {row[1] for row in self._conn.execute('PRAGMA table_info(items)')}
+        for name, definition in (
+            ('edit_revision', 'INTEGER NOT NULL DEFAULT 0'),
+            ('ocr_job_id', 'TEXT'),
+        ):
+            if name not in columns:
+                self._conn.execute(f'ALTER TABLE items ADD COLUMN {name} {definition}')
+        attempt_columns = {row[1] for row in self._conn.execute('PRAGMA table_info(ocr_attempts)')}
+        if 'provenance_json' not in attempt_columns:
+            self._conn.execute('ALTER TABLE ocr_attempts ADD COLUMN provenance_json TEXT')
         self._conn.commit()
 
         cur = self._conn.execute(
@@ -147,9 +190,33 @@ class Database:
             logger.info(f"資料庫 Schema 已更新至 v{SCHEMA_VERSION}")
 
     def get_connection(self) -> sqlite3.Connection:
-        return self._conn
+        with self._lock:
+            if self._closed:
+                raise RuntimeError('Database is closed')
+            conn = getattr(self._local, 'connection', None)
+            if conn is None:
+                # Each calling thread owns a distinct transaction. Cross-thread
+                # close is allowed only after lifecycle shutdown has joined workers.
+                conn = sqlite3.connect(self._db_path, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                conn.execute('PRAGMA foreign_keys = ON')
+                conn.execute('PRAGMA journal_mode = WAL')
+                conn.execute('PRAGMA synchronous = NORMAL')
+                conn.execute('PRAGMA busy_timeout = 5000')
+                self._local.connection = conn
+                self._connections.append(conn)
+            return conn
+
+    @contextmanager
+    def transaction(self):
+        with self._write_lock:
+            with self.get_connection() as conn:
+                yield conn
 
     def close(self):
-        if self._conn:
-            self._conn.close()
+        with self._write_lock, self._lock:
+            self._closed = True
+            for conn in self._connections:
+                conn.close()
+            self._connections.clear()
             self._conn = None

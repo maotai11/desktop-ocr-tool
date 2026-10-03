@@ -1,0 +1,11 @@
+{
+  "head_sha": "b7fe454b16498e59e2a88dc86a401bc82079f759",
+  "push_run": 37086477286,
+  "pr_run": 37086480755,
+  "windows_job": 111097740983,
+  "failed_stage": "Resolve wheelhouse and record exact input hashes",
+  "error": "Invalid wheel metadata: setuptools-84.0.0-py3-none-any.whl",
+  "root_cause": "Nested vendored .dist-info/METADATA mistaken for top-level wheel identity",
+  "app_tests_and_build": "SKIPPED",
+  "fix": "Select only top-level distribution metadata; preserve ambiguous-root rejection"
+}

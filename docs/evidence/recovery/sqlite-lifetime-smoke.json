@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "probe": "application_lifecycle",
+  "version": "1.6.2-rc.2",
+  "phase_a": true,
+  "engine_ready": true,
+  "shutdown_clean": true,
+  "passed": true,
+  "clean_machine_verified": false,
+  "network_observation": "NOT_RUN",
+  "frozen": false,
+  "platform": "linux",
+  "executable_sha256": null,
+  "qt_platform": "offscreen",
+  "threads_stopped": {
+    "capture": true,
+    "ocr": true,
+    "database": true,
+    "hotkeys": true
+  },
+  "database_integrity": "ok"
+}

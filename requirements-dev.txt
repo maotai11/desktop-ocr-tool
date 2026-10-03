@@ -1,5 +1,8 @@
-pytest>=8
-pytest-qt>=4
-pyinstaller>=6
-black>=24
-ruff>=0.8
+-r requirements.txt
+pytest==9.1.1
+pytest-qt==4.5.0
+psutil==7.2.2
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+altgraph==0.17.5
+ruff==0.16.10

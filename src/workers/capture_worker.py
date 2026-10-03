@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
-import queue as _queue_mod
+from .queue_worker import QueueWorker
 from typing import Optional
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Signal
 from ..capture.factory import get_capture_backend
 from ..data.file_manager import FileManager
-from ..data.hasher import phash_image
+from ..data.hasher import sha256_image
 from ..data.models import ItemCreateDTO
 from ..core.constants import (
     SOURCE_MODE_REGION_IMAGE, SOURCE_MODE_REGION_OCR,
@@ -18,35 +18,34 @@ from ..core.constants import (
 logger = logging.getLogger(__name__)
 
 
-class CaptureWorker(QThread):
+class CaptureWorker(QueueWorker):
     capture_done = Signal(str, object)   # image_path, ItemCreateDTO
     capture_failed = Signal(str)
 
     def __init__(self, file_manager: FileManager, parent=None):
         super().__init__(parent)
         self._file_manager = file_manager
-        self._queue = _queue_mod.Queue()
 
     def capture_region(self, x: int, y: int, w: int, h: int,
                        monitor_idx: int, source_mode: str):
-        self._queue.put(('region', x, y, w, h, monitor_idx, source_mode))
-        if not self.isRunning():
-            self.start()
+        self._submit_capture(('region', x, y, w, h, monitor_idx, source_mode))
 
     def capture_fullscreen(self, monitor_idx: int = 1):
-        self._queue.put(('fullscreen', monitor_idx))
-        if not self.isRunning():
-            self.start()
+        self._submit_capture(('fullscreen', monitor_idx))
+
+    def _submit_capture(self, task):
+        try:
+            self.submit(task)
+        except RuntimeError as exc:
+            self.capture_failed.emit(str(exc))
 
     def run(self):
-        backend = get_capture_backend()
-        while True:
+        backend = None
+        for task in self.tasks():
+            abs_path = thumb_abs = None
             try:
-                # 50 ms window: catches tasks enqueued just as the queue empties
-                task = self._queue.get(timeout=0.05)
-            except _queue_mod.Empty:
-                break
-            try:
+                if backend is None:
+                    backend = get_capture_backend()
                 if task[0] == 'region':
                     _, x, y, w, h, monitor_idx, source_mode = task
                     img = backend.capture_region(x, y, w, h, monitor_idx)
@@ -72,7 +71,7 @@ class CaptureWorker(QThread):
                 thumb_abs, thumb_rel = self._file_manager.create_thumbnail(abs_path)
 
                 h_img, w_img = img.shape[:2]
-                img_hash = phash_image(abs_path)
+                img_hash = sha256_image(abs_path)
 
                 dto = ItemCreateDTO(
                     item_type=ITEM_TYPE_IMAGE,
@@ -89,4 +88,11 @@ class CaptureWorker(QThread):
                 self.capture_done.emit(abs_path, dto)
             except Exception as e:
                 logger.error(f"CaptureWorker 錯誤: {e}", exc_info=True)
+                for partial in (abs_path, thumb_abs):
+                    if partial:
+                        from pathlib import Path
+                        try:
+                            Path(partial).unlink(missing_ok=True)
+                        except OSError:
+                            logger.exception('無法移除未完成的截圖')
                 self.capture_failed.emit(str(e))

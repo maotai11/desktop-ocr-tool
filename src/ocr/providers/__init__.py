@@ -4,7 +4,7 @@ Patch H2 — 第二引擎 provider 工廠
 
 用法：
     from src.ocr.providers import create_provider
-    provider = create_provider('paddleocr_v5_mobile')
+    provider = create_provider('paddleocr_v5')
     ocr_engine.set_secondary_engine(provider)
     ocr_engine.configure(enable_secondary_engine=True)
 
@@ -37,7 +37,7 @@ def create_provider(name: str, **kwargs) -> SecondaryEngineBase:
     Parameters
     ----------
     name : str
-        Provider 識別名稱，目前支援：'paddleocr_v5_mobile'
+        Provider 識別名稱，目前支援：'paddleocr_v5'
     **kwargs
         傳遞給具體 provider 建構子的額外參數
 

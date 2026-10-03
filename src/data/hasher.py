@@ -8,13 +8,21 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 
+def sha256_image(image_path: str) -> str:
+    """Exact decoded pixels; perceptual similarity must never discard an item."""
+    with Image.open(image_path) as image:
+        # Alpha changes visible output too. Canonical RGBA also allows an RGB
+        # file and an equivalent fully opaque RGBA file to compare equally.
+        rgba = image.convert('RGBA')
+        digest = hashlib.sha256(f'{rgba.width}x{rgba.height}:RGBA:'.encode())
+        digest.update(rgba.tobytes())
+    return 'sha256:' + digest.hexdigest()
+
+
 def sha256_text(text: str) -> Optional[str]:
     if not text:
         return None
-    cleaned = text.strip()
-    if not cleaned:
-        return None
-    return hashlib.sha256(cleaned.encode('utf-8')).hexdigest()
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
 def phash_image(image_path: str) -> Optional[str]:

@@ -1,0 +1,28 @@
+AUDIT network syscall barrier installed; telemetry opt-out set BEFORE imports
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+PySide6 6.11.2 -- Qt runtime 6.11.2 -- Qt compiled 6.11.2
+rootdir: /workspace/scratch/7fc3a8825270/repo
+configfile: pytest.ini
+plugins: qt-4.5.0
+collected 156 items
+
+repo/tests/test_build_script.py ..                                       [  1%]
+repo/tests/test_capture_worker_drain.py .                                [  1%]
+repo/tests/test_db_worker.py .......                                     [  6%]
+repo/tests/test_h2_providers.py ............                             [ 14%]
+repo/tests/test_h3_config_wiring.py ...................                  [ 26%]
+repo/tests/test_h4_fallback_edge_cases.py ......                         [ 30%]
+repo/tests/test_hardening.py ........................................... [ 57%]
+.                                                                        [ 58%]
+repo/tests/test_main_window_batch.py ...........                         [ 65%]
+repo/tests/test_ocr_preprocess.py ................                       [ 75%]
+repo/tests/test_ocr_worker_progress.py .                                 [ 76%]
+repo/tests/test_pipeline_shutdown.py .                                   [ 76%]
+repo/tests/test_repository.py ...........                                [ 83%]
+repo/tests/test_secondary_engine.py ...................                  [ 96%]
+repo/tests/test_version_constants.py .                                   [ 96%]
+repo/tests/test_widget_interactions.py .....                             [100%]
+
+- generated xml file: /workspace/scratch/7fc3a8825270/repair-evidence/full.xml -
+============================= 156 passed in 10.76s =============================

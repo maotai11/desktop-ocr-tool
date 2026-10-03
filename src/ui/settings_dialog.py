@@ -1,5 +1,8 @@
+from PySide6.QtWidgets import QListWidgetItem, QTableWidgetItem, QHBoxLayout
+from PySide6.QtGui import QColor
 # -*- coding: utf-8 -*-
 import logging
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget,
     QWidget, QLabel, QCheckBox, QSpinBox, QDoubleSpinBox,
@@ -213,152 +216,14 @@ class SettingsDialog(QDialog):
         )
         of.addRow("小圖放大門檻：", self._sp_short_side)
 
-        _ocr_note = QLabel("以上設定儲存後即時生效，無需重啟。")
+        _ocr_note = QLabel("設定儲存後，重新啟動程式生效。")
         _ocr_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
         of.addRow("", _ocr_note)
 
-        # ---- OCR tab：引擎選擇區塊（新增）----
-        engine_box = QGroupBox("引擎選擇與優先級")
-        engine_box.setStyleSheet(f"""
-            QGroupBox {{
-                color: {_TEXT_PRI};
-                font-size: 12px;
-                border: 1px solid {_ACCENT};
-                border-radius: 4px;
-                margin-top: 8px;
-                padding-top: 10px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px;
-                color: {_ACCENT};
-                font-weight: bold;
-            }}
-        """)
-        engine_layout = QFormLayout(engine_box)
-        engine_layout.setSpacing(8)
-
-        # 第一引擎選擇
-        self._primary_engine = QComboBox()
-        self._primary_engine.addItem("RapidOCR PP-OCRv4（輕量、快速）", userData="rapidocr")
-        self._primary_engine.addItem("PaddleOCR v5（高品質、繁體中文）", userData="paddleocr_v5")
-        self._primary_engine.addItem("CnOCR（繁體中文、ONNX）", userData="cnocr")
-        saved_primary = self._cfg.get('ocr', 'primary_engine', default='rapidocr')
-        idx = self._primary_engine.findData(saved_primary)
-        if idx >= 0:
-            self._primary_engine.setCurrentIndex(idx)
-        engine_layout.addRow("第一引擎（主要）：", self._primary_engine)
-
-        # 第二引擎選擇
-        self._secondary_engine_combo = QComboBox()
-        self._secondary_engine_combo.addItem("RapidOCR PP-OCRv4（輕量、快速）", userData="rapidocr")
-        self._secondary_engine_combo.addItem("PaddleOCR v5（高品質、繁體中文）", userData="paddleocr_v5")
-        self._secondary_engine_combo.addItem("CnOCR（繁體中文、ONNX）", userData="cnocr")
-        self._secondary_engine_combo.addItem("無（停用第二引擎）", userData="none")
-        saved_secondary = self._cfg.get('ocr', 'secondary_engine', default='paddleocr_v5')
-        idx = self._secondary_engine_combo.findData(saved_secondary)
-        if idx >= 0:
-            self._secondary_engine_combo.setCurrentIndex(idx)
-        engine_layout.addRow("第二引擎（備援）：", self._secondary_engine_combo)
-
-        # 自動切換條件
-        self._auto_switch = QCheckBox("當第一引擎信心不足時，自動使用第二引擎")
-        self._auto_switch.setChecked(
-            self._cfg.get('ocr', 'auto_switch_secondary', default=True)
-        )
-        engine_layout.addRow("自動切換：", self._auto_switch)
-
-        self._auto_switch_threshold = QDoubleSpinBox()
-        self._auto_switch_threshold.setRange(0.01, 1.00)
-        self._auto_switch_threshold.setSingleStep(0.05)
-        self._auto_switch_threshold.setDecimals(2)
-        self._auto_switch_threshold.setValue(
-            self._cfg.get('ocr', 'auto_switch_threshold', default=0.75)
-        )
-        engine_layout.addRow("切換門檻：", self._auto_switch_threshold)
-
-        _engine_note = QLabel("💡 提示：PaddleOCR v5 對複雜結構文字（如「籤」）和手寫辨識較佳")
-        _engine_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px; wordwrap: true;")
-        _engine_note.setWordWrap(True)
-        engine_layout.addRow("", _engine_note)
-
-        of.addRow(engine_box)
-
-        # ---- OCR tab：第二引擎備援區塊（Patch H3）----
-        sec_box = QGroupBox("進階：第二引擎觸發條件")
-        sec_box.setStyleSheet(f"""
-            QGroupBox {{
-                color: {_TEXT_SEC};
-                font-size: 12px;
-                border: 1px solid {_BORDER};
-                border-radius: 4px;
-                margin-top: 8px;
-                padding-top: 10px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px;
-                color: {_TEXT_SEC};
-            }}
-        """)
-        sec_layout = QFormLayout(sec_box)
-        sec_layout.setSpacing(8)
-
-        self._sec_enabled = QCheckBox("啟用第二引擎備援辨識")
-        self._sec_enabled.setChecked(
-            self._cfg.get('ocr', 'enable_secondary_engine', default=False)
-        )
-        sec_layout.addRow("備援：", self._sec_enabled)
-
-        self._sec_provider = QComboBox()
-        # 僅顯示已登記的 provider（不一定安裝）
-        try:
-            from ..ocr.providers import list_known_providers
-            for p in list_known_providers():
-                self._sec_provider.addItem(p, userData=p)
-        except Exception:
-            self._sec_provider.addItem('paddleocr_v5', userData='paddleocr_v5')
-        saved_provider = self._cfg.get(
-            'ocr', 'secondary_engine_provider', default='paddleocr_v5'
-        )
-        idx = self._sec_provider.findData(saved_provider)
-        if idx >= 0:
-            self._sec_provider.setCurrentIndex(idx)
-        sec_layout.addRow("Provider：", self._sec_provider)
-
-        self._sec_diag_label = QLabel()
-        self._sec_diag_label.setStyleSheet("font-size: 11px;")
-        self._update_sec_diag()
-        self._sec_provider.currentIndexChanged.connect(self._update_sec_diag)
-        sec_layout.addRow("安裝狀態：", self._sec_diag_label)
-
-        self._sec_handwriting = QCheckBox("手寫模式時使用第二引擎")
-        self._sec_handwriting.setChecked(
-            self._cfg.get('ocr', 'secondary_engine_for_handwriting', default=True)
-        )
-        sec_layout.addRow("手寫備援：", self._sec_handwriting)
-
-        self._sec_low_conf = QCheckBox("低信心時使用第二引擎")
-        self._sec_low_conf.setChecked(
-            self._cfg.get('ocr', 'secondary_engine_for_low_confidence', default=True)
-        )
-        sec_layout.addRow("低信心備援：", self._sec_low_conf)
-
-        self._sec_threshold = QDoubleSpinBox()
-        self._sec_threshold.setRange(0.01, 1.00)
-        self._sec_threshold.setSingleStep(0.05)
-        self._sec_threshold.setDecimals(2)
-        self._sec_threshold.setValue(
-            self._cfg.get('ocr', 'secondary_engine_confidence_threshold', default=0.85)
-        )
-        _threshold_note = QLabel("主引擎信心低於此值時，啟用第二引擎（低信心備援）")
-        _threshold_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
-        sec_layout.addRow("信心門檻：", self._sec_threshold)
-        sec_layout.addRow("", _threshold_note)
-
-        of.addRow(sec_box)
+        engine_note = QLabel('此版本使用已內含並校驗的 RapidOCR PP-OCRv4。\n'
+                             'PaddleOCR／CnOCR 尚未完成離線整合驗證，本版不提供切換。')
+        engine_note.setWordWrap(True)
+        of.addRow('辨識引擎：', engine_note)
         tabs.addTab(ocr_tab, "OCR")
 
         # ---- 剪貼簿 ----
@@ -367,7 +232,7 @@ class SettingsDialog(QDialog):
         clf.setSpacing(10)
         self._cb_monitor = QCheckBox("啟用剪貼簿監聽")
         self._cb_monitor.setChecked(
-            self._cfg.get('clipboard', 'monitor_clipboard', default=True)
+            self._cfg.get('clipboard', 'monitor_clipboard', default=False)
         )
         clf.addRow("監聽：", self._cb_monitor)
 
@@ -381,7 +246,13 @@ class SettingsDialog(QDialog):
         self._cb_auto_image.setChecked(
             self._cfg.get('clipboard', 'auto_save_image', default=False)
         )
-        clf.addRow("圖片：", self._cb_auto_image)
+        self._cb_auto_image.setEnabled(False)
+        self._cb_auto_image.setToolTip('剪貼簿圖片收錄尚未完成，此版本停用')
+        clf.addRow("圖片（未支援）：", self._cb_auto_image)
+        privacy = QLabel('啟用後，複製的密碼、Token 或個資也可能以明文存入歷史。\n'
+                         '目前沒有自動到期刪除；請使用主控台刪除並清空回收桶。')
+        privacy.setWordWrap(True)
+        clf.addRow('', privacy)
 
         dedup_lbl = QLabel("連續相同內容（60 秒內）自動去重")
         dedup_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
@@ -424,6 +295,9 @@ class SettingsDialog(QDialog):
         self._sp_font_size.setRange(9, 24)
         self._sp_font_size.setValue(self._cfg.get('ui', 'font_size', default=13))
         uf.addRow("字型大小：", self._sp_font_size)
+        self._cb_theme.setEnabled(False)
+        self._sp_font_size.setEnabled(False)
+        uf.addRow(QLabel('佈景與字級尚未接入完整介面，本版停用調整。'))
         tabs.addTab(ui_tab, "介面")
 
         # ---- 標籤管理 ----
@@ -441,25 +315,7 @@ class SettingsDialog(QDialog):
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
 
-    def _update_sec_diag(self):
-        """Patch H3: 更新第二引擎安裝狀態標籤（不載入模型，僅做 import 檢查）。"""
-        provider_name = self._sec_provider.currentData() or ''
-        try:
-            from ..ocr.providers import create_provider
-            available = create_provider(provider_name).is_available()
-        except Exception:
-            available = False
-
-        if available:
-            self._sec_diag_label.setText("已安裝，可使用")
-            self._sec_diag_label.setStyleSheet(f"color: #4caf50; font-size: 11px;")
-        else:
-            self._sec_diag_label.setText("未安裝（pip install paddleocr）")
-            self._sec_diag_label.setStyleSheet(f"color: #ff9800; font-size: 11px;")
-
     def _save(self):
-        old_theme = self._cfg.get('ui', 'theme', default='system')
-        old_font_size = self._cfg.get('ui', 'font_size', default=13)
 
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
@@ -469,74 +325,11 @@ class SettingsDialog(QDialog):
         self._cfg.set('ocr', 'max_image_short_side', self._sp_short_side.value())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
-        self._cfg.set('clipboard', 'auto_save_image', self._cb_auto_image.isChecked())
-        self._cfg.set('ui', 'theme', self._cb_theme.currentText())
-        self._cfg.set('ui', 'font_size', self._sp_font_size.value())
-
-        # ---- 第二引擎設定（Patch H3）----
-        enable_sec = self._sec_enabled.isChecked()
-        sec_provider_name = self._sec_provider.currentData() or 'paddleocr_v5'
-        sec_threshold = self._sec_threshold.value()
-        self._cfg.set('ocr', 'enable_secondary_engine', enable_sec)
-        self._cfg.set('ocr', 'secondary_engine_provider', sec_provider_name)
-        self._cfg.set('ocr', 'secondary_engine_for_handwriting',
-                      self._sec_handwriting.isChecked())
-        self._cfg.set('ocr', 'secondary_engine_for_low_confidence',
-                      self._sec_low_conf.isChecked())
-        self._cfg.set('ocr', 'secondary_engine_confidence_threshold', sec_threshold)
-
-        # ---- 引擎優先級設定（新增）----
-        primary_engine = self._primary_engine.currentData() or 'rapidocr'
-        secondary_engine = self._secondary_engine_combo.currentData() or 'none'
-        auto_switch = self._auto_switch.isChecked()
-        auto_threshold = self._auto_switch_threshold.value()
-        self._cfg.set('ocr', 'primary_engine', primary_engine)
-        self._cfg.set('ocr', 'secondary_engine', secondary_engine)
-        self._cfg.set('ocr', 'auto_switch_secondary', auto_switch)
-        self._cfg.set('ocr', 'auto_switch_threshold', auto_threshold)
-
-        # OCR 參數即時更新（不需重啟）
-        if self._ocr_engine is not None:
-            self._ocr_engine.configure(
-                enable_second_pass=self._cb_second_pass.isChecked(),
-                enable_handwriting_mode=self._cb_handwriting.isChecked(),
-                max_image_short_side=self._sp_short_side.value(),
-            )
-            # 第二引擎即時切換（Patch H3）
-            if enable_sec:
-                from ..ocr.providers import create_provider
-                provider = create_provider(
-                    sec_provider_name, confidence_accept=sec_threshold
-                )
-                self._ocr_engine.set_secondary_engine(provider)
-            else:
-                from ..ocr.secondary_engine import NullSecondaryEngine
-                self._ocr_engine.set_secondary_engine(NullSecondaryEngine())
-            self._ocr_engine.configure(
-                enable_secondary_engine=enable_sec,
-                secondary_for_handwriting=self._sec_handwriting.isChecked(),
-                secondary_for_low_confidence=self._sec_low_conf.isChecked(),
-                secondary_confidence_threshold=sec_threshold,
-            )
 
         from ..core.autostart import set_autostart
         set_autostart(self._cb_autostart.isChecked())
 
-        ui_changed = (
-            self._cb_theme.currentText() != old_theme or
-            self._sp_font_size.value() != old_font_size
-        )
-
-        logger.info("設定已儲存")
-
-        # 先顯示提示（在 dialog 關閉前），避免焦點閃動
-        if ui_changed:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self, "設定已儲存",
-                "佈景主題與字型大小的變更將在下次重新啟動後生效。"
-            )
-
+        logger.info('設定已儲存；重新啟動後生效')
         # 最後才關閉 dialog
         self.accept()
 
@@ -633,7 +426,7 @@ class SettingsDialog(QDialog):
             color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             # 使用次數（暫時顯示 "-"，需要 repository 支援查詢）
-            usage_item = QTableWidgetItem("-")
+            usage_item = QTableWidgetItem(str(self._tag_repo.usage_count(tag.id)))
             usage_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             # 操作按鈕
@@ -747,13 +540,12 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "警告", "請輸入標籤名稱。")
             return
 
-        # 注意：TagRepository 需要 update 方法，目前未實作
-        # 暫時只能刪除再新增
         from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(
-            self, "提示",
-            "標籤編輯功能需要 repository 支援 update 方法。\n請使用刪除再新增。"
-        )
+        try:
+            self._tag_repo.update(tag.id, new_name, self._edit_tag_color.text())
+            self._load_tags()
+        except Exception as exc:
+            QMessageBox.warning(self, '無法更新標籤', str(exc))
 
     def _delete_tag_confirm(self):
         """確認刪除標籤。"""
@@ -793,9 +585,15 @@ class SettingsDialog(QDialog):
             btn.setStyleSheet(f"background: {hex_color}; color: white;")
 
     def _apply_tag_to_selected(self, tag_id: int):
-        """將標籤套用到主控台選取的項目（佔位符）。"""
         from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(
-            self, "提示",
-            "標籤套用功能需要在主控台實作選取機制。\n此為預留接口。"
-        )
+        owner = self.parent()
+        selected = set(getattr(owner, '_selected_items', set()))
+        single = getattr(owner, '_selected_item_id', None)
+        if not selected and single is not None:
+            selected.add(single)
+        if not selected:
+            QMessageBox.information(self, '尚未選取', '請先在浮動窗選取項目。')
+            return
+        for item_id in selected:
+            self._tag_repo.add_to_item(item_id, tag_id)
+        self._load_tags()

@@ -62,7 +62,7 @@ class TrayManager:
         menu.addSeparator()
 
         act_quit = menu.addAction("退出")
-        act_quit.triggered.connect(QApplication.quit)
+        self._quit_action = act_quit
 
         self._tray.setContextMenu(menu)
 
@@ -80,3 +80,9 @@ class TrayManager:
 
     def show_notification(self, title: str, message: str):
         self._tray.showMessage(title, message, self._icon, 3000)
+
+    def set_quit_callback(self, callback):
+        self._quit_action.triggered.connect(callback)
+
+    def is_available(self):
+        return QSystemTrayIcon.isSystemTrayAvailable()

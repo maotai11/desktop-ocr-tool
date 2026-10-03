@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "platform": "linux",
+  "filter_loaded": true,
+  "denied_syscalls": [
+    "socket",
+    "socketpair",
+    "connect",
+    "bind",
+    "listen",
+    "accept",
+    "accept4",
+    "sendto",
+    "sendmsg",
+    "sendmmsg",
+    "recvfrom",
+    "recvmsg",
+    "recvmmsg",
+    "shutdown"
+  ],
+  "socket_checks": {
+    "ipv4": "EPERM",
+    "ipv6": "EPERM",
+    "unix": "EPERM"
+  },
+  "limits": [
+    "Process-local Linux test, not Windows/offline-machine acceptance",
+    "No packet capture or proof of absent historical payload",
+    "Inherited descriptors are not closed by this filter"
+  ],
+  "command": [
+    "/workspace/scratch/40b4883b300a/ocr-venv/bin/python",
+    "src/main.py",
+    "--smoke-app",
+    "docs/evidence/recovery/source-app-smoke.json"
+  ]
+}

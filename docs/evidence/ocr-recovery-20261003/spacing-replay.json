@@ -1,0 +1,553 @@
+{
+  "rows": [
+    {
+      "id": "syn-Sans-tax-8-clean",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "營兼稅5%桶充保微置2.11%115/10/02",
+      "after": "營兼稅5%桶充保微置2.11%115/10/02",
+      "before_metrics": {
+        "N": 26,
+        "S": 4,
+        "D": 2,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 6
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 4,
+        "D": 2,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 6
+      }
+    },
+    {
+      "id": "syn-Sans-tax-8-lowcontrast_blur",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "115",
+      "after": "115",
+      "before_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 23,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 23
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 23,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 23
+      }
+    },
+    {
+      "id": "syn-Sans-tax-14-clean",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "管業稅5% 補充保費2.11% 115/10/02",
+      "after": "管業稅5% 補充保費2.11% 115/10/02",
+      "before_metrics": {
+        "N": 26,
+        "S": 1,
+        "D": 1,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 2
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 1,
+        "D": 1,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 2
+      }
+    },
+    {
+      "id": "syn-Sans-tax-14-lowcontrast_blur",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "營業稅5% 補充保費2.11% 115/10/02",
+      "after": "營業稅5% 補充保費2.11% 115/10/02",
+      "before_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 1,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 1
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 1,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 1
+      }
+    },
+    {
+      "id": "syn-Sans-complex-8-clean",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "",
+      "after": "",
+      "before_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      }
+    },
+    {
+      "id": "syn-Sans-complex-8-lowcontrast_blur",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "",
+      "after": "",
+      "before_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      }
+    },
+    {
+      "id": "syn-Sans-complex-14-clean",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "策鬱釀繳齒據稅",
+      "after": "策鬱釀繳齒據稅",
+      "before_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 6
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 6
+      }
+    },
+    {
+      "id": "syn-Sans-complex-14-lowcontrast_blur",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "策蕾 釀繳據稅賦",
+      "after": "策蕾釀繳據稅賦",
+      "before_metrics": {
+        "N": 12,
+        "S": 3,
+        "D": 4,
+        "I": 0,
+        "whitespace_edits": 1,
+        "errors": 7
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 2,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 7
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-8-clean",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "API_key AB-12345678 10 kg (1,234) -5.00%%",
+      "after": "API_key AB-12345678 10 kg (1,234) -5.00%%",
+      "before_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 1,
+        "whitespace_edits": 0,
+        "errors": 1
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 1,
+        "whitespace_edits": 0,
+        "errors": 1
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-8-lowcontrast_blur",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "10",
+      "after": "10",
+      "before_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 38,
+        "I": 0,
+        "whitespace_edits": 5,
+        "errors": 38
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 38,
+        "I": 0,
+        "whitespace_edits": 5,
+        "errors": 38
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-14-clean",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "API_k _key AB-12345678 10 kg (1,234) -5.00%",
+      "after": "API_k _key AB-12345678 10 kg (1,234) -5.00%",
+      "before_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 3,
+        "whitespace_edits": 1,
+        "errors": 3
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 3,
+        "whitespace_edits": 1,
+        "errors": 3
+      }
+    },
+    {
+      "id": "syn-Sans-mixed-14-lowcontrast_blur",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "API key AB-12345678 10 kg (1,234) -5.00%",
+      "after": "API key AB-12345678 10 kg (1,234) -5.00%",
+      "before_metrics": {
+        "N": 40,
+        "S": 1,
+        "D": 0,
+        "I": 0,
+        "whitespace_edits": 1,
+        "errors": 1
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 1,
+        "D": 0,
+        "I": 0,
+        "whitespace_edits": 1,
+        "errors": 1
+      }
+    },
+    {
+      "id": "syn-Serif-tax-8-clean",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "營巢稅5%精充保微背2.11%115/10/02",
+      "after": "營巢稅5%精充保微背2.11%115/10/02",
+      "before_metrics": {
+        "N": 26,
+        "S": 4,
+        "D": 2,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 6
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 4,
+        "D": 2,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 6
+      }
+    },
+    {
+      "id": "syn-Serif-tax-8-lowcontrast_blur",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "",
+      "after": "",
+      "before_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 26,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 26
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 26,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 26
+      }
+    },
+    {
+      "id": "syn-Serif-tax-14-clean",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "營業稅5%補充保費2.11%115/10/02",
+      "after": "營業稅5%補充保費2.11%115/10/02",
+      "before_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 3,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 3
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 0,
+        "D": 3,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 3
+      }
+    },
+    {
+      "id": "syn-Serif-tax-14-lowcontrast_blur",
+      "ground_truth": "營業稅5% 補充保險費2.11% 115/10/02",
+      "before": "紫稅5% 補充保費2.11% 1 115/10/02",
+      "after": "紫稅5% 補充保費2.11% 1 115/10/02",
+      "before_metrics": {
+        "N": 26,
+        "S": 1,
+        "D": 2,
+        "I": 2,
+        "whitespace_edits": 1,
+        "errors": 5
+      },
+      "after_metrics": {
+        "N": 26,
+        "S": 1,
+        "D": 2,
+        "I": 2,
+        "whitespace_edits": 1,
+        "errors": 5
+      }
+    },
+    {
+      "id": "syn-Serif-complex-8-clean",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "",
+      "after": "",
+      "before_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      }
+    },
+    {
+      "id": "syn-Serif-complex-8-lowcontrast_blur",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "",
+      "after": "",
+      "before_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 0,
+        "D": 12,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 12
+      }
+    },
+    {
+      "id": "syn-Serif-complex-14-clean",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "鬱釀繳菌據稅賦",
+      "after": "鬱釀繳菌據稅賦",
+      "before_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 6
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 6
+      }
+    },
+    {
+      "id": "syn-Serif-complex-14-lowcontrast_blur",
+      "ground_truth": "籤簽鬱龜鑑釀繳齒議據稅賦",
+      "before": "繳菌據稅賦",
+      "after": "繳菌據稅賦",
+      "before_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 7,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 8
+      },
+      "after_metrics": {
+        "N": 12,
+        "S": 1,
+        "D": 7,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 8
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-8-clean",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "after": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 0
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 0,
+        "whitespace_edits": 0,
+        "errors": 0
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-8-lowcontrast_blur",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "",
+      "after": "",
+      "before_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 40,
+        "I": 0,
+        "whitespace_edits": 5,
+        "errors": 40
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 40,
+        "I": 0,
+        "whitespace_edits": 5,
+        "errors": 40
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-14-clean",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "API_key AB-12345678 1 10 kg( (1,234) -5.00%",
+      "after": "API_key AB-12345678 1 10 kg((1,234) -5.00%",
+      "before_metrics": {
+        "N": 40,
+        "S": 0,
+        "D": 0,
+        "I": 3,
+        "whitespace_edits": 1,
+        "errors": 3
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 1,
+        "D": 0,
+        "I": 2,
+        "whitespace_edits": 2,
+        "errors": 3
+      }
+    },
+    {
+      "id": "syn-Serif-mixed-14-lowcontrast_blur",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "before": "API key AB 12345678 10 kg 234 5.00%",
+      "after": "API key AB 12345678 10 kg 234 5.00%",
+      "before_metrics": {
+        "N": 40,
+        "S": 2,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 7
+      },
+      "after_metrics": {
+        "N": 40,
+        "S": 2,
+        "D": 5,
+        "I": 0,
+        "whitespace_edits": 2,
+        "errors": 7
+      }
+    }
+  ],
+  "totals": {
+    "before": {
+      "N": 624,
+      "S": 19,
+      "D": 212,
+      "I": 9,
+      "whitespace_edits": 27,
+      "errors": 240,
+      "CER": 0.38461538461538464
+    },
+    "after": {
+      "N": 624,
+      "S": 19,
+      "D": 213,
+      "I": 8,
+      "whitespace_edits": 27,
+      "errors": 240,
+      "CER": 0.38461538461538464
+    }
+  },
+  "limitation": "Frozen first-pass hypotheses only; not native end-to-end or detector improvement"
+}

@@ -31,7 +31,7 @@ class TestConfigDefaults:
 
     def test_secondary_engine_provider_default(self):
         from src.core.config import DEFAULT_SETTINGS
-        assert DEFAULT_SETTINGS['ocr']['secondary_engine_provider'] == 'paddleocr_v5_mobile'
+        assert DEFAULT_SETTINGS['ocr']['secondary_engine_provider'] == 'paddleocr_v5'
 
     def test_secondary_engine_for_handwriting_default_true(self):
         from src.core.config import DEFAULT_SETTINGS
@@ -53,7 +53,7 @@ class TestConfigDefaults:
             from src.core.config import ConfigManager
             cfg = ConfigManager()
         assert cfg.get('ocr', 'enable_secondary_engine') is False
-        assert cfg.get('ocr', 'secondary_engine_provider') == 'paddleocr_v5_mobile'
+        assert cfg.get('ocr', 'secondary_engine_provider') == 'paddleocr_v5'
         assert cfg.get('ocr', 'secondary_engine_for_handwriting') is True
         assert cfg.get('ocr', 'secondary_engine_for_low_confidence') is True
         assert cfg.get('ocr', 'secondary_engine_confidence_threshold') == pytest.approx(0.85)
@@ -107,7 +107,7 @@ class TestOcrEngineH3:
         eng.set_secondary_engine(provider)
         eng.configure(enable_secondary_engine=True)
         info = eng.get_secondary_info()
-        assert info['name'] == 'paddleocr_v5_mobile'
+        assert info['name'] == 'paddleocr_v5'
         assert info['enabled'] is True
 
 
@@ -190,87 +190,21 @@ class TestShouldUseSecondaryH3:
 # D. SettingsDialog OCR tab 包含第二引擎 widget
 # ---------------------------------------------------------------------------
 
-class TestSettingsDialogH3:
-    def _make_dialog(self, qapp, tmp_path):
-        from src.ui.settings_dialog import SettingsDialog
-        cfg = MagicMock()
-        cfg.get.side_effect = lambda *args, **kwargs: kwargs.get('default')
-        return SettingsDialog(cfg, parent=None, ocr_engine=None)
-
-    def test_dialog_has_sec_enabled_checkbox(self, qapp, tmp_path):
-        dlg = self._make_dialog(qapp, tmp_path)
-        assert hasattr(dlg, '_sec_enabled')
-        dlg.close()
-
-    def test_dialog_has_sec_provider_combobox(self, qapp, tmp_path):
-        dlg = self._make_dialog(qapp, tmp_path)
-        assert hasattr(dlg, '_sec_provider')
-        assert dlg._sec_provider.count() >= 1
-        dlg.close()
-
-    def test_dialog_has_sec_diag_label(self, qapp, tmp_path):
-        dlg = self._make_dialog(qapp, tmp_path)
-        assert hasattr(dlg, '_sec_diag_label')
-        assert dlg._sec_diag_label.text() != ''  # 已填入狀態文字
-        dlg.close()
-
-    def test_dialog_has_sec_handwriting_checkbox(self, qapp, tmp_path):
-        dlg = self._make_dialog(qapp, tmp_path)
-        assert hasattr(dlg, '_sec_handwriting')
-        dlg.close()
-
-    def test_dialog_has_sec_low_conf_checkbox(self, qapp, tmp_path):
-        dlg = self._make_dialog(qapp, tmp_path)
-        assert hasattr(dlg, '_sec_low_conf')
-        dlg.close()
-
-    def test_dialog_has_sec_threshold_spinbox(self, qapp, tmp_path):
-        from PySide6.QtWidgets import QDoubleSpinBox
-        dlg = self._make_dialog(qapp, tmp_path)
-        assert hasattr(dlg, '_sec_threshold')
-        assert isinstance(dlg._sec_threshold, QDoubleSpinBox)
-        dlg.close()
-
-    def test_save_writes_all_five_config_keys(self, qapp, tmp_path):
-        """_save() 應寫入全部 5 個 H3 config key。"""
-        from src.ui.settings_dialog import SettingsDialog
-
-        cfg = MagicMock()
-        cfg.get.side_effect = lambda *args, **kwargs: kwargs.get('default')
-        mock_engine = MagicMock()
-
-        dlg = SettingsDialog(cfg, parent=None, ocr_engine=mock_engine)
-        dlg._sec_enabled.setChecked(False)
-        dlg._save()
-
-        written_keys = {call.args[1] for call in cfg.set.call_args_list}
-        assert 'enable_secondary_engine' in written_keys
-        assert 'secondary_engine_provider' in written_keys
-        assert 'secondary_engine_for_handwriting' in written_keys
-        assert 'secondary_engine_for_low_confidence' in written_keys
-        assert 'secondary_engine_confidence_threshold' in written_keys
-        dlg.close()
-
-    def test_save_calls_engine_configure_with_h3_keys(self, qapp, tmp_path):
-        """_save() 應呼叫 ocr_engine.configure() 並包含 H3 新參數。"""
-        from src.ui.settings_dialog import SettingsDialog
-
-        cfg = MagicMock()
-        cfg.get.side_effect = lambda *args, **kwargs: kwargs.get('default')
-        mock_engine = MagicMock()
-
-        dlg = SettingsDialog(cfg, parent=None, ocr_engine=mock_engine)
-        dlg._sec_enabled.setChecked(False)
-        dlg._save()
-
-        # configure() 應被呼叫
-        assert mock_engine.configure.called
-        # 合併所有 configure() 的 kwargs
-        all_kwargs = {}
-        for call in mock_engine.configure.call_args_list:
-            all_kwargs.update(call.kwargs)
-        assert 'enable_secondary_engine' in all_kwargs
-        assert 'secondary_for_handwriting' in all_kwargs
-        assert 'secondary_for_low_confidence' in all_kwargs
-        assert 'secondary_confidence_threshold' in all_kwargs
-        dlg.close()
+def test_settings_restart_contract(qapp, tmp_path, monkeypatch):
+    from src.core.config import ConfigManager
+    from src.ui.settings_dialog import SettingsDialog
+    monkeypatch.setattr('src.core.config.get_project_root',lambda:str(tmp_path))
+    monkeypatch.setattr('src.core.autostart.set_autostart',lambda _:None)
+    cfg=ConfigManager(); engine=MagicMock()
+    dialog=SettingsDialog(cfg,ocr_engine=engine)
+    dialog._cb_monitor.setChecked(True)
+    dialog._sp_short_side.setValue(512)
+    dialog._save()
+    loaded=ConfigManager()
+    assert loaded.get('clipboard','monitor_clipboard') is True
+    assert loaded.get('ocr','max_image_short_side')==512
+    engine.configure.assert_not_called()
+    engine.set_secondary_engine.assert_not_called()
+    assert not dialog._cb_auto_image.isEnabled()
+    assert not dialog._cb_theme.isEnabled()
+    dialog.deleteLater()

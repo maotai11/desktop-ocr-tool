@@ -1,0 +1,16 @@
+{
+  "head_sha": "18f673055b47b7e3aff6496d0b99b1fc50367599",
+  "push_run": 37086802168,
+  "pr_run": 37086804425,
+  "windows_job": 111098691398,
+  "linux": "SUCCESS: tests/source-selftest/source-app-smoke",
+  "windows_tests": {
+    "passed": 296,
+    "failed": 1,
+    "skipped": 2
+  },
+  "failure": "test_smoke_startup_error_releases_lock_and_does_not_open_modal reads UTF-8 error JSON with default cp1252",
+  "product_status": "Startup error returned expected code; fixture failed decoding report before final assertions",
+  "fix": "Explicit UTF-8 read; preserve Chinese error text",
+  "windows_source_and_frozen_stages": "SKIPPED"
+}

@@ -12,10 +12,14 @@ def resize_image(img: np.ndarray, max_short_side: int = 960,
     """
     h, w = img.shape[:2]
     short = min(h, w)
+    if short <= 0:
+        raise ValueError("Empty image")
     if short < min_short_side:
         scale = min_short_side / short
         new_w = int(w * scale)
         new_h = int(h * scale)
+        if new_w * new_h > 16_000_000:
+            raise ValueError('放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試')
         return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
     if short > max_short_side:
         scale = max_short_side / short

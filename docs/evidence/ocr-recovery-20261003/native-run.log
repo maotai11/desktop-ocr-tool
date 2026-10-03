@@ -1,0 +1,32 @@
+ordinary_tw baseline done '臺灣稅務申報健保補充保費' 724
+ordinary_tw repaired done '臺灣稅務申報健保補充保費' 476
+ordinary_mixed repaired done 'API_key AB-12345678 10 kg (1,234) -5.00%' 468
+ordinary_mixed baseline done 'API_key AB-12345678 10 kg (1,234) -5.00%' 502
+rare_tw baseline needs_review '己已已鬱吉奈' 2010
+rare_tw repaired needs_review '己已已鬱吉奈' 1073
+long_strip repaired needs_review '壹灣稅務申報 API_key AB-12345678 10 kg' 389
+OCR 執行失敗: 放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試
+Traceback (most recent call last):
+  File "bba210ec:src/ocr/engine.py", line 150, in run_ocr
+  File "/workspace/scratch/40b4883b300a/desktop-ocr-tool/src/ocr/preprocess/__init__.py", line 45, in upscale_if_small
+    return resize_image(image, max_short_side=_MAX_SHORT_SIDE, min_short_side=min_short_side)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/40b4883b300a/desktop-ocr-tool/src/ocr/preprocess/resize.py", line 22, in resize_image
+    raise ValueError('放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試')
+ValueError: 放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試
+long_strip baseline failed '' 1
+OCR 執行失敗: 放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試
+Traceback (most recent call last):
+  File "bba210ec:src/ocr/engine.py", line 150, in run_ocr
+  File "/workspace/scratch/40b4883b300a/desktop-ocr-tool/src/ocr/preprocess/__init__.py", line 45, in upscale_if_small
+    return resize_image(image, max_short_side=_MAX_SHORT_SIDE, min_short_side=min_short_side)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/40b4883b300a/desktop-ocr-tool/src/ocr/preprocess/resize.py", line 22, in resize_image
+    raise ValueError('放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試')
+ValueError: 放大後超過 1600 萬像素，請縮小框選範圍；原圖保留供重試
+long_seam baseline failed '' 0
+long_seam repaired needs_review '臺灣稅務申報期限已繳稅款尚未納金額' 1047
+small_large repaired needs_review '壹灣稅務申報API_keyAB-1234567810 kg' 1513
+small_large baseline done '壹滿稅務申報AP1_key AB-12345678 10 kg' 818
+small_4k baseline needs_review '原則核甲APLeyAB12345310kg' 918
+small_4k repaired needs_review '壹灣稅務申報API_keyAB-1234567810 kg' 1790

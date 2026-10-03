@@ -2,6 +2,8 @@
 import ctypes
 import ctypes.wintypes
 import logging
+import sys
+import threading
 from PySide6.QtCore import QThread, Signal
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ class HotkeyListener(QThread):
         self._pending: list = []   # [(name, mods, vk), ...] — queued before thread starts
         self._hotkeys: dict = {}   # hid → name, only populated inside run()
         self._next_id = 1
-        self._running = False
+        self._stop_event = threading.Event()
 
     def register(self, name: str, hotkey_str: str) -> bool:
         """Queue a hotkey for registration. Actual RegisterHotKey runs inside run()
@@ -86,11 +88,12 @@ class HotkeyListener(QThread):
         self._hotkeys.clear()
 
     def run(self):
-        self._running = True
+        if sys.platform != "win32":
+            return
         # Must register from THIS thread so WM_HOTKEY goes to this thread's queue
         self._register_pending()
         msg = ctypes.wintypes.MSG()
-        while self._running:
+        while not self._stop_event.is_set():
             if ctypes.windll.user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
                 if msg.message == WM_HOTKEY:
                     hid = msg.wParam
@@ -100,6 +103,5 @@ class HotkeyListener(QThread):
         self.unregister_all()
 
     def stop(self):
-        self._running = False
-        self.quit()
-        self.wait(2000)
+        self._stop_event.set()
+        return self.wait(2000)

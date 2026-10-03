@@ -37,10 +37,10 @@ DEFAULT_SETTINGS = {
         "enable_handwriting_mode": False,
         "max_image_short_side": 960,
         "primary_engine": "rapidocr",
-        "secondary_engine": "paddleocr_v5",
+        "secondary_engine": "none",
         "auto_switch_secondary": True,
         "auto_switch_threshold": 0.75,
-        "enable_secondary_engine": True,
+        "enable_secondary_engine": False,
         "secondary_engine_provider": "paddleocr_v5",
         "secondary_engine_for_handwriting": True,
         "secondary_engine_for_low_confidence": True,
@@ -54,7 +54,7 @@ DEFAULT_SETTINGS = {
         "binarize_method": "sauvola"
     },
     "clipboard": {
-        "monitor_clipboard": True,
+        "monitor_clipboard": False,
         "auto_save_text": True,
         "auto_save_image": False,
         "auto_ocr_on_clipboard_image": False,
@@ -90,6 +90,8 @@ DEFAULT_SETTINGS = {
 
 
 def get_project_root() -> str:
+    if os.environ.get("DESKTOP_OCR_HOME"):
+        return os.path.abspath(os.environ["DESKTOP_OCR_HOME"])
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))

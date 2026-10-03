@@ -79,6 +79,8 @@ class PaddleOCRv5Provider(SecondaryEngineBase):
         device: str = 'cpu',
         show_log: bool = False,
         confidence_accept: float = 0.85,
+        text_detection_model_dir: str | None = None,
+        text_recognition_model_dir: str | None = None,
     ):
         """
         Parameters
@@ -106,6 +108,7 @@ class PaddleOCRv5Provider(SecondaryEngineBase):
         self._device = device
         self._show_log = show_log
         self._confidence_accept = confidence_accept
+        self._local_dirs = (text_detection_model_dir, text_recognition_model_dir)
         self._engine = None
         self._load_error: str | None = None
         self._lock = threading.Lock()
@@ -157,19 +160,8 @@ class PaddleOCRv5Provider(SecondaryEngineBase):
             }
 
         try:
-            # PaddleOCR 3.x 需要 PIL Image 或路徑
-            if isinstance(image, np.ndarray):
-                # 轉換 BGR -> RGB
-                if len(image.shape) == 3 and image.shape[2] == 3:
-                    image_rgb = image[:, :, ::-1]
-                else:
-                    image_rgb = image
-                pil_image = Image.fromarray(image_rgb)
-            else:
-                pil_image = image
-
-            # 執行 OCR
-            raw = self._engine.predict(input=pil_image)
+            # PaddleOCR 3.x accepts BGR numpy input; PIL was not its contract.
+            raw = list(self._engine.predict(input=image))
             elapsed_ms = int((time.time() - t0) * 1000)
             return self._map_result(raw, elapsed_ms)
 
@@ -191,6 +183,12 @@ class PaddleOCRv5Provider(SecondaryEngineBase):
             return True
         if not _PADDLEOCR_AVAILABLE:
             return False
+        if not all(p and Path(p).is_dir() for p in self._local_dirs):
+            self._load_error = 'Offline provider requires local detection and recognition model directories'
+            return False
+        if self._use_doc_orientation_classify or self._use_doc_unwarping or self._use_textline_orientation:
+            self._load_error = 'Auxiliary model download is disabled in offline mode'
+            return False
         with self._lock:
             if self._engine is not None:  # double-checked locking
                 return True
@@ -207,6 +205,9 @@ class PaddleOCRv5Provider(SecondaryEngineBase):
                     use_doc_unwarping=self._use_doc_unwarping,
                     use_textline_orientation=self._use_textline_orientation,
                     lang=self._lang,
+                    device=self._device,
+                    text_detection_model_dir=self._local_dirs[0],
+                    text_recognition_model_dir=self._local_dirs[1],
                 )
 
                 logger.info("PaddleOCRv5 引擎已就緒")
@@ -218,91 +219,28 @@ class PaddleOCRv5Provider(SecondaryEngineBase):
                 return False
 
     def _map_result(self, raw, elapsed_ms: int) -> dict:
-        """將 PaddleOCR 3.x 原始結果映射到標準格式。
+        """PaddleOCR 3.x mapping; filtered rec_polys aligns with rec_texts.
 
-        PaddleOCR 3.x 回傳格式：
-        - list of OCRResult 物件
-        - 每個物件有 dt_polys, rec_texts, rec_scores 等屬性
-
-        Parameters
-        ----------
-        raw :
-            PaddleOCR .predict() 回傳值
-        elapsed_ms : int
-            已耗時（毫秒），由 recognize() 傳入
-
-        Returns
-        -------
-        dict
-            標準結果格式
+        Unexpected or inconsistent contracts fail explicitly instead of silently
+        returning a successful empty result. 2.x adapters are not supported.
         """
-        if not raw:
-            return {
-                'text': '', 'confidence': 0.0, 'status': 'done',
-                'detail': [], 'elapsed_ms': elapsed_ms,
-            }
-
-        detail: list[dict] = []
-
-        # PaddleOCR 3.x: list of OCRResult objects
-        for page_result in raw:
-            if page_result is None:
+        from collections.abc import Mapping
+        detail = []
+        for page in raw or []:
+            if page is None:
                 continue
-
-            try:
-                # 檢查是否有 dt_polys 屬性（OCRResult 格式）
-                if hasattr(page_result, 'dt_polys'):
-                    for box, text, conf in zip(
-                        page_result.dt_polys,
-                        page_result.rec_texts,
-                        page_result.rec_scores,
-                    ):
-                        conf_f = float(conf)
-                        if text and conf_f > 0.1:
-                            # 簡→繁轉換
-                            text = _s2t(text)
-
-                            detail.append({
-                                'box': (
-                                    box.tolist() if hasattr(box, 'tolist') else box
-                                ),
-                                'text': text,
-                                'confidence': conf_f,
-                            })
-                # 也支援舊格式（相容性）
-                elif hasattr(page_result, 'rec_texts'):
-                    for text, conf in zip(
-                        page_result.rec_texts,
-                        page_result.rec_scores,
-                    ):
-                        conf_f = float(conf)
-                        if text and conf_f > 0.1:
-                            text = _s2t(text)
-                            detail.append({
-                                'box': None,
-                                'text': text,
-                                'confidence': conf_f,
-                            })
-            except Exception as e:
-                logger.warning(f"解析 PaddleOCR 結果失敗: {e}")
-                continue
-
-        if not detail:
-            return {
-                'text': '', 'confidence': 0.0, 'status': 'done',
-                'detail': [], 'elapsed_ms': elapsed_ms,
-            }
-
-        # 合併文字
-        full_text = sort_boxes_and_merge(detail)
-        confs = [d['confidence'] for d in detail]
-        avg_conf = sum(confs) / len(confs)
-        status = 'done' if avg_conf >= self._confidence_accept else 'needs_review'
-
-        return {
-            'text': full_text,
-            'confidence': avg_conf,
-            'status': status,
-            'detail': detail,
-            'elapsed_ms': elapsed_ms,
-        }
+            if not isinstance(page, Mapping):
+                raise ValueError('Unsupported PaddleOCR result; expected 3.x Mapping')
+            boxes, texts, scores = page['rec_polys'], page['rec_texts'], page['rec_scores']
+            if not (len(boxes) == len(texts) == len(scores)):
+                raise ValueError('PaddleOCR result lengths do not match')
+            for box, text, confidence in zip(boxes,texts,scores):
+                confidence = float(confidence)
+                if text and confidence > .1:
+                    detail.append(dict(box=box.tolist() if hasattr(box,'tolist') else box,
+                                       text=_s2t(text), confidence=confidence))
+        conf = sum(d['confidence'] for d in detail)/len(detail) if detail else 0.
+        return dict(text=sort_boxes_and_merge(detail), confidence=conf,
+                    status='done' if not detail or conf>=self._confidence_accept else 'needs_review',
+                    detail=detail, elapsed_ms=elapsed_ms, engine=self.name,
+                    model_version='unknown')

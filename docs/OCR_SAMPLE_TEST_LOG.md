@@ -1,110 +1,12 @@
-# OCR 手寫 / 小範圍樣本測試紀錄
+# OCR 測試紀錄
 
-**用途：** 逐筆記錄個別樣本的辨識結果，供累積比較使用。
-**對應主報告：** [OCR_COMPARISON_REPORT.md](OCR_COMPARISON_REPORT.md)
+基準 HEAD 的測試與 profiler 保留於 [審計](audit-baseline/MASTER_FINDINGS.md)。模型比較使用固定 GT／模型 hashes，見 [協定](model-benchmark/BENCHMARK_PROTOCOL.md)與 [結果](model-benchmark/PHASE2_RESULTS.md)。
 
----
+修復候選原始證據：
 
-## 樣本紀錄格式說明
+- [pytest JUnit](evidence/full.xml)：實際 collected／passed／failed／skipped；不以固定測試數字宣傳。
+- [source self-test](evidence/source-selftest.json)：Qt、三個實際模型、known text、SQLite；frozen=false。
+- [500 次 OCR profiler](evidence/runtime-500.json)：全部 latency 與20ms RSS samples，限制見 [PERFORMANCE_VALIDATION](PERFORMANCE_VALIDATION.md)。
+- [空格重播](evidence/spacing-replay.json)：24 張圖、624 GT 字元，前後 CER 相同；沒有宣稱準確度改善。
 
-每個樣本填一個 section，複製下方模板。
-
----
-
-## 模板
-
-```
-### 樣本 [ID]：[簡短描述]
-
-**圖片路徑：** tests/fixtures/ocr_samples/[檔名]
-**圖片尺寸：** ___ × ___ px
-**內容類型：** □ 印刷  □ 手寫（工整）  □ 手寫（潦草）  □ 截圖  □ 掃描
-**難度評估：** □ 低  □ 中  □ 高
-**測試日期：** ____年____月____日
-
-**Ground Truth（預期文字）：**
-> （貼上正確文字）
-
----
-
-#### A — 主引擎 baseline（前處理關閉）
-
-- **識別結果：**
-  > （貼上 OCR 輸出）
-- **信心分數：** ____
-- **耗時：** ____ ms
-- **狀態：** □ done  □ needs_review  □ failed
-- **CER：** ____%
-- **備註：**
-
----
-
-#### B — Group A 補強（前處理開啟）
-
-- **識別結果：**
-  > （貼上 OCR 輸出）
-- **信心分數：** ____
-- **耗時（first-pass）：** ____ ms
-- **second-pass 觸發：** □ 是  □ 否
-- **耗時（含 second-pass）：** ____ ms
-- **狀態：** □ done  □ needs_review  □ failed
-- **CER：** ____%
-- **前處理效果：** □ 明顯改善  □ 略有改善  □ 無差異  □ 反而更差
-- **備註：**
-
----
-
-#### C — 第二引擎 fallback（Group A + paddleocr）
-
-- **paddleocr 版本：** ____
-- **fallback 觸發：** □ 是（原因：□ 信心低  □ 手寫模式  □ 主引擎失敗）  □ 否
-- **若未觸發，原因：** □ 主引擎信心足夠（____）  □ 第二引擎未啟用  □ 未安裝
-- **識別結果：**
-  > （貼上 OCR 輸出）
-- **fallback 信心分數：** ____
-- **fallback 耗時：** ____ ms（含 first load: □ 是  □ 否）
-- **結果採用：** □ 採用第二引擎  □ 保留主引擎
-- **最終 CER：** ____%
-- **備註：**
-
----
-
-#### 小結
-
-| 指標 | A 主引擎 | B Group A | C 第二引擎 |
-|------|---------|-----------|----------|
-| CER% | | | |
-| Conf | | | |
-| ms | | | |
-
-**本樣本推薦路徑：** _______________
-```
-
----
-
-## 已填寫樣本
-
-> 複製模板填入後，在此列出已記錄的樣本 ID，方便追蹤。
-
-| 樣本 ID | 類型 | 難度 | 測試日期 | 推薦路徑 |
-|---------|------|------|---------|---------|
-| （尚未填入）| | | | |
-
----
-
-## 跨樣本觀察
-
-> 累積多個樣本後，在此記錄規律性發現。
-
-### 主引擎 baseline 規律
-- 通常對___類型失敗
-- 信心低於____時幾乎都需要 fallback
-
-### Group A 補強規律
-- 對___類型改善最明顯
-- 對___類型有時反而降低信心（原因推測：）
-
-### 第二引擎 fallback 規律
-- 手寫樣本 fallback 觸發率：____%
-- 採用率（觸發後）：____%
-- 相較主引擎，平均 CER 改變：____%（改善為負值）
+Windows CI／frozen 成品與乾淨 VM 的狀態見 [VALIDATION_STATUS](VALIDATION_STATUS.md)。未執行的 gate 明列 UNKNOWN。

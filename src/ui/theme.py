@@ -20,7 +20,7 @@ _BORDER   = "#2a2f3d"   # default border
 _BORDER_L = "#363d52"   # lighter border / scrollbar handle
 
 _TEXT_PRI = "#dce0ec"   # primary text
-_TEXT_SEC = "#636e8a"   # secondary / meta text
+_TEXT_SEC = "#a6aec4"   # secondary / meta text
 
 # ── Accent colours ─────────────────────────────────────────────────────────────
 _ACCENT   = "#e8a020"   # amber — primary action
