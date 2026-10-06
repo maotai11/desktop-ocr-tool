@@ -1,6 +1,6 @@
 # 1.7.0-rc.1 更新
 
-2026-10-06：新版本已改為可選 PP-OCRv6 Small／Medium 辨字、Small 找字；不提供舊文字模型 fallback。新增小ROI背景補邊及有上限的待確認重辨。當前驗證與限制見 [升級報告](OCR_UPGRADE_20261006.md)；Windows frozen／乾淨機器 gate 依最終同一commit報告判定。
+2026-10-06：新版本已改為可選 PP-OCRv6 Small／Medium 辨字、Small 找字；不提供舊文字模型 fallback。新增小ROI背景補邊及有上限的待確認重辨。當前驗證與限制見 [升級報告](OCR_UPGRADE_20261006.md)；Windows frozen 候選已通過 563 tests＋雙模型各500次；乾淨機器 gate 仍未完成。詳見 [Windows 驗證摘要](validation/v1.7.0-rc.1-prepublication.json)，Release 成品依同一run報告判定。
 
 以下為 1.6.2-rc.2 歷史紀錄，不代表新v6成品已驗收：
 

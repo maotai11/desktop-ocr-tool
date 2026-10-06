@@ -23,15 +23,20 @@ All three conditional policies used the same frozen 38 synthetic raster/ground-t
 
 One error was a literal space. These are single observed timings, not p95 or p99 measurements. Four completely uniform fixtures skipped native inference. The same-model candidates are correlated. No ground truth participates in selection. This set does **not** establish improvement from a second or third pass, nor prove 2 passes globally optimal. It provides no reason to make 3 the default; 2 remains the conservative existing recovery budget. It is not a customer-photo corpus or clean Windows/DPI validation.
 
-Reproduce from the repository root (each command is a fresh process):
+## Local reproduction without uploading test images
+
+The frozen 38-case corpus and raw raster evidence are retained locally. Only the three small EXE self-test images are required in the repository; no private photographs are used by these scripts.
+
+The repository includes a generator for the separate 27-case synthetic development set. With the exact Noto Sans CJK font and index used in the original run, all 27 regenerated raster hashes were checked to match. A different font is a different corpus, and this 27-case example does not reproduce the 38-case table above.
 
 ```sh
-python scripts/benchmark_retry_policy.py --inputs docs/evidence/ocr-upgrade-20261006/retry-fixtures/inputs.json --profile v6-small --passes 1 --output /tmp/retry-1.json
-python scripts/benchmark_retry_policy.py --inputs docs/evidence/ocr-upgrade-20261006/retry-fixtures/inputs.json --profile v6-small --passes 2 --output /tmp/retry-2.json
-python scripts/benchmark_retry_policy.py --inputs docs/evidence/ocr-upgrade-20261006/retry-fixtures/inputs.json --profile v6-small --passes 3 --output /tmp/retry-3.json
+python scripts/generate_quality_fixtures.py --font /path/to/NotoSansCJK-Regular.ttc --font-index 3 --output-dir test_data/roi
+python scripts/benchmark_retry_policy.py --inputs test_data/roi/inputs.json --profile v6-small --passes 1 --output test_data/retry-1.json
+python scripts/benchmark_retry_policy.py --inputs test_data/roi/inputs.json --profile v6-small --passes 2 --output test_data/retry-2.json
+python scripts/benchmark_retry_policy.py --inputs test_data/roi/inputs.json --profile v6-small --passes 3 --output test_data/retry-3.json
 ```
 
-Reports include input/model/source identities, every raw result, literal edit counts, timing, actual pass count and recognition-budget counters. The recorded pre-guard reports are `retry-v6-small-{1,2,3}.json`; subsequent guarded comparisons must be saved with a distinct name and must not overwrite this baseline.
+Each comparison process records exact input/model/source hashes, raw results, literal edit counts, inference time and actual pass counts. Review the generated pixels and font coverage before interpreting scores. Output folders must be empty so existing frozen fixtures are not overwritten.
 
 ## Final guarded comparison
 
@@ -43,7 +48,7 @@ The final full-v6-small run includes the strict uniform-interior frame-padding g
 | 2 | 34/38 | 4/262 | 41 | 11.54 s | 696.6 MB |
 | 3 | 34/38 | 4/262 | 48 | 12.15 s | 696.4 MB |
 
-All policies eliminated the pre-guard blank-frame false positive. One literal spacing error and three glyph errors remain; two glyph errors carry confidence above the retry threshold. There is still no measured third-pass accuracy gain. The shipped default remains 2, without claiming it is a global optimum. These are single measurements with concurrent development workloads, so timing differences are descriptive only. Final reports: `retry-v6-small-guarded-{1,2,3}.json` and `retry-final-summary.json`.
+All policies eliminated the pre-guard blank-frame false positive. One literal spacing error and three glyph errors remain; two glyph errors carry confidence above the retry threshold. There is still no measured third-pass accuracy gain. The shipped default remains 2, without claiming it is a global optimum. These are single measurements with concurrent development workloads, so timing differences are descriptive only. The detailed raw reports remain local. The final Windows EXE verification summary is published separately under `docs/validation/`.
 
 ## Verification boundaries
 

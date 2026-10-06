@@ -1,0 +1,241 @@
+{
+  "candidate_source_commit": "978cbab9f09bb59b16eaf1ec1f0897f0ec8f81cf",
+  "workflow_run": "https://github.com/maotai11/desktop-ocr-tool/actions/runs/37409461028",
+  "passed": true,
+  "windows_tests": {
+    "passed": 563,
+    "skipped": 2,
+    "skip_names": [
+      "test_posix_rejects_lock_file_symlink",
+      "test_posix_rejects_shared_lock_directory"
+    ]
+  },
+  "linux_tests": {
+    "passed": 555,
+    "skipped": 10
+  },
+  "source_and_frozen_ocr_database_probes": "PASSED",
+  "source_and_frozen_app_lifecycle": "PASSED",
+  "outbound_blocked_frozen_probes": "PASSED",
+  "onnx_allowlist_verified": true,
+  "model_profiles": {
+    "v6-small": {
+      "manifest_path": "models/models.lock.json",
+      "manifest_sha256": "99fcd0c0b09f753e78d1626fd9ff211a7f9fa3b6ec385f1cada0c84b03e062f7",
+      "model_hashes": {
+        "det": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+        "rec": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+        "cls": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+      },
+      "verified": true
+    },
+    "v6-medium": {
+      "manifest_path": "models/models-v6-medium.lock.json",
+      "manifest_sha256": "3ef628db067b039565aa8971496a41fbe9889f3eee2f62b7cf77db736e9fc8da",
+      "model_hashes": {
+        "det": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+        "rec": "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+        "cls": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+      },
+      "verified": true
+    }
+  },
+  "bundle_bytes": 209463952,
+  "bundle_sha256": "bb0f9b7c234f6baa9d9cc5f6781f8874fad1c6156b296bcbd6a1f72b61cd12ae",
+  "executable_sha256": "30528bb0fe981f995a82367f19fd2af706c637482e396b89e2d0e23323abb956",
+  "frozen_stress": {
+    "schema": 1,
+    "probe": "model_runtime_stress",
+    "version": "1.7.0-rc.1",
+    "platform": "win32",
+    "frozen": true,
+    "executable_sha256": "30528bb0fe981f995a82367f19fd2af706c637482e396b89e2d0e23323abb956",
+    "iterations_per_profile": 500,
+    "telemetry_env": "1",
+    "passed": true,
+    "clean_machine_verified": false,
+    "profiles": {
+      "v6-small": {
+        "passed": true,
+        "before_load": {
+          "rss_bytes": 71680000,
+          "private_bytes": 79138816,
+          "threads": 8,
+          "handles_or_fds": 371
+        },
+        "checkpoints": {
+          "1": {
+            "rss_bytes": 139624448,
+            "private_bytes": 138059776,
+            "threads": 15,
+            "handles_or_fds": 410
+          },
+          "10": {
+            "rss_bytes": 141119488,
+            "private_bytes": 139694080,
+            "threads": 15,
+            "handles_or_fds": 410
+          },
+          "100": {
+            "rss_bytes": 141123584,
+            "private_bytes": 140746752,
+            "threads": 15,
+            "handles_or_fds": 410
+          },
+          "500": {
+            "rss_bytes": 141086720,
+            "private_bytes": 140673024,
+            "threads": 13,
+            "handles_or_fds": 412
+          }
+        },
+        "failures": [],
+        "load_seconds": 1.0113764000000174,
+        "identity": {
+          "profile": "v6-small",
+          "runtime": "rapidocr_onnxruntime",
+          "runtime_version": "1.4.4",
+          "recognition": {
+            "character_sha256": "f7aa897ca828a4c7c9e2739c30f9161a33306d532f020bcdb91dcfb664a5507e",
+            "character_count": 18708,
+            "output_classes": 18710,
+            "providers": [
+              "CPUExecutionProvider"
+            ],
+            "recognition_shape": [
+              3,
+              48,
+              320
+            ],
+            "input_type": "tensor(float)",
+            "input_shape": [
+              "DynamicDimension.0",
+              3,
+              48,
+              "DynamicDimension.1"
+            ],
+            "output_shape": [
+              "DynamicDimension.0",
+              "Reshape_470_o0__d2",
+              18710
+            ],
+            "blank_index": 0,
+            "space_index": 18709,
+            "decoder_sha256": "e41e95fa4e12cc4e971e2ec4ab32a205a700056bc8a46e0803cd3f59f4d93dcf"
+          },
+          "recognition_batch": 1,
+          "max_recognition_width": 4096
+        },
+        "models": "v6-small;cls:ppocr-mobile-v2.0:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:pp-ocrv6-small:090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f;rec:pp-ocrv6-small:6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+        "iterations_completed": 500,
+        "latency_ms": {
+          "p50": 186.43635000000813,
+          "p95": 209.58081000002832,
+          "p99": 232.85658499995006
+        },
+        "after_unload": {
+          "rss_bytes": 99880960,
+          "private_bytes": 98701312,
+          "threads": 10,
+          "handles_or_fds": 409
+        }
+      },
+      "v6-medium": {
+        "passed": true,
+        "before_load": {
+          "rss_bytes": 100073472,
+          "private_bytes": 98902016,
+          "threads": 10,
+          "handles_or_fds": 409
+        },
+        "checkpoints": {
+          "1": {
+            "rss_bytes": 201232384,
+            "private_bytes": 199897088,
+            "threads": 13,
+            "handles_or_fds": 412
+          },
+          "10": {
+            "rss_bytes": 202076160,
+            "private_bytes": 200597504,
+            "threads": 13,
+            "handles_or_fds": 412
+          },
+          "100": {
+            "rss_bytes": 201678848,
+            "private_bytes": 200597504,
+            "threads": 13,
+            "handles_or_fds": 412
+          },
+          "500": {
+            "rss_bytes": 180273152,
+            "private_bytes": 200564736,
+            "threads": 12,
+            "handles_or_fds": 404
+          }
+        },
+        "failures": [],
+        "load_seconds": 0.7957531000000131,
+        "identity": {
+          "profile": "v6-medium",
+          "runtime": "rapidocr_onnxruntime",
+          "runtime_version": "1.4.4",
+          "recognition": {
+            "character_sha256": "f7aa897ca828a4c7c9e2739c30f9161a33306d532f020bcdb91dcfb664a5507e",
+            "character_count": 18708,
+            "output_classes": 18710,
+            "providers": [
+              "CPUExecutionProvider"
+            ],
+            "recognition_shape": [
+              3,
+              48,
+              320
+            ],
+            "input_type": "tensor(float)",
+            "input_shape": [
+              "DynamicDimension.0",
+              3,
+              48,
+              "DynamicDimension.1"
+            ],
+            "output_shape": [
+              "DynamicDimension.0",
+              "Reshape_497_o0__d2",
+              18710
+            ],
+            "blank_index": 0,
+            "space_index": 18709,
+            "decoder_sha256": "e41e95fa4e12cc4e971e2ec4ab32a205a700056bc8a46e0803cd3f59f4d93dcf"
+          },
+          "recognition_batch": 1,
+          "max_recognition_width": 4096
+        },
+        "models": "v6-medium;cls:ppocr-mobile-v2.0:e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c;det:pp-ocrv6-small:090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f;rec:pp-ocrv6-medium:eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+        "iterations_completed": 500,
+        "latency_ms": {
+          "p50": 223.84165000002554,
+          "p95": 276.66497000005836,
+          "p99": 305.8151440000068
+        },
+        "after_unload": {
+          "rss_bytes": 80830464,
+          "private_bytes": 103542784,
+          "threads": 9,
+          "handles_or_fds": 401
+        }
+      }
+    },
+    "limitations": [
+      "Three repeated fixed fixtures; not general accuracy",
+      "RSS checkpoints do not establish absence of all leaks",
+      "Normal native completion only; no hung-inference termination proof"
+    ]
+  },
+  "clean_machine_verified": false,
+  "limitations": [
+    "GitHub Windows runner is not a clean user machine",
+    "3 repeating fixtures per profile; not global accuracy or proof of no leaks",
+    "Final release marker builds and verifies its own same-run EXE again"
+  ]
+}

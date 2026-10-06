@@ -60,7 +60,7 @@ RapidOCR 包裝層仍是 rapidocr-onnxruntime 1.4.4，ORT 1.30.0；這不代表�
 
 發現：真實 PaddleStaticRunner 推論成功，沒有載入 ONNX Runtime；三張同像素圖可辨識但仍有空格／形近字／罕字錯誤。原生模型與 ONNX metadata 的 18,708 字順序完全一致。現有未啟用的 native adapter 沒明確 model_name，會與新版預設 medium 名稱衝突；它仍不作成品切換選项。
 
-可確認的是原生模型可離線執行，不能以此宣稱 Windows DLL closure 完成。原生參照證據在 `evidence/ocr-upgrade-20261006/native-reference/`。
+可確認的是原生模型可離線執行，不能以此宣稱 Windows DLL closure 完成。原生參照原始證據保留於本機；此儲存庫不追加大量測試圖片。
 
 ## 模型設定、封裝與資源
 
@@ -75,6 +75,8 @@ RapidOCR 包裝層仍是 rapidocr-onnxruntime 1.4.4，ORT 1.30.0；這不代表�
 ## 驗證狀態
 
 Linux source suite、離線 source/self-test、500 次負載與 Windows 成品結果以對應最終 commit 的報告為準；中間混搭量測不冒充最終完整 v6 成品測試。
+
+首次完整 Windows 候選已通過：563 tests passed／2 POSIX-only skips，雙模型各 500 次 frozen 推論、離線 probes、精確 payload 白名單及 ZIP/hash 檢查，見 [驗證摘要](validation/v1.7.0-rc.1-prepublication.json)。Release marker 將再建置並檢查同一 run 的成品。
 
 目前仍不能宣稱：乾淨 Windows 無預裝 DLL／Python／模型快取驗收完成、混合 DPI 全支援、原生推論永不返回時能限時關閉、全部文字正確、所有網路外傳已被證明為零。
 
