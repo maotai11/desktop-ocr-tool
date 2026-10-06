@@ -1,0 +1,50 @@
+{
+  "installed": {
+    "PySide6_Essentials": "6.11.2",
+    "PyYAML": "6.0.3",
+    "Pygments": "2.21.0",
+    "altgraph": "0.17.5",
+    "flatbuffers": "25.12.19",
+    "iniconfig": "2.3.0",
+    "mss": "10.2.0",
+    "numpy": "2.2.6",
+    "onnxruntime": "1.30.0",
+    "opencv-python": "4.10.0.84",
+    "packaging": "26.3",
+    "pillow": "12.1.1",
+    "pip": "25.0.1",
+    "pluggy": "1.6.0",
+    "protobuf": "7.36.2",
+    "psutil": "7.2.2",
+    "pyclipper": "1.4.0",
+    "pyinstaller": "6.22.3",
+    "pyinstaller-hooks-contrib": "2026.8",
+    "pytest": "9.1.1",
+    "pytest-qt": "4.5.0",
+    "rapidocr-onnxruntime": "1.4.4",
+    "ruff": "0.16.10",
+    "setuptools": "84.0.0",
+    "shapely": "2.1.2",
+    "shiboken6": "6.11.2",
+    "six": "1.17.0",
+    "tqdm": "4.70.1",
+    "typing_extensions": "4.16.0",
+    "zhconv": "1.4.3"
+  },
+  "license_review": "NOT_RUN",
+  "platform": "linux",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "schema": 1,
+  "status": "RECORDED_NOT_A_TRUSTED_LOCK",
+  "wheels": [
+    {
+      "filename": "setuptools-84.0.0-py3-none-any.whl",
+      "license_expression": "MIT",
+      "license_review": "NOT_RUN",
+      "name": "setuptools",
+      "sha256": "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670",
+      "size_bytes": 818216,
+      "version": "84.0.0"
+    }
+  ]
+}

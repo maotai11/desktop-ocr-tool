@@ -21,6 +21,8 @@ class ItemDTO:
     content_hash: Optional[str] = None
     image_hash: Optional[str] = None
     ocr_status: str = "none"
+    edit_revision: int = 0
+    ocr_job_id: Optional[str] = None
     ocr_engine: Optional[str] = None
     ocr_model_version: Optional[str] = None
     ocr_confidence: float = 0.0
@@ -40,7 +42,7 @@ class ItemDTO:
     updated_at: Optional[str] = None
 
     def get_effective_text(self) -> Optional[str]:
-        return self.edited_text if self.edited_text else self.text_content
+        return self.edited_text if self.edited_text is not None else self.text_content
 
 
 @dataclass
@@ -69,8 +71,11 @@ class OcrResultDTO:
     detail_json: Optional[str] = None
     elapsed_ms: int = 0
     error_message: Optional[str] = None
-    engine: str = "onnxruntime"
-    model_version: str = "pp-ocrv4"
+    engine: str = "unknown"
+    model_version: str = "unknown"
+    job_id: Optional[str] = None
+    base_edit_revision: Optional[int] = None
+    provenance_json: Optional[str] = None
 
 
 @dataclass

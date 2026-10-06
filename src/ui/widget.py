@@ -32,6 +32,7 @@ class FloatingWidget(QWidget):
         self._db_worker = db_worker
         self._ocr_worker = ocr_worker
         self._cfg = cfg
+        self.setWindowOpacity(max(0.3, min(1., float(cfg.get('ui', 'widget_opacity', default=0.95)))))
         self._data_dir = data_dir
         self._console = None
         self._clip_paused = False
@@ -707,7 +708,6 @@ class FloatingWidget(QWidget):
     def _save_item_image(self, item):
         if not item.raw_image_path:
             return
-        import os
         from PySide6.QtWidgets import QFileDialog
         src = self._file_mgr.get_abs_path(item.raw_image_path)
         ext = os.path.splitext(src)[1] or '.png'
@@ -734,6 +734,7 @@ class FloatingWidget(QWidget):
             file_mgr=self._file_mgr,
             ocr_worker=self._ocr_worker,
         )
+        editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         editor.item_updated.connect(lambda _: self.refresh_list())
         editor.destroyed.connect(
             lambda: self._editor_windows.pop(item.id, None)
@@ -744,8 +745,6 @@ class FloatingWidget(QWidget):
     def _rerun_ocr(self, item):
         if item.raw_image_path:
             abs_path = self._file_mgr.get_abs_path(item.raw_image_path)
-            self._item_repo.update_ocr_status(item.id, 'pending')
-            self._ocr_worker._mode = 'ocr'
             self._ocr_worker.queue_ocr(item.id, abs_path, 'screen')
             self.refresh_list()
 
@@ -763,7 +762,7 @@ class FloatingWidget(QWidget):
             from .main_window import MainWindow
             self._console = MainWindow(
                 item_repo=self._item_repo,
-                tag_repo=None,
+                tag_repo=self._tag_repo,
                 file_mgr=self._file_mgr,
                 db_worker=self._db_worker,
                 ocr_worker=self._ocr_worker,
@@ -782,7 +781,10 @@ class FloatingWidget(QWidget):
         ocr_engine = getattr(self, '_ocr_engine', None)
         tag_repo = getattr(self, '_tag_repo', None)
         dlg = SettingsDialog(self._cfg, self, ocr_engine=ocr_engine, tag_repo=tag_repo)
-        dlg.exec()
+        try:
+            dlg.exec()
+        finally:
+            dlg.deleteLater()
 
     # --- Capture callbacks ---
     def set_capture_callbacks(self, ocr_cb, image_cb):
@@ -798,6 +800,12 @@ class FloatingWidget(QWidget):
             self._capture_image_callback()
 
     # --- Clipboard ---
+    def focus_search(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._search_edit.setFocus()
+
     def toggle_clipboard_pause(self):
         self._clip_paused = not self._clip_paused
         self._btn_pause.setChecked(self._clip_paused)
@@ -818,7 +826,7 @@ class FloatingWidget(QWidget):
 
     def set_ocr_progress(self, pct: int):
         """更新 OCR 進度條。"""
-        if pct > 0:
+        if 0 < pct < 100:
             self._ocr_progress_bar.show()
             self._ocr_progress_bar.setValue(pct)
         else:

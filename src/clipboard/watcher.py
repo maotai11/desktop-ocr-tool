@@ -12,9 +12,10 @@ class ClipboardWatcher(QObject):
     text_captured = Signal(str)
     image_captured = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, ignore_self=True):
         super().__init__(parent)
         self._paused = False
+        self._ignore_self = ignore_self
         self._clipboard = QApplication.clipboard()
         self._clipboard.changed.connect(self._on_changed)
         logger.info("剪貼簿監聽已啟動（QClipboard.changed）")
@@ -33,7 +34,7 @@ class ClipboardWatcher(QObject):
             return
 
         # Check ignore_self via custom MIME
-        if mime.hasFormat(CUSTOM_MIME_TYPE):
+        if self._ignore_self and mime.hasFormat(CUSTOM_MIME_TYPE):
             data = mime.data(CUSTOM_MIME_TYPE)
             write_id = bytes(data).decode('utf-8', errors='ignore')
             from .writer import get_last_write_id

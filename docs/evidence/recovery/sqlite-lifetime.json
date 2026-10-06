@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "platform": "linux",
+  "garbage_collection_disabled": true,
+  "open_database_handles": [],
+  "temporary_directory_removed": true,
+  "windows_native_verified": false
+}

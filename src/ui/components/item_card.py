@@ -20,6 +20,8 @@ class ItemCard(QWidget):
         self._item = item
         self._data_dir = data_dir
         self._setup_ui(thumb_size)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(self._item.get_effective_text() or "圖片項目")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def _setup_ui(self, thumb_size: tuple):
@@ -68,6 +70,7 @@ class ItemCard(QWidget):
         text = self._item.get_effective_text() or "(無文字)"
         preview = text[:60].replace('\n', ' ')
         text_lbl = QLabel(preview)
+        text_lbl.setTextFormat(Qt.TextFormat.PlainText)
         text_lbl.setStyleSheet(
             f"font-size: 12px; color: {_TEXT_PRI}; background: transparent;"
         )
@@ -80,6 +83,7 @@ class ItemCard(QWidget):
         }
         src = source_names.get(self._item.source_mode, self._item.source_mode)
         meta_lbl = QLabel(f"{self._item.created_at or ''} · {src}")
+        meta_lbl.setTextFormat(Qt.TextFormat.PlainText)
         meta_lbl.setStyleSheet(
             f"font-size: 10px; color: {_TEXT_SEC}; background: transparent;"
         )
@@ -124,3 +128,13 @@ class ItemCard(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self.double_clicked.emit(self._item.id)
         super().mouseDoubleClickEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.double_clicked.emit(self._item.id)
+            event.accept()
+        elif event.key() == Qt.Key.Key_Space:
+            self.clicked.emit(self._item.id)
+            event.accept()
+        else:
+            super().keyPressEvent(event)

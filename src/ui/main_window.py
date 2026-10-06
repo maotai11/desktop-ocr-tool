@@ -723,7 +723,7 @@ class MainWindow(QMainWindow):
             items_to_export = list(self._current_items)
         else:
             # 查詢全部未刪除項目
-            items_to_export = self._repo.list_recent(
+            items_to_export = self._item_repo.list_recent(
                 limit=max_count if max_count > 0 else 100000,
                 show_deleted=False,
                 show_archived=False

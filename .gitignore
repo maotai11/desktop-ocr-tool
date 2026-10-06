@@ -99,3 +99,11 @@ htmlcov/
 
 # tox
 .tox/
+
+# Official pinned assets prepared only on the build/development machine.
+models/rec/pp-ocrv6_rec_small.onnx
+models/det/pp-ocrv6_det_small.onnx
+models/rec/pp-ocrv6_rec_medium.onnx
+
+# Optional native runtime bookkeeping from validation, never source input.
+/:memory:.ses

@@ -24,6 +24,6 @@ ITEM_TYPE_TEXT = "text"
 ITEM_TYPE_IMAGE = "image"
 ITEM_TYPE_MIXED = "mixed"
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DEDUP_SECONDS = 60
 CUSTOM_MIME_TYPE = "application/x-desktopocrtool-id"

@@ -1,0 +1,34 @@
+{
+  "det": {
+    "path": "models/det/pp-ocrv6_det_small.onnx",
+    "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+    "version": "pp-ocrv6-small",
+    "size_bytes": 9929594,
+    "license": "Apache-2.0",
+    "source_manifest": "https://raw.githubusercontent.com/RapidAI/RapidOCR/v3.9.2/python/rapidocr/default_models.yaml",
+    "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+    "upstream_license_source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det"
+  },
+  "rec": {
+    "path": "models/rec/pp-ocrv6_rec_medium.onnx",
+    "sha256": "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+    "version": "pp-ocrv6-medium",
+    "size_bytes": 76629984,
+    "character_sha256": "f7aa897ca828a4c7c9e2739c30f9161a33306d532f020bcdb91dcfb664a5507e",
+    "character_count": 18708,
+    "output_classes": 18710,
+    "license": "Apache-2.0",
+    "source_manifest": "https://raw.githubusercontent.com/RapidAI/RapidOCR/v3.9.2/python/rapidocr/default_models.yaml",
+    "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/rec/PP-OCRv6_rec_medium.onnx",
+    "decoder_sha256": "e41e95fa4e12cc4e971e2ec4ab32a205a700056bc8a46e0803cd3f59f4d93dcf",
+    "upstream_license_source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec"
+  },
+  "cls": {
+    "path": "models/cls/pp-ocrv4_cls.onnx",
+    "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c",
+    "version": "ppocr-mobile-v2.0",
+    "size_bytes": 585532,
+    "license": "Apache-2.0",
+    "source_manifest": "https://raw.githubusercontent.com/RapidAI/RapidOCR/v3.9.2/python/rapidocr/default_models.yaml"
+  }
+}

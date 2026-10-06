@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import zipfile
+import uuid
 from datetime import datetime
 from typing import List
 from .models import ItemDTO
+from .file_manager import FileManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,15 @@ class Exporter:
         self._data_dir = data_dir
 
     def _ts(self) -> str:
-        return datetime.now().strftime('%Y%m%d_%H%M%S')
+        return datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '_' + uuid.uuid4().hex[:8]
+
+    @staticmethod
+    def _csv_text(value):
+        text = str(value or '')
+        # CSV quoting alone does not stop spreadsheet formula execution.
+        if text.lstrip().startswith(('=', '+', '-', '@')) or text.startswith(('\t', '\r', '\n')):
+            return "'" + text
+        return text
 
     def export_txt(self, items: List[ItemDTO]) -> str:
         path = os.path.join(self._export_dir, f"export_{self._ts()}.txt")
@@ -36,11 +46,11 @@ class Exporter:
             w.writerow(['ID', '類型', '來源', '文字內容', '置信度', 'OCR狀態', '建立時間', '已釘選'])
             for item in items:
                 w.writerow([
-                    item.id, item.item_type, item.source_mode,
-                    item.get_effective_text() or '',
+                    item.id, self._csv_text(item.item_type), self._csv_text(item.source_mode),
+                    self._csv_text(item.get_effective_text()),
                     f"{item.ocr_confidence:.3f}" if item.ocr_confidence else '',
-                    item.ocr_status,
-                    item.created_at or '',
+                    self._csv_text(item.ocr_status),
+                    self._csv_text(item.created_at),
                     '是' if item.is_pinned else '否'
                 ])
         logger.info(f"已匯出 CSV: {path}")
@@ -64,17 +74,21 @@ class Exporter:
         return path
 
     def export_zip(self, items: List[ItemDTO]) -> str:
+        file_mgr = FileManager(self._data_dir)
         path = os.path.join(self._export_dir, f"export_{self._ts()}.zip")
+        files = []
+        for item in items:
+            for rel in (item.raw_image_path, item.annotation_path):
+                if rel:
+                    absolute = file_mgr.get_abs_path(rel)  # validate before creating archive
+                    if os.path.isfile(absolute):
+                        files.append((absolute, f'{item.id}/{os.path.relpath(absolute,self._data_dir)}'))
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
             txt_content = ""
             for item in items:
                 txt_content += f"[{item.created_at}]\n{item.get_effective_text() or ''}\n\n"
             zf.writestr("texts.txt", txt_content.encode('utf-8'))
-            for item in items:
-                for rel in [item.raw_image_path, item.annotation_path]:
-                    if rel:
-                        abs_p = os.path.join(self._data_dir, rel) if not os.path.isabs(rel) else rel
-                        if os.path.exists(abs_p):
-                            zf.write(abs_p, os.path.basename(abs_p))
+            for absolute, name in files:
+                zf.write(absolute, name)
         logger.info(f"已匯出 ZIP: {path}")
         return path

@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 import logging
 import sqlite3
+import uuid
 from datetime import datetime
+from dataclasses import replace
+from contextlib import contextmanager
 from typing import Optional, List
-from .database import Database
+from .database import Database, write_transaction
 from .models import ItemDTO, ItemCreateDTO, OcrResultDTO, TagDTO, StatsDTO
 from .hasher import sha256_text
 from ..core.constants import DEDUP_SECONDS
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
 
 
 def _row_to_item(row: sqlite3.Row) -> ItemDTO:
@@ -29,6 +33,8 @@ def _row_to_item(row: sqlite3.Row) -> ItemDTO:
         content_hash=row['content_hash'],
         image_hash=row['image_hash'],
         ocr_status=row['ocr_status'] or 'none',
+        edit_revision=row['edit_revision'] or 0,
+        ocr_job_id=row['ocr_job_id'],
         ocr_engine=row['ocr_engine'],
         ocr_model_version=row['ocr_model_version'],
         ocr_confidence=row['ocr_confidence'] or 0.0,
@@ -59,6 +65,7 @@ class ItemRepository:
     def _now(self) -> str:
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+    @write_transaction
     def insert(self, dto: ItemCreateDTO) -> Optional[int]:
         now = self._now()
         try:
@@ -99,57 +106,202 @@ class ItemRepository:
         ).fetchone()
         return _row_to_item(row) if row else None
 
-    def update_ocr_result(self, item_id: int, result: OcrResultDTO):
-        content_hash = sha256_text(result.text) if result.text else None
-        now = self._now()
-        new_type = 'mixed'
+    @write_transaction
+    def begin_ocr_attempt(self, item_id: int, source_check=None) -> tuple:
+        """Reserve a durable latest job before it can run; never clear user text."""
         item = self.get_by_id(item_id)
-        if item:
-            if item.raw_image_path and result.text:
-                new_type = 'mixed'
-            elif item.raw_image_path:
-                new_type = 'image'
-            elif result.text:
-                new_type = 'text'
-        self._conn.execute("""
-            UPDATE items SET
-                text_content=?, text_content_length=?,
-                edited_text=NULL,
-                item_type=?,
-                ocr_status=?, ocr_engine=?, ocr_model_version=?,
-                ocr_confidence=?, ocr_detail_json=?,
-                ocr_elapsed_ms=?, ocr_error_message=?,
-                content_hash=?,
-                updated_at=?
-            WHERE id=?
-        """, (
-            result.text, len(result.text) if result.text else 0,
-            new_type,
-            result.status, result.engine, result.model_version,
-            result.confidence, result.detail_json,
-            result.elapsed_ms, result.error_message,
-            content_hash,
-            now, item_id
-        ))
-        self._conn.commit()
-
-    def update_edited_text(self, item_id: int, text: str):
-        content_hash = sha256_text(text)
-        now = self._now()
+        if item is None or item.is_deleted:
+            raise ValueError(f'Item {item_id} is deleted or no longer exists')
+        if source_check is not None and not source_check(item.raw_image_path):
+            raise ValueError('原圖已移除或變更；未加入 OCR 佇列')
+        job_id = uuid.uuid4().hex
         self._conn.execute(
-            "UPDATE items SET edited_text=?, content_hash=?, updated_at=? WHERE id=?",
-            (text, content_hash, now, item_id)
-        )
-        self._conn.commit()
+            'INSERT INTO ocr_attempts(job_id,item_id,base_edit_revision) VALUES(?,?,?)',
+            (job_id, item_id, item.edit_revision))
+        self._conn.execute(
+            "UPDATE items SET ocr_job_id=?,ocr_status='pending',ocr_error_message=NULL,updated_at=? WHERE id=?",
+            (job_id, self._now(), item_id))
+        return job_id, item.edit_revision
 
+    def get_ocr_attempts(self, item_id: int, include_provenance: bool = True) -> list:
+        # The editor lists lightweight attempt metadata, then loads one payload.
+        columns = '*' if include_provenance else (
+            'job_id,item_id,status,engine,model_version,disposition,completed_at')
+        return [dict(row) for row in self._conn.execute(
+            f'SELECT {columns} FROM ocr_attempts WHERE item_id=? ORDER BY rowid', (item_id,))]
+
+    def get_ocr_attempt(self, item_id: int, job_id: str):
+        row = self._conn.execute(
+            'SELECT * FROM ocr_attempts WHERE item_id=? AND job_id=?', (item_id, job_id)).fetchone()
+        return dict(row) if row else None
+
+    def update_ocr_result(self, item_id: int, result: OcrResultDTO) -> bool:
+        working_result = replace(result)
+        with self._db.transaction():
+            applied = self._record_ocr_result(item_id, working_result)
+        # Only expose the generated legacy job ID after its transaction commits.
+        result.job_id = working_result.job_id
+        result.base_edit_revision = working_result.base_edit_revision
+        return applied
+
+    def _record_ocr_result(self, item_id: int, result: OcrResultDTO) -> bool:
+        """Record every attempt, applying only the latest live item's result.
+
+        A failed or empty rerun preserves the previous successful text/provenance.
+        Manual edits (including an intentional empty edit) always take precedence.
+        """
+        item = self.get_by_id(item_id)
+        if item is None:
+            return False  # A hard-deleted item must never be recreated by late OCR.
+        job_id = result.job_id
+        if job_id:
+            attempt = self._conn.execute(
+                'SELECT * FROM ocr_attempts WHERE job_id=? AND item_id=?',
+                (job_id, item_id)).fetchone()
+            if attempt is None:
+                raise ValueError(f'Unknown OCR attempt for item {item_id}')
+            if attempt['completed_at'] is not None:
+                return False  # Idempotent delivery: do not publish a result twice.
+            base_revision = attempt['base_edit_revision']
+        else:
+            # Compatibility for direct repository consumers and self-test; an
+            # unversioned result cannot supersede a reserved asynchronous job.
+            job_id = uuid.uuid4().hex
+            base_revision = item.edit_revision
+            self._conn.execute(
+                'INSERT INTO ocr_attempts(job_id,item_id,base_edit_revision) VALUES(?,?,?)',
+                (job_id, item_id, base_revision))
+            if item.ocr_job_id is None:
+                self._conn.execute('UPDATE items SET ocr_job_id=? WHERE id=?', (job_id, item_id))
+                item.ocr_job_id = job_id
+            else:
+                previous = self._conn.execute(
+                    'SELECT completed_at FROM ocr_attempts WHERE job_id=?',
+                    (item.ocr_job_id,)).fetchone()
+                if previous and previous['completed_at'] is not None:
+                    self._conn.execute('UPDATE items SET ocr_job_id=? WHERE id=?', (job_id, item_id))
+                    item.ocr_job_id = job_id
+        result.job_id, result.base_edit_revision = job_id, base_revision
+        disposition = ('deleted' if item.is_deleted else
+                       'obsolete' if item.ocr_job_id != job_id else 'applied')
+        self._conn.execute("""
+            UPDATE ocr_attempts SET status=?,text_content=?,confidence=?,detail_json=?,provenance_json=?,
+                elapsed_ms=?,error_message=?,engine=?,model_version=?,disposition=?,completed_at=?
+            WHERE job_id=?
+        """, (result.status, result.text, result.confidence, result.detail_json, result.provenance_json,
+              result.elapsed_ms, result.error_message, result.engine,
+              result.model_version, disposition, self._now(), job_id))
+        if disposition != 'applied':
+            return False
+        has_text = bool(result.text) and result.status in ('done', 'needs_review', 'confirmed')
+        text = result.text if has_text else item.text_content
+        effective = item.edited_text if item.edited_text is not None else text
+        new_type = ('mixed' if effective else 'image') if item.raw_image_path else ('text' if effective else 'image')
+        status = result.status if has_text else 'failed'
+        error = result.error_message if has_text or result.error_message else 'OCR 未產生文字；已保留先前文字'
+        self._conn.execute("""
+            UPDATE items SET text_content=?,text_content_length=?,item_type=?,
+                ocr_status=?,ocr_engine=?,ocr_model_version=?,ocr_confidence=?,
+                ocr_detail_json=?,ocr_elapsed_ms=?,ocr_error_message=?,content_hash=?,updated_at=?
+            WHERE id=?
+        """, (text, len(text) if text else 0, new_type, status,
+              result.engine if has_text else item.ocr_engine,
+              result.model_version if has_text else item.ocr_model_version,
+              result.confidence if has_text else item.ocr_confidence,
+              result.detail_json if has_text else item.ocr_detail_json,
+              result.elapsed_ms if has_text else item.ocr_elapsed_ms,
+              error, sha256_text(effective) if effective is not None else None,
+              self._now(), item_id))
+        return True
+
+    @write_transaction
+    def update_edited_text(self, item_id: int, text: str, expected_revision=None):
+        item = self.get_by_id(item_id)
+        if item is None or item.is_deleted:
+            raise ValueError(f'Item {item_id} is deleted or no longer exists')
+        if expected_revision is not None and item.edit_revision != expected_revision:
+            raise ValueError('文字已在另一個視窗更新；請重新開啟後再編輯')
+        self._conn.execute(
+            'UPDATE items SET edited_text=?,content_hash=?,edit_revision=edit_revision+1,updated_at=? WHERE id=?',
+            (text, sha256_text(text), self._now(), item_id))
+
+    @write_transaction
+    def save_editor_content(self, item_id: int, text: str, richtext: str,
+                            plaintext: str, expected_revision: int,
+                            update_text: bool = True, confirm_review: bool = True,
+                            expected_ocr_job_id=_UNSET, expected_ocr_text=_UNSET):
+        """One transaction saves the draft, note, and review decision together."""
+        item = self.get_by_id(item_id)
+        if item is None or item.is_deleted:
+            raise ValueError(f'Item {item_id} is deleted or no longer exists')
+        if item.edit_revision != expected_revision:
+            raise ValueError('文字已在另一個視窗更新；請重新開啟後再編輯')
+        self._check_ocr_snapshot(item, expected_ocr_job_id, expected_ocr_text)
+        self._conn.execute(
+            'UPDATE items SET edited_text=?,content_hash=?,edit_revision=edit_revision+1,updated_at=? WHERE id=?',
+            (text if update_text else item.edited_text,
+             sha256_text(text) if update_text else item.content_hash, self._now(), item_id))
+        self._conn.execute(
+            "UPDATE items SET note_richtext=?,note_plaintext=?,"
+            "ocr_status=CASE WHEN ? AND ocr_status='needs_review' THEN 'confirmed' ELSE ocr_status END WHERE id=?",
+            (richtext, plaintext, confirm_review, item_id))
+
+    @contextmanager
+    def image_cleanup_guard(self):
+        # Keep the lock across independently committed journal/metadata writes
+        # and the filesystem operation. GUI reservations/deletions cannot enter
+        # the unlink gap, but a pending journal still survives metadata failure.
+        with self._db._write_lock:
+            yield
+
+    def is_current_ocr_job(self, item_id: int, job_id: str, raw_path=None) -> bool:
+        item = self.get_by_id(item_id)
+        return bool(item and not item.is_deleted and item.ocr_job_id == job_id and
+                    (raw_path is None or item.raw_image_path == raw_path))
+
+    @write_transaction
+    def plan_image_cleanup(self, item_id: int, job_id: str) -> Optional[str]:
+        item = self.get_by_id(item_id)
+        if not item or item.is_deleted or item.ocr_job_id != job_id or not item.raw_image_path:
+            return None
+        self._conn.execute(
+            "INSERT INTO image_cleanup(item_id,raw_image_path,status,error_message,updated_at) VALUES(?,?,'pending',NULL,?) "
+            "ON CONFLICT(item_id) DO UPDATE SET raw_image_path=excluded.raw_image_path,status='pending',error_message=NULL,updated_at=excluded.updated_at",
+            (item_id, item.raw_image_path, self._now()))
+        return item.raw_image_path
+
+    def pending_image_cleanups(self) -> list:
+        return [dict(row) for row in self._conn.execute(
+            "SELECT * FROM image_cleanup WHERE status='pending'")]
+
+    @write_transaction
+    def finish_image_cleanup(self, item_id: int, path: str):
+        # The journal survives a failed metadata commit after unlink, allowing
+        # reconciliation to distinguish missing data from a retained original.
+        self._conn.execute(
+            "UPDATE items SET raw_image_path=NULL,item_type=CASE "
+            "WHEN COALESCE(edited_text,text_content,'')!='' THEN 'text' ELSE 'image' END,updated_at=? "
+            "WHERE id=? AND raw_image_path=?", (self._now(), item_id, path))
+        self._conn.execute(
+            "UPDATE image_cleanup SET status='completed',error_message=NULL,updated_at=? WHERE item_id=?",
+            (self._now(), item_id))
+
+    @write_transaction
+    def image_cleanup_failed(self, item_id: int, error: str):
+        self._conn.execute(
+            'UPDATE image_cleanup SET error_message=?,updated_at=? WHERE item_id=?',
+            (error, self._now(), item_id))
+
+    @write_transaction
     def update_note(self, item_id: int, richtext: str, plaintext: str):
         now = self._now()
         self._conn.execute(
-            "UPDATE items SET note_richtext=?, note_plaintext=?, updated_at=? WHERE id=?",
+            "UPDATE items SET note_richtext=?, note_plaintext=?, edit_revision=edit_revision+1, updated_at=? WHERE id=?",
             (richtext, plaintext, now, item_id)
         )
         self._conn.commit()
 
+    @write_transaction
     def update_annotation(self, item_id: int, path: str):
         now = self._now()
         self._conn.execute(
@@ -158,17 +310,21 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def clear_image_paths(self, item_id: int):
         """清空 raw_image_path（暫存圖已刪除後的 DB 一致性補強）。
         thumbnail_path 保留，縮圖檔仍存在可供 detail panel 顯示。
         """
         now = self._now()
         self._conn.execute(
-            "UPDATE items SET raw_image_path=NULL, updated_at=? WHERE id=?",
+            "UPDATE items SET raw_image_path=NULL, "
+            "item_type=CASE WHEN COALESCE(edited_text,text_content,'')!='' "
+            "THEN 'text' ELSE 'image' END, updated_at=? WHERE id=?",
             (now, item_id)
         )
         self._conn.commit()
 
+    @write_transaction
     def update_ocr_status(self, item_id: int, status: str):
         now = self._now()
         self._conn.execute(
@@ -177,7 +333,21 @@ class ItemRepository:
         )
         self._conn.commit()
 
-    def confirm_review(self, item_id: int):
+    @staticmethod
+    def _check_ocr_snapshot(item, expected_job, expected_text):
+        if ((expected_job is not _UNSET and item.ocr_job_id != expected_job) or
+                (expected_text is not _UNSET and item.text_content != expected_text)):
+            raise ValueError('OCR 已更新；請重新開啟確認最新結果，草稿尚未覆蓋')
+
+    @write_transaction
+    def confirm_review(self, item_id: int, expected_revision=None,
+                       expected_ocr_job_id=_UNSET, expected_ocr_text=_UNSET):
+        item = self.get_by_id(item_id)
+        if item is None or item.is_deleted:
+            raise ValueError('項目已移除，無法確認')
+        if expected_revision is not None and item.edit_revision != expected_revision:
+            raise ValueError('文字已在另一個視窗更新；請重新開啟後再確認')
+        self._check_ocr_snapshot(item, expected_ocr_job_id, expected_ocr_text)
         now = self._now()
         self._conn.execute(
             "UPDATE items SET ocr_status='confirmed', updated_at=? WHERE id=? AND ocr_status='needs_review'",
@@ -185,6 +355,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def set_pinned(self, item_id: int, pinned: bool):
         now = self._now()
         self._conn.execute(
@@ -193,6 +364,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def set_archived(self, item_id: int, archived: bool):
         now = self._now()
         self._conn.execute(
@@ -201,14 +373,18 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def soft_delete(self, item_id: int):
         now = self._now()
         self._conn.execute(
-            "UPDATE items SET is_deleted=1, updated_at=? WHERE id=?",
+            "UPDATE items SET is_deleted=1,ocr_job_id=NULL,"
+            "ocr_status=CASE WHEN ocr_status IN ('pending','processing') THEN 'failed' ELSE ocr_status END,"
+            "updated_at=? WHERE id=?",
             (now, item_id)
         )
         self._conn.commit()
 
+    @write_transaction
     def restore(self, item_id: int):
         now = self._now()
         self._conn.execute(
@@ -217,6 +393,7 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def hard_delete(self, item_id: int) -> Optional[ItemDTO]:
         item = self.get_by_id(item_id)
         if item:
@@ -224,6 +401,7 @@ class ItemRepository:
             self._conn.commit()
         return item
 
+    @write_transaction
     def hard_delete_all_soft_deleted(self) -> tuple:
         rows = self._conn.execute(
             "SELECT * FROM items WHERE is_deleted=1"
@@ -237,7 +415,7 @@ class ItemRepository:
         row = self._conn.execute("""
             SELECT * FROM items
             WHERE source_mode=? AND is_deleted=0
-            ORDER BY created_at DESC LIMIT 1
+            ORDER BY created_at DESC, id DESC LIMIT 1
         """, (source_mode,)).fetchone()
         return _row_to_item(row) if row else None
 
@@ -252,16 +430,16 @@ class ItemRepository:
                 try:
                     last_time = datetime.strptime(last.created_at, '%Y-%m-%d %H:%M:%S')
                     diff = (datetime.now() - last_time).total_seconds()
-                    if diff <= DEDUP_SECONDS:
+                    if 0 <= diff <= DEDUP_SECONDS:
                         return True
                 except ValueError:
                     pass
-        if image_hash and last.image_hash == image_hash:
+        if image_hash and image_hash.startswith('sha256:') and last.image_hash == image_hash:
             if last.created_at:
                 try:
                     last_time = datetime.strptime(last.created_at, '%Y-%m-%d %H:%M:%S')
                     diff = (datetime.now() - last_time).total_seconds()
-                    if diff <= DEDUP_SECONDS:
+                    if 0 <= diff <= DEDUP_SECONDS:
                         return True
                 except ValueError:
                     pass
@@ -377,6 +555,7 @@ class TagRepository:
     def _conn(self):
         return self._db.get_connection()
 
+    @write_transaction
     def create(self, name: str, color: str = "#4A90D9") -> Optional[TagDTO]:
         try:
             cur = self._conn.execute(
@@ -388,14 +567,24 @@ class TagRepository:
             logger.warning(f"標籤 '{name}' 已存在")
             return None
 
+    @write_transaction
+    def update(self, tag_id: int, name: str, color: str):
+        self._conn.execute('UPDATE tags SET name=?,color=? WHERE id=?', (name, color, tag_id))
+        self._conn.commit()
+
+    def usage_count(self, tag_id: int) -> int:
+        return self._conn.execute('SELECT COUNT(*) FROM item_tags WHERE tag_id=?', (tag_id,)).fetchone()[0]
+
     def list_all(self) -> List[TagDTO]:
         rows = self._conn.execute("SELECT * FROM tags ORDER BY name").fetchall()
         return [TagDTO(id=r['id'], name=r['name'], color=r['color']) for r in rows]
 
+    @write_transaction
     def delete(self, tag_id: int):
         self._conn.execute("DELETE FROM tags WHERE id=?", (tag_id,))
         self._conn.commit()
 
+    @write_transaction
     def add_to_item(self, item_id: int, tag_id: int):
         self._conn.execute(
             "INSERT OR IGNORE INTO item_tags(item_id, tag_id) VALUES(?,?)",
@@ -403,6 +592,7 @@ class TagRepository:
         )
         self._conn.commit()
 
+    @write_transaction
     def remove_from_item(self, item_id: int, tag_id: int):
         self._conn.execute(
             "DELETE FROM item_tags WHERE item_id=? AND tag_id=?",

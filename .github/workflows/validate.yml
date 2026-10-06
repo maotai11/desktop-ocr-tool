@@ -1,0 +1,140 @@
+name: Candidate validation (not a clean-machine release gate)
+on:
+  push:
+    branches: [master, 'fix/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: ${{ matrix.os == 'windows-latest' && 'windows' || 'offscreen' }}
+      ORT_DISABLE_TELEMETRY: '1'
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1
+      - name: Resolve wheelhouse and record exact input hashes
+        run: |
+          python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt
+          python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
+      - name: Install only from recorded local wheels
+        run: |
+          python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt
+          python -m pip check
+          python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
+      - name: Prepare pinned offline model payload
+        run: python scripts/prepare_models.py
+      - run: python -m pytest -q --junitxml=test-results.xml
+      - run: python src/main.py --self-test source-selftest.json
+      - run: python src/main.py --smoke-app source-app-smoke.json
+      - if: runner.os == 'Windows'
+        run: python scripts/build.py
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundles = @(Get-ChildItem artifacts/release-* -Directory)
+          if ($bundles.Count -ne 1) { throw 'Expected exactly one current release directory' }
+          $bundle = $bundles[0].FullName
+          $manifest = Get-Content (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw | ConvertFrom-Json
+          $exe = Join-Path $bundle $manifest.executable_name
+          $rule = 'DesktopOCR-candidate-' + [guid]::NewGuid().ToString()
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block -Profile Any | Out-Null
+          try {
+            & ./scripts/validate_windows_bundle.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
+            if ($LASTEXITCODE -ne 0) { throw 'Outbound-blocked frozen candidate gate failed' }
+            $stressReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-runtime-stress.json'
+            $stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru
+            if (-not $stressProcess.WaitForExit(900000)) { $stressProcess.Kill(); throw 'Frozen stress timed out' }
+            if ($stressProcess.ExitCode -ne 0) { throw 'Frozen stress failed' }
+            $stress = Get-Content $stressReport -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (-not $stress.passed -or $stress.iterations_per_profile -ne 500 -or -not $stress.frozen -or $stress.executable_sha256 -ne $manifest.executable_sha256 -or $stress.version -ne $manifest.version) { throw 'Incomplete frozen stress report' }
+            foreach ($profile in @('v6-small', 'v6-medium')) {
+              $record = $stress.profiles.$profile
+              if (-not $record.passed -or $record.iterations_completed -ne 500 -or $record.identity.profile -ne $profile) { throw ('Incomplete stress profile: ' + $profile) }
+            }
+          } finally {
+            Remove-NetFirewallRule -DisplayName $rule
+          }
+      - name: Verify actual candidate ZIP and embedded runtime payload
+        if: runner.os == 'Windows'
+        run: python scripts/verify_candidate_bundle.py --artifact-root . --expected-commit ${{ github.sha }} --report artifacts/verified-bundle.json --inspect-payload
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && always()
+        with:
+          name: validation-metadata-Windows
+          path: |
+            test-results.xml
+            *selftest.json
+            *app-smoke.json
+            artifacts/*.sha256
+            artifacts/verified-bundle.json
+            artifacts/dependency-inventory.json
+            artifacts/release-*/BUILD_MANIFEST.json
+            artifacts/release-*/SOURCE_MANIFEST.json
+            artifacts/candidate-validation/*.json
+            artifacts/firewall-validation/*.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ runner.os }}
+          path: |
+            test-results.xml
+            *selftest.json
+            *app-smoke.json
+            artifacts/*.zip
+            artifacts/*.sha256
+            artifacts/dependency-inventory.json
+            artifacts/verified-bundle.json
+            artifacts/candidate-validation/*.json
+            artifacts/firewall-validation/*.json
+          if-no-files-found: warn
+  publish_prerelease:
+    needs: validate
+    # One fixed, explicitly approved candidate; never publish from a PR event.
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/fix/ocr-model-upgrade' &&
+      github.repository == 'maotai11/desktop-ocr-tool' &&
+      github.event.head_commit.message == 'publish-prerelease: v1.7.0-rc.1'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: validation-Windows
+          path: release-input
+      - name: Publish only the same-run verified candidate prerelease
+        run: python scripts/publish_prerelease.py --artifact-root release-input --verified-bundle release-input/artifacts/verified-bundle.json --output-dir release-upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prerelease-publication-evidence
+          path: |
+            release-upload/*.json
+            release-upload/*SHA256SUMS.txt
+          if-no-files-found: warn

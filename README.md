@@ -1,126 +1,99 @@
-# DesktopOCRTool
+# DesktopOCR 桌面文字擷取
 
-離線 Windows 桌面 OCR 工具。截圖即辨識，結果存入本地資料庫，不需連線、不上傳任何資料。
+Windows x64 可攜式 OCR 工具。框選畫面後辨識文字，保存在本機歷史，可編輯、搜尋及匯出。交付 ZIP 內含 Python、Qt、OCR 執行環境及模型；目標電腦不用安裝 Python，也不需要首次連網下載模型。
 
----
+目前是 **1.7.0-rc.1 升級候選**。已通過 Windows runner 的實際 EXE 驗證：563 項測試通過、2 項 POSIX-only 略過，兩個新模型各 500 次推論均通過。成品曾在封鎖對外連線下測試；乾淨離線 Windows、混合 DPI／多螢幕仍需分別驗收。詳見[成品驗證紀錄](docs/validation/v1.7.0-rc.1-prepublication.json)。
 
-## 功能特色
+## 這次修了什麼
 
-- **即時 OCR**：熱鍵截取任意區域 → 自動辨識 → 存入控制台
-- **主引擎**：RapidOCR PP-OCRv4（ONNX Runtime，離線輕量）
-- **Group A — OCR 精準度補強**：前處理管線（去斜、去噪、對比增強、陰影移除、Sauvola 二值化）+ second-pass 重試
-- **第二引擎 fallback（optional）**：PP-OCRv5 Mobile via PaddleOCR，手寫或低信心時自動觸發
-- **批量操作**：控制台多選刪除、搜尋保持、分類保持（Group B）
-- **完全離線**：DB SQLite，無網路相依，可打包為單一 EXE
+### 1. 小範圍框選與貼邊筆畫
 
----
+舊流程會把很小的選取區放大到短邊 960 像素，再被模型縮小；貼邊文字進入切片時，補邊也可能把黑色筆畫向外延伸。
 
-## 安裝
+現在短邊小於 128、長邊不超過 512 像素的選取區，最多放大 3 倍，補足模型所需的背景空間。保留原圖，將文字框座標映回原位置。這能減少過度縮放造成的錯字，但不能補回框選時已截掉的筆畫。
 
-### 核心依存
+### 2. 更換找字與辨字模型
 
-```bash
-pip install -r requirements.txt
+設定 → OCR → 辨識模型提供兩個真正內含的選項：
+
+- PP-OCRv6 Small：v6 Small 找字及辨字，預設選項
+- PP-OCRv6 Medium 辨字：同一個 v6 Small 找字模型，改用較大的 v6 Medium 辨字模型
+
+Medium 較耗記憶體；測試中有些複雜字較準，有些空格反而較差，不標示為「一定更準」。儲存後重新啟動才套用，避免工作進行中切換引擎。
+
+載入失敗會顯示錯誤，不改用 v4。舊模型只用於開發對照測試，不打包成可執行的辨識選項。每次 OCR 保存實際模型版本與 SHA256，可追查結果用了哪一組模型。
+
+### 3. 待確認與有上限的重新辨識
+
+低信心、不同次辨識互相衝突等結果顯示「待確認」，不自動複製到剪貼簿。信心分數不是「這段文字有多少機率完全正確」。
+
+可設定總共 1、2 或 3 次辨識，上限含第一次。只有需要時才重試，使用不同的影像處理方式，不重複完全相同的呼叫。保留各次候選及來源；在編輯視窗選擇候選後仍須儲存確認，可先修改或復原。失敗、空結果與晚到的工作不清掉既有文字，也不覆蓋人工修改。
+
+預設上限為 2 次。初步固定案例的 3 次測試沒有增加正確句數，卻增加時間，因此不預設 3 次。
+
+### 4. 模型與資源檢查
+
+- 載入前校驗模型大小、SHA256、完整有序字表、輸出類別數及 CPU 執行環境
+- 每次只辨識一個文字裁切，避免長文字框讓整批短文字一起配置大記憶體
+- 辨字輸入寬度及同一工作的累積工作量有限制，超限保留原圖並提示分段框選
+- 建置與成品都驗證兩個模型選項；缺少任一模型、字表不符或檔案損壞會讓驗證失敗
+- 修正舊設定允許 1920–2048 像素、實際流程卻不接受的落差，保留其他設定及資料
+
+## 已測到的改善與限制
+
+測試使用固定像素與固定正解，不用模型輸出回頭改正解，也不刪除失敗案例。
+
+- 27 張小區域合成圖：高筆畫繁中、會計用字、英文數字，12／16／24px 與 0／4／12px 留白。新補邊搭配 v6 的配對中有 27/27 整句正確
+- 另外使用未調參的新字串、Noto Serif 字型、深底、框線、單字與空白負例。這些測試仍找到空格及形近字錯誤，沒有宣稱整體零錯誤
+- 空框曾被新找字模型讀成「一」，信心接近 0.99。它列為獨立回歸案例，並與真正的一／二／十及框內文字一起測試，不能以刪除所有「一」掩蓋問題
+- 字表缺少的字，例如龘、尞、𠮷、𠀋，這兩個辨字模型無法直接輸出。此次不擴充字表或重新訓練，也不猜人名或用全域替換補結果
+- 使用者照片／收據等私人輸入不放入公開儲存庫、CI 或第三方 OCR 服務
+
+大型合成測試圖片保留在本機，不另外上傳；儲存庫提供測試程式、文字結果與重現方式，僅保留 EXE 自我檢查必要的三張小圖。
+
+詳細比較、失敗案例、模型來源與驗證紀錄見 [升級驗證報告](docs/OCR_UPGRADE_20261006.md)。合成圖結果不代表使用者實際文件的準確率。
+
+## 使用方式
+
+1. 從本儲存庫的 Release 下載候選 ZIP，核對 SHA256
+2. 解壓到一般使用者可以寫入的資料夾，執行 DesktopOCRTool EXE；不要以系統管理員執行
+3. 使用預設 Ctrl+Shift+O 框選文字。盡量保留字的四邊，不要切掉筆畫
+4. 有「待確認」時開啟該筆記錄，比對原圖與各次候選，編輯後儲存
+5. 如需更換模型，到設定 → OCR 選擇，儲存並重新啟動
+
+設定、歷史與圖片在 EXE 旁的 config／data 資料夾。升級前先關閉程式並備份這兩個資料夾，不要用新包覆蓋自己的資料。新安裝預設不監聽剪貼簿；已存在的使用者設定保留原選擇。
+
+歷史、截圖及匯出都是明文，沒有自動到期清除。刪除與清空回收桶需由使用者操作。
+
+## 模型版本與執行環境
+
+PP-OCRv6 是 PaddleOCR 的模型世代；RapidOCR 是呼叫 ONNX 模型的包裝層，兩者的版本號不同。目前使用 rapidocr-onnxruntime 1.4.4、ONNX Runtime 1.30.0，載入的是固定 SHA256 的 v6 權重。辨字模型不是 v4。
+
+已另用原生 PaddleOCR 3.7.0／PaddlePaddle 3.2.0 CPU 跑過本地 v6 模型的離線參照測試，並核對原生與 ONNX 辨字字表一致。原生 PaddlePaddle 堆疊不放入此 EXE。方向分類輔助模型只判斷 0／180 度，仍使用固定的 PP-OCR mobile v2.0 分類器，不作舊文字辨識回退。
+
+## 開發與建置
+
+需要 Python 3.12。只在有網路的開發／建置電腦準備相依套件與官方模型：
+
+```sh
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux: source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python scripts/prepare_models.py
+python -m pytest -q
+python src/main.py --self-test source-selftest.json
+python src/main.py --smoke-app source-app-smoke.json
 ```
 
-### 第二引擎（可選，預設不需要）
+模型準備程式只接受固定官方來源與 SHA256，下載後包入 EXE。應用程式不匯入或呼叫此下載程式。Linux 無桌面測試可設定 QT_QPA_PLATFORM=offscreen。
 
-第二引擎為 **optional fallback**，不安裝不影響主流程：
+在 Windows 執行 `python scripts/build.py`。建置會檢查同一份 EXE 的模型、三張逐字比對圖片、SQLite 寫入及完整啟動／停止流程，再產生 ZIP。詳見 [封裝說明](PACKAGING_NOTES.md)。
 
-```bash
-pip install paddlepaddle      # CPU 版；GPU 版換 paddlepaddle-gpu
-pip install paddleocr
-```
+## 尚未驗證完成的項目
 
-安裝後，在 **Settings → OCR → 第二引擎** 勾選啟用。
-
----
-
-## 快速上手
-
-```bash
-python main.py
-```
-
-首次啟動約需 60 秒載入 OCR 模型，狀態列顯示「OCR 就緒」後即可使用。
-
-| 熱鍵 | 動作 |
-|------|------|
-| `Ctrl+Shift+O` | 區域截圖 OCR |
-| `Ctrl+Shift+S` | 區域截圖存圖 |
-| `Ctrl+Shift+F` | 全螢幕 OCR |
-
----
-
-## 第二引擎 fallback（Handwriting OCR）
-
-> 此功能為 optional；paddleocr 未安裝時，主引擎正常運作，僅 fallback 不生效。
-
-**觸發條件（任一）：**
-- 手寫模式（`mode=handwriting`）且「手寫觸發」開啟
-- 主引擎信心低於門檻（預設 0.85）且「低信心觸發」開啟
-
-**設定路徑：** Settings → OCR 分頁 → 「第二引擎 (Handwriting OCR)」
-
-診斷標籤會即時顯示安裝狀態（綠色 = 可用，橘色 = 未安裝）。
-
-詳細打包說明：[PACKAGING_NOTES.md](PACKAGING_NOTES.md)
-
----
-
-## 打包為 EXE
-
-```bash
-cd artifacts
-pyinstaller DesktopOCRTool.spec
-# 產出：dist/DesktopOCRTool.exe（約 150-200 MB）
-```
-
-`paddleocr` 已從 `.spec` excludes 中排除，預設 EXE **不包含第二引擎**（體積控制）。
-
----
-
-## 開發與測試
-
-```bash
-pip install -r requirements-dev.txt
-pytest                  # 全套 128 tests
-pytest --tb=short -q    # 簡潔輸出
-```
-
-**手動 smoke test：** [SMOKE_TEST_CHECKLIST.md](SMOKE_TEST_CHECKLIST.md)
-
-**OCR 效果比較報告：** [docs/OCR_COMPARISON_REPORT.md](docs/OCR_COMPARISON_REPORT.md)
-
----
-
-## 專案結構
-
-```
-desktop-ocr-tool/
-├── src/
-│   ├── app.py                  # 應用入口、引擎初始化
-│   ├── ocr/
-│   │   ├── engine.py           # RapidOCR 主引擎
-│   │   ├── secondary_engine.py # SecondaryEngineBase 介面
-│   │   ├── providers/          # optional provider adapters
-│   │   │   └── paddleocr_v5_provider.py
-│   │   ├── preprocess.py       # Group A 前處理管線
-│   │   └── postprocessor.py
-│   ├── core/config.py          # 設定管理（含第二引擎 5 個新 key）
-│   └── ui/settings_dialog.py   # Settings GUI（含第二引擎診斷）
-├── tests/                      # pytest 128 tests
-├── artifacts/DesktopOCRTool.spec
-├── PACKAGING_NOTES.md
-├── SMOKE_TEST_CHECKLIST.md
-└── docs/
-    ├── OCR_COMPARISON_REPORT.md
-    ├── OCR_SAMPLE_TEST_LOG.md
-    └── REVIEWER_CHECKLIST.md
-```
-
----
-
-## 授權
-
-本專案僅供個人離線使用。
+- GitHub Windows runner 不是未安裝 Python／VC++／OCR 快取的乾淨使用者電腦
+- 混合 DPI、多螢幕、RDP／休眠／Explorer 重啟仍需現場驗收；目前擷取以主要螢幕為主
+- 原生推論永久不返回時，QThread 無法保證限時中止；現有正常結束與排空測試不能證明此情況已解決
+- 已停用 ORT telemetry，並做阻斷網路推論測試；這不等於已釐清先前所有 Microsoft 連線的內容
+- 所有 OCR 結果仍需依用途覆核，尤其姓名、日期、金額及帳號

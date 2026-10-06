@@ -1,13 +1,11 @@
-# -*- coding: utf-8 -*-
+"""Validate the exact three bundled ONNX assets before creating sessions."""
 import hashlib
 import json
-import logging
-import os
-
-logger = logging.getLogger(__name__)
+import sys
+from pathlib import Path
 
 
-def sha256_file(path: str) -> str:
+def sha256_file(path):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         for chunk in iter(lambda: f.read(65536), b''):
@@ -15,30 +13,73 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def validate_models(project_root: str) -> tuple:
-    lock_path = os.path.join(project_root, 'models', 'models.lock.json')
-    if not os.path.exists(lock_path):
-        logger.warning("models.lock.json 不存在，跳過模型驗證（開發模式）")
+def model_root():
+    return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[2]))
+
+
+MODEL_PROFILES = {'v6-small': 'models.lock.json', 'v6-medium': 'models-v6-medium.lock.json'}
+DEFAULT_MODEL_PROFILE = 'v6-small'
+
+
+def verified_model_manifest(root=None, profile=DEFAULT_MODEL_PROFILE):
+    root = Path(root or model_root()).resolve()
+    if profile not in MODEL_PROFILES:
+        raise ValueError(f'Unknown bundled OCR profile: {profile}')
+    lock = json.loads((root / 'models' / MODEL_PROFILES[profile]).read_text(encoding='utf-8'))
+    if set(lock) != {'det', 'rec', 'cls'}:
+        raise ValueError('Model manifest must contain det, rec and cls')
+    for key, info in lock.items():
+        path = (root / info['path']).resolve()
+        if not path.is_relative_to(root / 'models'):
+            raise ValueError('Model path escapes bundle')
+        if not info.get('sha256') or sha256_file(path) != info['sha256']:
+            raise ValueError(f'Model SHA256 mismatch: {key}')
+        if path.stat().st_size != info.get('size_bytes'):
+            raise ValueError(f'Model size mismatch: {key}')
+        info['absolute_path'] = str(path)
+    return lock
+
+
+def verify_recognizer_identity(recognizer, info):
+    """Bind the actual loaded session, ordered CTC alphabet and CPU provider."""
+    session = recognizer.session.session
+    metadata = session.get_modelmeta().custom_metadata_map
+    character = metadata.get('character', '')
+    if (not character or hashlib.sha256(character.encode('utf-8')).hexdigest()
+            != info['character_sha256']):
+        raise ValueError('Recognition character metadata mismatch')
+    symbols = character.splitlines()
+    expected = ['blank', *symbols, ' ']
+    decoder_hash = hashlib.sha256(json.dumps(expected, ensure_ascii=False,
+        separators=(',', ':')).encode('utf-8')).hexdigest()
+    if (len(symbols) != info['character_count']
+            or list(recognizer.postprocess_op.character) != expected
+            or session.get_outputs()[0].shape[-1] != info['output_classes']
+            or len(expected) != info['output_classes']
+            or decoder_hash != info['decoder_sha256']):
+        raise ValueError('Recognition CTC dictionary/output mismatch')
+    providers = session.get_providers()
+    if providers != ['CPUExecutionProvider']:
+        raise ValueError(f'Unexpected recognition provider: {providers}')
+    inputs, outputs = session.get_inputs(), session.get_outputs()
+    if (len(inputs) != 1 or inputs[0].type != 'tensor(float)'
+            or len(inputs[0].shape) != 4 or inputs[0].shape[1] != 3
+            or inputs[0].shape[2] != 48
+            or len(outputs) != 1 or len(outputs[0].shape) != 3
+            or outputs[0].type != 'tensor(float)'):
+        raise ValueError('Recognition model tensor contract mismatch')
+    return {'character_sha256': info['character_sha256'],
+            'character_count': len(symbols), 'output_classes': len(expected),
+            'providers': providers, 'recognition_shape': [3, 48, 320],
+            'input_type': inputs[0].type, 'input_shape': inputs[0].shape,
+            'output_shape': outputs[0].shape, 'blank_index': 0,
+            'space_index': len(expected) - 1,
+            'decoder_sha256': decoder_hash}
+
+
+def validate_models(project_root):
+    try:
+        verified_model_manifest(project_root)
         return True, []
-
-    with open(lock_path, 'r', encoding='utf-8') as f:
-        lock = json.load(f)
-
-    errors = []
-    for model_key, info in lock.items():
-        rel_path = info.get('path', '')
-        expected_sha = info.get('sha256', '')
-        abs_path = os.path.join(project_root, rel_path)
-
-        if not os.path.exists(abs_path):
-            errors.append(f"模型檔案不存在: {rel_path}")
-            continue
-        if expected_sha:
-            actual_sha = sha256_file(abs_path)
-            if actual_sha != expected_sha:
-                errors.append(f"模型 SHA256 不符: {rel_path}")
-                logger.error(f"模型校驗失敗 {rel_path}")
-            else:
-                logger.info(f"模型校驗通過: {rel_path}")
-
-    return len(errors) == 0, errors
+    except (OSError, ValueError, KeyError) as exc:
+        return False, [str(exc)]

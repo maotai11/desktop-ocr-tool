@@ -1,0 +1,38 @@
+{
+  "font_file": "NotoSansCJK-Regular.ttc",
+  "font_sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+  "font_index": 3,
+  "font_px": 32,
+  "cases": [
+    {
+      "id": "traditional",
+      "file": "traditional.png",
+      "ground_truth": "臺灣稅務申報",
+      "image_sha256": "7bea9fb202f44bda363765fbd0257dc2b60fe4fd82839fa7a76ead8ab55897fa",
+      "expected": {
+        "v6-small": "臺灣稅務申報",
+        "v6-medium": "臺灣稅務申報"
+      }
+    },
+    {
+      "id": "amount",
+      "file": "amount.png",
+      "ground_truth": "NT$ 1,234.00",
+      "image_sha256": "a449a2e0adcd3ce57a9cd6165e4c50f8187f9bb3cd01a94a06af0417c2a0ec5d",
+      "expected": {
+        "v6-small": "NT$ 1,234.00",
+        "v6-medium": "NT$ 1,234.00"
+      }
+    },
+    {
+      "id": "date_api",
+      "file": "date_api.png",
+      "ground_truth": "2026/10/06 API",
+      "image_sha256": "3bdc5da643e4e68c8f04a18b888522935f37f390aca7cdd88d7b3c4acf6c3396",
+      "expected": {
+        "v6-small": "2026/10/06 API",
+        "v6-medium": "2026/10/06 API"
+      }
+    }
+  ]
+}

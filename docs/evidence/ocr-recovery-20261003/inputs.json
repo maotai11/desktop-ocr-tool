@@ -1,0 +1,116 @@
+{
+  "font_file": "NotoSansCJK-Regular.ttc",
+  "font_sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+  "font_index": 3,
+  "font_name": [
+    "Noto Sans CJK TC",
+    "Regular"
+  ],
+  "inputs": [
+    {
+      "id": "ordinary_tw",
+      "ground_truth": "臺灣稅務申報 勞健保補充保險費",
+      "font_px": 24,
+      "text_xy": [
+        12,
+        60
+      ],
+      "source_hw": [
+        200,
+        640
+      ],
+      "file": "ordinary_tw.png",
+      "image_sha256": "753dc41ee0e198ef66386a0a7291eabddb7ad95392dfba10472f3c5f5e0ed2d0"
+    },
+    {
+      "id": "ordinary_mixed",
+      "ground_truth": "API_key AB-12345678 10 kg (1,234) -5.00%",
+      "font_px": 18,
+      "text_xy": [
+        12,
+        60
+      ],
+      "source_hw": [
+        200,
+        640
+      ],
+      "file": "ordinary_mixed.png",
+      "image_sha256": "21094ee924fad7052d8c6d82964a597f351ceddcbb18334cc8428979fb9e48e6"
+    },
+    {
+      "id": "rare_tw",
+      "ground_truth": "己已巳 鬱 龘 爨 纛 𠮷 尞",
+      "font_px": 24,
+      "text_xy": [
+        12,
+        40
+      ],
+      "source_hw": [
+        120,
+        960
+      ],
+      "file": "rare_tw.png",
+      "image_sha256": "4b42674ba192172b71870f930bf093923f8327f256ba42877544a9365bd1c71b"
+    },
+    {
+      "id": "long_strip",
+      "ground_truth": "臺灣稅務申報 API_key AB-12345678 10 kg",
+      "font_px": 16,
+      "text_xy": [
+        10,
+        3
+      ],
+      "source_hw": [
+        30,
+        2000
+      ],
+      "file": "long_strip.png",
+      "image_sha256": "bbd58631454792c1b00b2859aa2532d91edbf3ce97b917ecf867605dfe6dbd38"
+    },
+    {
+      "id": "long_seam",
+      "ground_truth": "臺灣稅務申報期限 已繳稅款 尚未繳納金額",
+      "font_px": 20,
+      "text_xy": [
+        420,
+        12
+      ],
+      "source_hw": [
+        50,
+        2000
+      ],
+      "file": "long_seam.png",
+      "image_sha256": "47d19be3e1d5f15026429cd0d20eb8debbae850a1c190e0fbc12f6fd2d3ae3d6"
+    },
+    {
+      "id": "small_large",
+      "ground_truth": "臺灣稅務申報 API_key AB-12345678 10 kg",
+      "font_px": 10,
+      "text_xy": [
+        500,
+        210
+      ],
+      "source_hw": [
+        600,
+        2300
+      ],
+      "file": "small_large.png",
+      "image_sha256": "2193cd5e6efeb499c4d0292c8f393674ae14b5882b904765ee6a66cd820b28fb"
+    },
+    {
+      "id": "small_4k",
+      "ground_truth": "臺灣稅務申報 API_key AB-12345678 10 kg",
+      "font_px": 10,
+      "text_xy": [
+        1000,
+        500
+      ],
+      "source_hw": [
+        2160,
+        3840
+      ],
+      "file": "small_4k.png",
+      "image_sha256": "d4ab290c97bb59c29b788d23cf9bbe7858fd4f9980e09baaed1193d791f12c82"
+    }
+  ]
+}

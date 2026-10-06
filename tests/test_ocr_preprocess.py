@@ -102,7 +102,7 @@ class TestShouldRetry:
 
     def test_high_confidence_no_retry(self):
         e = self._engine()
-        results = [([[0, 0], [10, 0], [10, 10], [0, 10]], "Hello", 0.80)]
+        results = [([[0, 0], [10, 0], [10, 10], [0, 10]], "Hello", 0.90)]
         assert e._should_retry(results) is False
 
 
@@ -112,8 +112,9 @@ class TestShouldRetry:
 
 class TestMergeResults:
     def test_merge_combines_lists(self):
-        r1 = [("a",), ("b",)]
-        r2 = [("c",)]
+        r1 = [([[0,0],[20,0],[20,20],[0,20]], "a", .9),
+              ([[30,0],[50,0],[50,20],[30,20]], "b", .9)]
+        r2 = [([[60,0],[80,0],[80,20],[60,20]], "c", .9)]
         merged = OcrEngine._merge_results(r1, r2)
         assert len(merged) == 3
 
