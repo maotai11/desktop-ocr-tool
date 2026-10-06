@@ -195,11 +195,22 @@ class SettingsDialog(QDialog):
         of = QFormLayout(ocr_tab)
         of.setSpacing(10)
 
-        self._cb_second_pass = QCheckBox("空結果或低信心時自動二次辨識")
+        self._cb_second_pass = QCheckBox("空結果或低信心時自動重試")
         self._cb_second_pass.setChecked(
             self._cfg.get('ocr', 'enable_second_pass', default=True)
         )
-        of.addRow("二次辨識：", self._cb_second_pass)
+        of.addRow("自動重試：", self._cb_second_pass)
+        self._sp_max_passes = QSpinBox()
+        self._sp_max_passes.setRange(1, 3)
+        self._sp_max_passes.setValue(self._cfg.get('ocr', 'max_ocr_passes', default=2))
+        self._sp_max_passes.setSuffix(" 次（含首次）")
+        self._sp_max_passes.setEnabled(self._cb_second_pass.isChecked())
+        self._cb_second_pass.toggled.connect(self._sp_max_passes.setEnabled)
+        of.addRow("每區辨識上限：", self._sp_max_passes)
+        retry_note = QLabel('預設最多 2 次；第 3 次僅用於仍低信心、空白或候選衝突。\n'
+                            '重試採不同影像處理；分數不是正確率，仍須人工確認。')
+        retry_note.setWordWrap(True)
+        of.addRow('', retry_note)
 
         self._cb_handwriting = QCheckBox("手寫友善模式（積極前處理）")
         self._cb_handwriting.setChecked(
@@ -208,7 +219,7 @@ class SettingsDialog(QDialog):
         of.addRow("手寫模式：", self._cb_handwriting)
 
         self._sp_short_side = QSpinBox()
-        self._sp_short_side.setRange(64, 2048)
+        self._sp_short_side.setRange(64, 1920)
         self._sp_short_side.setSingleStep(64)
         self._sp_short_side.setSuffix(" px")
         self._sp_short_side.setValue(
@@ -220,8 +231,18 @@ class SettingsDialog(QDialog):
         _ocr_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
         of.addRow("", _ocr_note)
 
-        engine_note = QLabel('此版本使用已內含並校驗的 RapidOCR PP-OCRv4。\n'
-                             'PaddleOCR／CnOCR 尚未完成離線整合驗證，本版不提供切換。')
+        self._model_profile = QComboBox()
+        self._model_profile.addItem('PP-OCRv6 Small（較輕量）', 'v6-small')
+        self._model_profile.addItem('PP-OCRv6 Medium 辨字（較大模型）', 'v6-medium')
+        selected = self._model_profile.findData(self._cfg.get('ocr', 'model_profile', default='v6-small'))
+        if selected < 0:
+            self._model_profile.addItem('未知設定，請選擇內含模型', None)
+            selected = self._model_profile.count() - 1
+        self._model_profile.setCurrentIndex(selected)
+        of.addRow('辨識模型：', self._model_profile)
+        engine_note = QLabel('兩種模式都用 v6 Small 找字，辨字模型可選 Small／Medium。\n'
+                             '模型已內含，不需下載；儲存後重啟生效。Medium 較耗記憶體，不保證每字更準。\n'
+                             '使用 RapidOCR／ONNX Runtime；失敗不退回舊模型。')
         engine_note.setWordWrap(True)
         of.addRow('辨識引擎：', engine_note)
         tabs.addTab(ocr_tab, "OCR")
@@ -321,8 +342,11 @@ class SettingsDialog(QDialog):
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
         self._cfg.set('capture', 'auto_ocr_on_capture', self._cb_auto_ocr.isChecked())
         self._cfg.set('ocr', 'enable_second_pass', self._cb_second_pass.isChecked())
+        self._cfg.set('ocr', 'max_ocr_passes', self._sp_max_passes.value())
         self._cfg.set('ocr', 'enable_handwriting_mode', self._cb_handwriting.isChecked())
         self._cfg.set('ocr', 'max_image_short_side', self._sp_short_side.value())
+        if self._model_profile.currentData() is not None:
+            self._cfg.set('ocr', 'model_profile', self._model_profile.currentData())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
 

@@ -105,6 +105,8 @@ def main(smoke_report=None) -> int:
 
         # 建立主引擎（優化繁體中文/小字/複雜結構辨識）
         ocr_engine = OcrEngine(
+            model_profile=cfg.get('ocr', 'model_profile', default='v6-small'),
+            max_ocr_passes=cfg.get('ocr', 'max_ocr_passes', default=2),
             confidence_accept=cfg.get('ocr', 'confidence_accept', default=0.85),
             confidence_review=cfg.get('ocr', 'confidence_review', default=0.60),
             max_image_short_side=cfg.get('ocr', 'max_image_short_side', default=1280),  # 提高解析度
@@ -115,7 +117,7 @@ def main(smoke_report=None) -> int:
 
         # Core builds deliberately expose only the verified, bundled engine.
         # Optional providers need a separate offline bundle and integration gate.
-        logger.info('OCR: bundled RapidOCR PP-OCRv4; secondary engines disabled in Core')
+        logger.info('OCR: bundled RapidOCR profile %s; native PaddleOCR not bundled', ocr_engine.model_profile)
 
         # 10. Capture worker + overlay
         from src.ui.capture_overlay import CaptureOverlay

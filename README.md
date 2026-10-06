@@ -1,45 +1,97 @@
-# 桌面 OCR 擷取工具
+# DesktopOCR 桌面文字擷取
 
-目前修復分支：**1.6.2-rc.2 候選版本，尚未通過乾淨 Windows 離線機器驗收。**
-本輪從已推送的 bba210ec 重建未完成修復；未取得原先未推送的程式位元組。[復原修復報告](docs/RECOVERY_REPAIR_REPORT.md)、[小字切片實測](docs/OCR_RECOVERY_20261003.md)。
-最新可核對狀態：[VALIDATION_STATUS](docs/VALIDATION_STATUS.md)、[49項修復追蹤](docs/MASTER_FINDINGS.md)、[實際架構](docs/CURRENT_ARCHITECTURE.md)、[設定矩陣](docs/CONFIG_WIRING_MATRIX.md)。舊版 v1.6.1 的問題不能因候選版本測試通過就全部視為結案。
+Windows x64 可攜式 OCR 工具。框選畫面後辨識文字，保存在本機歷史，可編輯、搜尋及匯出。交付 ZIP 內含 Python、Qt、OCR 執行環境及模型；目標電腦不用安裝 Python，也不需要首次連網下載模型。
 
-目標是 Windows x64 可攜式應用：在有網路的建置電腦準備完整套件，再將 ZIP 搬到離線電腦，解壓後執行 EXE。目標電腦不需要 Python、pip 或下載模型。實際相容 Windows 版本、DLL 需求及混合 DPI 必須由對應 EXE 的驗收紀錄證實。
+目前是 **1.7.0-rc.1 升級候選**。Windows 成品驗證完成前，不把原始碼測試當作 EXE 已可交付；乾淨離線 Windows、混合 DPI／多螢幕仍需分別驗收。
 
-## 目前實作
+## 這次修了什麼
 
-- 框選 OCR、截圖、歷史、搜尋、編輯、標籤及 TXT／CSV／JSON／ZIP 匯出。
-- RapidOCR ONNX Runtime 1.4.4，內含並於載入前校驗三個模型；模型 SHA-256 與 v1.6.1 實際使用的模型一致。沒有在此次修復更換 v5／v6 模型。
-- 二次辨識以重疊區域仲裁並保留 raw hypotheses；二次失敗不清空可用第一次結果。長條／大圖有有界重疊切片，含座標回映與待覆核警告。繁中、稀有字與小字仍可能誤辨，信心分數不代表文字完整性。
-- 人工編輯與 OCR attempt 分離；失敗／空重跑保留先前文字，遲到或已刪除結果不自動複製。Schema v5 為新增欄位／表，不清除既有資料。
-- 新設定預設不監聽剪貼簿。啟用後可能保存密碼、Token、個資；資料庫、截圖、缩圖與匯出均為明文。**沒有自動保留期限清理**，需手動刪除並清空回收桶。升級既有設定會保留使用者原先的監聽選擇。
-- 截圖／OCR 工作依序停止，資料庫確認寫入後才依 `capture.save_raw_image` 決定刪除成功辨識的原圖；失敗及空結果保留原圖供重試。
+### 1. 小範圍框選與貼邊筆畫
 
-PaddleOCR／CnOCR adapter 保留作為實驗程式碼，**此候選應用不提供切換**。在別處 `pip install paddleocr` 不會替既有 one-file EXE 增加套件。佈景／字級及剪貼簿圖片收錄尚未完成，設定介面已停用對應控制項。`dictionaries/custom_tw_corrections.json` 未接入 Runtime，不宣稱已有台灣詞庫。
+舊流程會把很小的選取區放大到短邊 960 像素，再被模型縮小；貼邊文字進入切片時，補邊也可能把黑色筆畫向外延伸。
 
-## 開發及驗證
+現在短邊小於 128、長邊不超過 512 像素的選取區，最多放大 3 倍，補足模型所需的背景空間。保留原圖，將文字框座標映回原位置。這能減少過度縮放造成的錯字，但不能補回框選時已截掉的筆畫。
 
-使用 Python 3.12：
+### 2. 更換找字與辨字模型
 
-```shell
+設定 → OCR → 辨識模型提供兩個真正內含的選項：
+
+- PP-OCRv6 Small：v6 Small 找字及辨字，預設選項
+- PP-OCRv6 Medium 辨字：同一個 v6 Small 找字模型，改用較大的 v6 Medium 辨字模型
+
+Medium 較耗記憶體；測試中有些複雜字較準，有些空格反而較差，不標示為「一定更準」。儲存後重新啟動才套用，避免工作進行中切換引擎。
+
+載入失敗會顯示錯誤，不改用 v4。舊模型只用於開發對照測試，不打包成可執行的辨識選項。每次 OCR 保存實際模型版本與 SHA256，可追查結果用了哪一組模型。
+
+### 3. 待確認與有上限的重新辨識
+
+低信心、不同次辨識互相衝突等結果顯示「待確認」，不自動複製到剪貼簿。信心分數不是「這段文字有多少機率完全正確」。
+
+可設定總共 1、2 或 3 次辨識，上限含第一次。只有需要時才重試，使用不同的影像處理方式，不重複完全相同的呼叫。保留各次候選及來源；在編輯視窗選擇候選後仍須儲存確認，可先修改或復原。失敗、空結果與晚到的工作不清掉既有文字，也不覆蓋人工修改。
+
+預設上限為 2 次。初步固定案例的 3 次測試沒有增加正確句數，卻增加時間，因此不預設 3 次。
+
+### 4. 模型與資源檢查
+
+- 載入前校驗模型大小、SHA256、完整有序字表、輸出類別數及 CPU 執行環境
+- 每次只辨識一個文字裁切，避免長文字框讓整批短文字一起配置大記憶體
+- 辨字輸入寬度及同一工作的累積工作量有限制，超限保留原圖並提示分段框選
+- 建置與成品都驗證兩個模型選項；缺少任一模型、字表不符或檔案損壞會讓驗證失敗
+- 修正舊設定允許 1920–2048 像素、實際流程卻不接受的落差，保留其他設定及資料
+
+## 已測到的改善與限制
+
+測試使用固定像素與固定正解，不用模型輸出回頭改正解，也不刪除失敗案例。
+
+- 27 張小區域合成圖：高筆畫繁中、會計用字、英文數字，12／16／24px 與 0／4／12px 留白。新補邊搭配 v6 的配對中有 27/27 整句正確
+- 另外使用未調參的新字串、Noto Serif 字型、深底、框線、單字與空白負例。這些測試仍找到空格及形近字錯誤，沒有宣稱整體零錯誤
+- 空框曾被新找字模型讀成「一」，信心接近 0.99。它列為獨立回歸案例，並與真正的一／二／十及框內文字一起測試，不能以刪除所有「一」掩蓋問題
+- 字表缺少的字，例如龘、尞、𠮷、𠀋，這兩個辨字模型無法直接輸出。此次不擴充字表或重新訓練，也不猜人名或用全域替換補結果
+- 使用者照片／收據等私人輸入不放入公開儲存庫、CI 或第三方 OCR 服務
+
+詳細比較、失敗案例、模型來源與驗證紀錄見 [升級驗證報告](docs/OCR_UPGRADE_20261006.md)。合成圖結果不代表使用者實際文件的準確率。
+
+## 使用方式
+
+1. 從本儲存庫的 Release 下載候選 ZIP，核對 SHA256
+2. 解壓到一般使用者可以寫入的資料夾，執行 DesktopOCRTool EXE；不要以系統管理員執行
+3. 使用預設 Ctrl+Shift+O 框選文字。盡量保留字的四邊，不要切掉筆畫
+4. 有「待確認」時開啟該筆記錄，比對原圖與各次候選，編輯後儲存
+5. 如需更換模型，到設定 → OCR 選擇，儲存並重新啟動
+
+設定、歷史與圖片在 EXE 旁的 config／data 資料夾。升級前先關閉程式並備份這兩個資料夾，不要用新包覆蓋自己的資料。新安裝預設不監聽剪貼簿；已存在的使用者設定保留原選擇。
+
+歷史、截圖及匯出都是明文，沒有自動到期清除。刪除與清空回收桶需由使用者操作。
+
+## 模型版本與執行環境
+
+PP-OCRv6 是 PaddleOCR 的模型世代；RapidOCR 是呼叫 ONNX 模型的包裝層，兩者的版本號不同。目前使用 rapidocr-onnxruntime 1.4.4、ONNX Runtime 1.30.0，載入的是固定 SHA256 的 v6 權重。辨字模型不是 v4。
+
+已另用原生 PaddleOCR 3.7.0／PaddlePaddle 3.2.0 CPU 跑過本地 v6 模型的離線參照測試，並核對原生與 ONNX 辨字字表一致。原生 PaddlePaddle 堆疊不放入此 EXE。方向分類輔助模型只判斷 0／180 度，仍使用固定的 PP-OCR mobile v2.0 分類器，不作舊文字辨識回退。
+
+## 開發與建置
+
+需要 Python 3.12。只在有網路的開發／建置電腦準備相依套件與官方模型：
+
+```sh
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Linux: source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
+python scripts/prepare_models.py
 python -m pytest -q
-python src/main.py --self-test selftest.json
+python src/main.py --self-test source-selftest.json
+python src/main.py --smoke-app source-app-smoke.json
 ```
 
-Linux 只作測試與量測；完整桌面啟動、熱鍵及擷取以 Windows 為目標。Qt 無桌面測試時設定 `QT_QPA_PLATFORM=offscreen`。自我檢查會實際載入模型、辨識已知文字、開啟 Qt 及讀寫 SQLite；它不等於完整使用者流程或乾淨機器驗收。
+模型準備程式只接受固定官方來源與 SHA256，下載後包入 EXE。應用程式不匯入或呼叫此下載程式。Linux 無桌面測試可設定 QT_QPA_PLATFORM=offscreen。
 
-Windows 建置：`python scripts/build.py`。輸出位於 `artifacts/`，詳見 [PACKAGING_NOTES](PACKAGING_NOTES.md)。首次與後續啟動均須在離線環境測試，不能只測已有模型快取的開發機。
+在 Windows 執行 `python scripts/build.py`。建置會檢查同一份 EXE 的模型、三張逐字比對圖片、SQLite 寫入及完整啟動／停止流程，再產生 ZIP。詳見 [封裝說明](PACKAGING_NOTES.md)。
 
-## 已知交付阻擋項目
+## 尚未驗證完成的項目
 
-- Windows mixed DPI、多螢幕與休眠／RDP／Explorer 重啟尚未實測；現有框選仍使用 primary screen，不能宣稱已支援所有螢幕配置。
-- 原圖／檔案大小與切片工作量均有上限。合法長條圖可逐片辨識；超限明確失敗並保留原圖。七張合成配對顯示部分長條／4K 小字改善，但罕字與現場 holdout gate 仍未通過。
-- 新空格／融合策略仍需擴充旋轉文字、表格及現場文件 Ground Truth；不宣稱整體 CER 已改善。
-- 歷史自動歸檔／清除、完整設定矩陣、台灣 domain lexicon、optional engine native 整合仍有未完成項目。
-- 穩定版 Release 需通過 [驗收清單](SMOKE_TEST_CHECKLIST.md)，本分支不自動發佈。
-
-對未知 Microsoft 連線：已加入 ORT 啟動前 opt-out 與 session 前 `disable_telemetry_events()`；Linux 推論在 syscall 網路阻斷下測試。先前連線的實際 payload 仍 UNKNOWN，不能據此宣稱已確認沒有資料外傳。Windows 成品仍需依程序與目的地記錄網路事件。
+- GitHub Windows runner 不是未安裝 Python／VC++／OCR 快取的乾淨使用者電腦
+- 混合 DPI、多螢幕、RDP／休眠／Explorer 重啟仍需現場驗收；目前擷取以主要螢幕為主
+- 原生推論永久不返回時，QThread 無法保證限時中止；現有正常結束與排空測試不能證明此情況已解決
+- 已停用 ORT telemetry，並做阻斷網路推論測試；這不等於已釐清先前所有 Microsoft 連線的內容
+- 所有 OCR 結果仍需依用途覆核，尤其姓名、日期、金額及帳號

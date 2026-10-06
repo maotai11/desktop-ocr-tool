@@ -15,11 +15,16 @@ def run(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--self-test", metavar="REPORT", help="offline OCR and database probe")
     mode.add_argument("--smoke-app", metavar="REPORT", help="isolated application lifecycle probe")
+    mode.add_argument("--stress-ocr", metavar="REPORT", help="repeated real-model payload probe")
+    parser.add_argument("--stress-iterations", type=int, default=500)
     args = parser.parse_args(argv)
     os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     if args.self_test is not None:
         from src.self_test import run_self_test
         return run_self_test(os.path.abspath(args.self_test))
+    if args.stress_ocr is not None:
+        from src.runtime_stress import run_runtime_stress
+        return run_runtime_stress(os.path.abspath(args.stress_ocr), args.stress_iterations)
     from src.app import main
     if args.smoke_app is not None:
         previous_home = os.environ.get("DESKTOP_OCR_HOME")

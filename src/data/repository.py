@@ -12,6 +12,7 @@ from .hasher import sha256_text
 from ..core.constants import DEDUP_SECONDS
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
 
 
 def _row_to_item(row: sqlite3.Row) -> ItemDTO:
@@ -122,9 +123,17 @@ class ItemRepository:
             (job_id, self._now(), item_id))
         return job_id, item.edit_revision
 
-    def get_ocr_attempts(self, item_id: int) -> list:
+    def get_ocr_attempts(self, item_id: int, include_provenance: bool = True) -> list:
+        # The editor lists lightweight attempt metadata, then loads one payload.
+        columns = '*' if include_provenance else (
+            'job_id,item_id,status,engine,model_version,disposition,completed_at')
         return [dict(row) for row in self._conn.execute(
-            'SELECT * FROM ocr_attempts WHERE item_id=? ORDER BY rowid', (item_id,))]
+            f'SELECT {columns} FROM ocr_attempts WHERE item_id=? ORDER BY rowid', (item_id,))]
+
+    def get_ocr_attempt(self, item_id: int, job_id: str):
+        row = self._conn.execute(
+            'SELECT * FROM ocr_attempts WHERE item_id=? AND job_id=?', (item_id, job_id)).fetchone()
+        return dict(row) if row else None
 
     def update_ocr_result(self, item_id: int, result: OcrResultDTO) -> bool:
         working_result = replace(result)
@@ -219,13 +228,15 @@ class ItemRepository:
     @write_transaction
     def save_editor_content(self, item_id: int, text: str, richtext: str,
                             plaintext: str, expected_revision: int,
-                            update_text: bool = True, confirm_review: bool = True):
+                            update_text: bool = True, confirm_review: bool = True,
+                            expected_ocr_job_id=_UNSET, expected_ocr_text=_UNSET):
         """One transaction saves the draft, note, and review decision together."""
         item = self.get_by_id(item_id)
         if item is None or item.is_deleted:
             raise ValueError(f'Item {item_id} is deleted or no longer exists')
         if item.edit_revision != expected_revision:
             raise ValueError('文字已在另一個視窗更新；請重新開啟後再編輯')
+        self._check_ocr_snapshot(item, expected_ocr_job_id, expected_ocr_text)
         self._conn.execute(
             'UPDATE items SET edited_text=?,content_hash=?,edit_revision=edit_revision+1,updated_at=? WHERE id=?',
             (text if update_text else item.edited_text,
@@ -322,8 +333,21 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    @staticmethod
+    def _check_ocr_snapshot(item, expected_job, expected_text):
+        if ((expected_job is not _UNSET and item.ocr_job_id != expected_job) or
+                (expected_text is not _UNSET and item.text_content != expected_text)):
+            raise ValueError('OCR 已更新；請重新開啟確認最新結果，草稿尚未覆蓋')
+
     @write_transaction
-    def confirm_review(self, item_id: int):
+    def confirm_review(self, item_id: int, expected_revision=None,
+                       expected_ocr_job_id=_UNSET, expected_ocr_text=_UNSET):
+        item = self.get_by_id(item_id)
+        if item is None or item.is_deleted:
+            raise ValueError('項目已移除，無法確認')
+        if expected_revision is not None and item.edit_revision != expected_revision:
+            raise ValueError('文字已在另一個視窗更新；請重新開啟後再確認')
+        self._check_ocr_snapshot(item, expected_ocr_job_id, expected_ocr_text)
         now = self._now()
         self._conn.execute(
             "UPDATE items SET ocr_status='confirmed', updated_at=? WHERE id=? AND ocr_status='needs_review'",

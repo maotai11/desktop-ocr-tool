@@ -3,15 +3,14 @@ import copy
 import hashlib
 import io
 import json
-from pathlib import Path
-from urllib import error, parse
 import zipfile
+from urllib import error, parse
 
 import pytest
+from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts import publish_prerelease as publisher
 from scripts.verify_candidate_bundle import verify_candidate
-
 
 COMMIT = "a" * 40
 CONTEXT = publisher.RunnerContext(COMMIT, "1234", "1")
@@ -325,6 +324,9 @@ def test_redirects_are_refused_without_sending_authorization_elsewhere():
 
 @pytest.fixture
 def candidate(tmp_path, monkeypatch):
+    # Unit fixtures use the one explicitly approved candidate namespace.
+    from scripts import verify_candidate_bundle
+    monkeypatch.setattr(verify_candidate_bundle, 'VERSION', publisher.VERSION)
     for name, value in {"GITHUB_REPOSITORY": publisher.REPOSITORY, "GITHUB_RUN_ID": CONTEXT.run_id,
                         "GITHUB_RUN_ATTEMPT": CONTEXT.run_attempt}.items():
         monkeypatch.setenv(name, value)
@@ -340,19 +342,20 @@ def candidate(tmp_path, monkeypatch):
     encoded = lambda data: json.dumps(data, sort_keys=True).encode()
     source_bytes = encoded(source)
     exe = b"same-exe-fixture"
-    models = {key: {"sha256": hashlib.sha256(key.encode()).hexdigest(), "path": f"models/{key}.onnx"}
-              for key in ("det", "rec", "cls")}
+    profiles, _ = fixture_profiles()
+    models = profiles['v6-small']
     common = {"schema": 2, "passed": True, "frozen": True, "platform": "win32", "qt_platform": "windows",
               "version": publisher.VERSION, "clean_machine_verified": False, "database_integrity": "ok",
               "executable_sha256": hashlib.sha256(exe).hexdigest()}
-    probes = {"frozen-selftest.json": dict(common, probe="ocr_database", telemetry_env="1", models=models,
+    probes = {"frozen-selftest.json": dict(common, probe="ocr_database", telemetry_env="1", **profile_report(profiles),
                                          checks={"qt": True, "models": True, "ocr": True, "database": True}),
               "frozen-app-smoke.json": dict(common, probe="application_lifecycle", phase_a=True,
                                           engine_ready=True, shutdown_clean=True,
                                           threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True})}
     manifest = {"schema": 2, "platform": "win32", "version": publisher.VERSION,
                 "executable_name": publisher.EXE_NAME, "executable_sha256": hashlib.sha256(exe).hexdigest(),
-                "models": models, "source_manifest_sha256": hashlib.sha256(source_bytes).hexdigest(),
+                "models": models, "model_profiles": profiles, "default_model_profile": "v6-small",
+                "ocr_validation_fixtures": fixture_validation()[0], "source_manifest_sha256": hashlib.sha256(source_bytes).hexdigest(),
                 "source": {key: value for key, value in source.items() if key != "files"},
                 "clean_machine_gate": "NOT_RUN", "mixed_dpi_gate": "NOT_RUN",
                 "candidate_probes": {name: {"status": "PASSED", "sha256": hashlib.sha256(encoded(probe)).hexdigest()}
@@ -448,7 +451,7 @@ def test_preparation_rejects_wrong_run_stale_metadata_and_changed_bytes(candidat
 
 
 def test_preparation_refuses_dirty_source_even_if_hashes_are_consistent(candidate, tmp_path):
-    root, report, contents, write_bundle, save_report = candidate
+    root, report, contents, write_bundle, _save_report = candidate
     source = json.loads(contents["SOURCE_MANIFEST.json"])
     source["dirty"] = True
     contents["SOURCE_MANIFEST.json"] = json.dumps(source).encode()
@@ -508,9 +511,8 @@ def test_api_upload_streams_raw_bytes_and_checks_content_length(prepared):
 def test_duplicate_zip_members_are_rejected_before_preparing_outputs(candidate, tmp_path):
     root, report, contents, _, _ = candidate
     bundle = root / "artifacts" / publisher.ZIP_NAME
-    with pytest.warns(UserWarning, match="Duplicate"):
-        with zipfile.ZipFile(bundle, "a") as archive:
-            archive.writestr("release-" + publisher.TAG + "/SOURCE_MANIFEST.json", contents["SOURCE_MANIFEST.json"])
+    with pytest.warns(UserWarning, match="Duplicate"), zipfile.ZipFile(bundle, "a") as archive:
+        archive.writestr("release-" + publisher.TAG + "/SOURCE_MANIFEST.json", contents["SOURCE_MANIFEST.json"])
     bundle.with_suffix(".zip.sha256").write_text(publisher.sha256_file(bundle) + "  " + bundle.name)
     with pytest.raises(publisher.PublicationError, match="verification"):
         publisher.prepare_release(root, report, tmp_path / "upload", CONTEXT)
@@ -529,3 +531,25 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
     monkeypatch.setattr(verify_candidate_bundle, "verify_candidate", verify_then_mutate)
     with pytest.raises(publisher.PublicationError, match="changed during preparation"):
         publisher.prepare_release(root, report, tmp_path / "upload", CONTEXT)
+
+
+
+def test_other_candidate_marker_is_outside_publication_authorization(runner):
+    from src.core.version import APP_VERSION
+    env, event, path = runner
+    assert publisher.VERSION == '1.7.0-rc.1'
+    assert APP_VERSION == publisher.VERSION
+    event['head_commit']['message'] = 'publish-prerelease: v1.7.0-rc.2'
+    path.write_text(json.dumps(event))
+    with pytest.raises(publisher.PublicationError, match='marker'):
+        publisher.validate_runner_context(env)
+
+
+def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path):
+    root, report_path, _, _, _ = candidate
+    report = json.loads(report_path.read_text())
+    report['version'] = '1.7.0-rc.2'
+    report_path.write_text(json.dumps(report))
+    with pytest.raises(publisher.PublicationError, match='does not match this release/source'):
+        publisher.prepare_release(root, report_path, tmp_path / 'upload', CONTEXT)
+    assert not (tmp_path / 'upload').exists()

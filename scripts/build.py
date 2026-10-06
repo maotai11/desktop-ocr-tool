@@ -35,9 +35,30 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def bundled_model_profiles(root: Path):
+    from scripts.verify_candidate_bundle import check_profile_manifests, portable_models
+    from src.ocr.model_validator import MODEL_PROFILES, verified_model_manifest
+    profiles = {profile: portable_models(verified_model_manifest(root, profile=profile))
+                for profile in MODEL_PROFILES}
+    check_profile_manifests(profiles)
+    return profiles
+
+
+def bundled_validation_fixtures(root: Path):
+    from scripts.verify_candidate_bundle import check_validation_fixtures
+    directory = root / 'models/validation'
+    fixtures = json.loads((directory / 'fixtures.json').read_text(encoding='utf-8'))
+    check_validation_fixtures(fixtures)
+    for case in fixtures['cases']:
+        if sha256_file(directory / case['file']) != case['image_sha256']:
+            raise ValueError(f'Literal OCR fixture hash mismatch: {case["id"]}')
+    return fixtures
+
+
 def verify_models(root: Path) -> None:
-    from src.ocr.model_validator import verified_model_manifest
-    verified_model_manifest(root)
+    # Every selectable profile must already be available and verified offline.
+    bundled_model_profiles(root)
+    bundled_validation_fixtures(root)
 
 
 def source_manifest(root: Path):
@@ -137,18 +158,44 @@ def write_version_hook(paths):
         encoding='utf-8')
 
 
+def bundled_data_files(root: Path):
+    """Only ship locked profile assets and validation images, never baseline models."""
+    from importlib.util import find_spec
+
+    from src.ocr.model_validator import MODEL_PROFILES
+    profiles = bundled_model_profiles(root)
+    fixtures = bundled_validation_fixtures(root)
+    relative = {'models/' + name for name in MODEL_PROFILES.values()}
+    relative.update(info['path'] for models in profiles.values() for info in models.values())
+    relative.add('models/validation/fixtures.json')
+    relative.update('models/validation/' + case['file'] for case in fixtures['cases'])
+    files = [(root / name, str(Path(name).parent)) for name in sorted(relative)]
+    # RapidOCR reads its YAML before applying our explicit det/rec/cls paths.
+    # Its vendor models are intentionally absent: they must never become fallbacks.
+    spec = find_spec('rapidocr_onnxruntime')
+    if spec is None or not spec.submodule_search_locations:
+        raise RuntimeError('The pinned RapidOCR runtime is required to build')
+    config = Path(next(iter(spec.submodule_search_locations))) / 'config.yaml'
+    if not config.is_file():
+        raise RuntimeError('RapidOCR runtime config.yaml is missing')
+    files.append((config, 'rapidocr_onnxruntime'))
+    return files
+
+
 def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
     cmd = [sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm',
            '--onefile' if onefile else '--onedir', '--windowed', '--name', APP_NAME,
            '--paths', str(root), '--runtime-hook', str(root/'scripts/runtime_offline.py'),
            '--runtime-hook', str(paths['version_hook']),
-           '--add-data', f"{root/'models'}{os.pathsep}models",
-           '--collect-data', 'rapidocr_onnxruntime', '--collect-all', 'onnxruntime',
+           '--copy-metadata', 'rapidocr-onnxruntime',
+           '--copy-metadata', 'onnxruntime', '--collect-binaries', 'onnxruntime',
            '--collect-all', 'zhconv', '--collect-all', 'cv2',
            '--hidden-import', 'PySide6.QtCore', '--hidden-import', 'PySide6.QtGui',
            '--hidden-import', 'PySide6.QtWidgets', '--hidden-import', 'mss.windows',
            '--distpath', str(paths['dist_dir']), '--workpath', str(paths['build_dir']),
            '--specpath', str(paths['artifacts_dir'])]
+    for source, destination in bundled_data_files(root):
+        cmd += ['--add-data', f'{source}{os.pathsep}{destination}']
     for name in ('paddle', 'paddleocr', 'paddlex', 'torch', 'torchvision', 'cnocr',
                  'cnstd', 'pytest', 'IPython', 'matplotlib', 'tkinter'):
         cmd += ['--exclude-module', name]
@@ -163,6 +210,10 @@ def build_with_pyinstaller(root: Path, paths: dict[str, Path], onefile=True) -> 
         raise RuntimeError('This release driver packages one-file builds only')
     write_version_hook(paths)
     subprocess.run(pyinstaller_command(root, paths, onefile), cwd=root, check=True, timeout=900)
+    from scripts.verify_candidate_bundle import inspect_frozen_payload
+    # Reject accidental vendor/default/baseline ONNX additions before running an EXE.
+    inspect_frozen_payload(paths['out_exe'], bundled_model_profiles(root),
+                           validation_fixtures=bundled_validation_fixtures(root))
 
 
 def _run_probe(executable: Path, mode: str, report_path: Path, timeout=180):
@@ -189,7 +240,12 @@ def validate_candidate(paths):
     """Bounded integration gate on the exact EXE, never a clean-host claim."""
     reports = {}
     expected_hash = sha256_file(paths['out_exe'])
-    models = json.loads((ROOT / 'models/models.lock.json').read_text(encoding='utf-8'))
+    from scripts.verify_candidate_bundle import check_model_profiles
+    from src.ocr.model_validator import DEFAULT_MODEL_PROFILE
+    profiles = bundled_model_profiles(ROOT)
+    manifest = {'models': profiles[DEFAULT_MODEL_PROFILE], 'model_profiles': profiles,
+                'default_model_profile': DEFAULT_MODEL_PROFILE,
+                'ocr_validation_fixtures': bundled_validation_fixtures(ROOT)}
     for mode, name, probe in (('--self-test', 'frozen-selftest.json', 'ocr_database'),
                               ('--smoke-app', 'frozen-app-smoke.json', 'application_lifecycle')):
         report_path = paths['validation_dir'] / name
@@ -203,11 +259,12 @@ def validate_candidate(paths):
             raise RuntimeError(f'Invalid candidate report: {report_path}')
         if mode == '--self-test':
             if (report.get('telemetry_env') != '1' or report.get('database_integrity') != 'ok'
-                    or set(report.get('models', {})) != set(models)
-                    or any(report['models'][key].get('sha256') != info['sha256']
-                           for key, info in models.items())
                     or report.get('checks') != {"qt": True, "models": True, "ocr": True, "database": True}):
                 raise RuntimeError(f'Incomplete OCR/model gate: {report_path}')
+            try:
+                check_model_profiles(report, manifest)
+            except ValueError as exc:
+                raise RuntimeError(f'Incomplete OCR/model-profile gate: {report_path}: {exc}') from exc
         elif (report.get('phase_a') is not True or report.get('engine_ready') is not True
               or report.get('shutdown_clean') is not True
               or report.get('database_integrity') != 'ok'
@@ -239,6 +296,8 @@ def write_release_readme(path: Path) -> None:
 
 
 def package_release(paths: dict[str, Path], validation_reports=None, source=None) -> None:
+    from src.ocr.model_validator import DEFAULT_MODEL_PROFILE
+    profiles = bundled_model_profiles(ROOT)
     shutil.copy2(paths["out_exe"], paths["release_exe"])
     write_release_readme(paths["release_dir"] / "README.txt")
     from importlib import metadata
@@ -248,7 +307,10 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
     manifest = {"schema": 2, "version": APP_VERSION, "python": sys.version, "platform": sys.platform,
                     "executable_name": paths['release_exe'].name,
                     "executable_sha256": sha256_file(paths['release_exe']),
-                    "models": json.loads((ROOT/'models/models.lock.json').read_text()),
+                    "models": profiles[DEFAULT_MODEL_PROFILE],
+                    "default_model_profile": DEFAULT_MODEL_PROFILE,
+                    "model_profiles": profiles,
+                    "ocr_validation_fixtures": bundled_validation_fixtures(ROOT),
                     "build_environment_dependencies": {d.metadata['Name']:d.version for d in metadata.distributions()},
                     "source": {key: value for key, value in source.items() if key != 'files'},
                     "source_manifest_sha256": sha256_file(source_path),
@@ -261,7 +323,8 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
         manifest['dependency_inventory'] = {'status': 'RECORDED_NOT_A_TRUSTED_LOCK',
                                             'sha256': sha256_file(inventory)}
     (paths['release_dir']/'BUILD_MANIFEST.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
-    for name in ('README.md', 'PACKAGING_NOTES.md', 'SMOKE_TEST_CHECKLIST.md'):
+    for name in ('README.md', 'PACKAGING_NOTES.md', 'SMOKE_TEST_CHECKLIST.md',
+                 'THIRD_PARTY_NOTICES.md', 'LICENSE-APACHE-2.0.txt'):
         shutil.copy2(ROOT/name, paths['release_dir']/name)
     if (ROOT/'docs/VALIDATION_STATUS.md').exists():
         shutil.copy2(ROOT/'docs/VALIDATION_STATUS.md', paths['release_dir']/'VALIDATION_STATUS.md')

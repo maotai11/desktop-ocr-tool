@@ -139,7 +139,7 @@ def test_tile_plan_bounds_hidden_detector_resize(shape):
         assert end == length
 
 
-@pytest.mark.parametrize('shape', [(64, 256, 3), (960, 960, 3), (1080, 1920, 3)])
+@pytest.mark.parametrize('shape', [(128, 256, 3), (960, 960, 3), (1080, 1920, 3)])
 def test_ordinary_images_keep_established_pipeline(shape):
     assert plan_ocr_tiles(shape) == []
 
@@ -257,7 +257,7 @@ def test_encoded_size_is_checked_before_header_or_decode(tmp_path):
 
 def test_unicode_path_still_decodes(monkeypatch, tmp_path):
     path = tmp_path / '臺灣𠮷.png'
-    Image.new('RGB', (64, 64), 'white').save(path)
+    Image.new('RGB', (256, 256), 'white').save(path)
     engine = ready(enable_second_pass=False)
     monkeypatch.setattr(engine, '_do_ocr_array', lambda image: [raw('保留')])
     assert engine.run_ocr_from_path(str(path))['text'] == '保留'
@@ -285,7 +285,8 @@ def test_raw_hypotheses_and_conflict_survive_conversion(monkeypatch):
     monkeypatch.setattr(engine, '_do_ocr_array', lambda image: next(outputs))
     result = engine.run_ocr(np.zeros((960, 960, 3), np.uint8))
     assert result['status'] == 'needs_review'
-    assert result['text'] == '臺灣稅務申報'
+    # Higher confidence alone must not replace a conflicting prior transcript.
+    assert result['text'] == '臺灣'
     assert result['hypotheses']['first_pass'][0]['raw_text'] == '台湾'
     assert result['hypotheses']['second_pass'][0]['raw_text'] == '臺灣稅務申報'
     assert any('disagrees' in warning for warning in result['warnings'])

@@ -26,14 +26,16 @@ DEFAULT_SETTINGS = {
         "save_raw_image": True
     },
     "ocr": {
+        "model_profile": "v6-small",
         "engine": "onnxruntime",
-        "model_det": "models/det/pp-ocrv4_det.onnx",
-        "model_rec": "models/rec/pp-ocrv4_rec.onnx",
+        "model_det": "models/det/pp-ocrv6_det_small.onnx",
+        "model_rec": "models/rec/pp-ocrv6_rec_small.onnx",
         "model_cls": "models/cls/pp-ocrv4_cls.onnx",
         "language": "chinese_cht",
         "confidence_accept": 0.85,
         "confidence_review": 0.60,
         "enable_second_pass": True,
+        "max_ocr_passes": 2,
         "enable_handwriting_mode": False,
         "max_image_short_side": 960,
         "primary_engine": "rapidocr",
@@ -116,6 +118,12 @@ class ConfigManager:
             with open(self._settings_path, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
             self._data = self._merge(DEFAULT_SETTINGS, loaded)
+            # The previous UI allowed 2048 although the bounded pipeline stops at 1920.
+            # Keep the user's other settings and data intact.
+            short_side = self._data['ocr'].get('max_image_short_side')
+            if isinstance(short_side, (int, float)) and 1920 < short_side <= 2048:
+                self._data['ocr']['max_image_short_side'] = 1920
+                self.save()
             logger.info("設定檔載入成功")
         except Exception as e:
             backup = self._settings_path + '.bak'

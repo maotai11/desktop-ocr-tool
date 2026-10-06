@@ -1,51 +1,51 @@
-# Windows 離線交付候選
+# Windows 離線成品建置
 
-本次沿用既有 Core one-file 交付路徑；沒有選擇或自動部署 optional engine 架構。`scripts/build.py` 在 Windows 上執行 PyInstaller，將 Python、Qt、ORT、RapidOCR、三個經 hash 校驗的 ONNX 模型及必要資源封裝。Linux 不產出 Windows EXE。
+版本：1.7.0-rc.1 候選。只能在 Windows 建置 Windows EXE；Linux 原始碼測試不能證明 Windows 成品可用。
+
+## 準備與建置
+
+在有網路的 Windows x64 建置機使用 Python 3.12：
 
 ```powershell
 python -m pip install -r requirements-dev.txt
+python scripts/prepare_models.py
 python -m pytest -q
 python src/main.py --self-test source-selftest.json
 python src/main.py --smoke-app source-app-smoke.json
 python scripts/build.py
 ```
 
-輸出：`artifacts/DesktopOCRTool-v1.6.2-rc.2.zip`、SHA256、release 目錄、`BUILD_MANIFEST.json`、`SOURCE_MANIFEST.json`及`Validate-Candidate.ps1`。建置時的 `DESKTOP_OCR_VERSION` 經格式驗證並烘入runtime hook；使用者機器的環境值不會重新命名已建好的版本，但版本字串不能替代驗收。解壓至一般使用者可寫入的資料夾；不要以系統管理員執行。設定、data、logs 儲存在 EXE 所在目錄，one-file 的 `_MEIPASS` 暫存只放解包後執行資源。
+prepare_models 只用在建置／開發階段，依 manifest 下載固定官方模型並驗證 SHA256 與大小。既有檔案 hash 不符會失敗，不擅自覆寫。目標電腦執行 EXE 時沒有下載步驟。
 
-內含的 runtime hook 在 application import 前停用 ORT telemetry。模型校驗缺檔、manifest 缺漏或 hash 不符均拒絕載入。此 hash 可偵測意外損壞；同時修改 EXE 與 manifest 的攻擊仍需可信簽章／發佈來源驗證。
+## 內含內容
 
-`--collect-*`、`--hidden-import` 不再包含同時被排除的 Paddle 套件。依賴版本固定在 requirements；尚未完成所有平台 wheel 的 hash lock 及授權清單驗收，不能宣稱 supply chain 已封閉。PyInstaller 可攜程式仍依賴 Windows 系統元件，不可把開發機成功當成乾淨電腦成功。
+- Python、Qt、ONNX Runtime、RapidOCR 程式與必要資源
+- v6 Small detector、v6 Small／Medium recognizer、固定方向分類輔助模型
+- 兩組模型 manifest、固定繁中／金額／日期/API 圖片與正解
+- 模型版號、SHA256、有序字表及 tensor 契約驗證
 
-## rc.2 build/integration gate
+使用明確的檔案白名單，沒有整包收進 vendor 的 v4 預設權重、ORT demo ONNX 或其他實驗模型。兩組文字辨識都用 v6，不會在錯誤時回退舊文字模型。
 
-Build在ZIP前對同一EXE執行有界self-test與full-app startup/shutdown，核對schema2、baked version、qwindows、EXE SHA256、模型hashes、SQLite及所有worker停止。SOURCE_MANIFEST記錄commit、tree、每個來源檔案hash及working-tree digest。失敗不產出新的交付ZIP。
+## 成品驗證
 
-CI先建立wheelhouse並記錄archive SHA256，再從local wheels安裝／pip check。這是當次resolved input inventory，尚不是獨立可信的dependency hash lock／license審查。
+建置後先檢查實際 PyInstaller payload，再對同一 EXE 執行 OCR／SQLite 及 app lifecycle probes。三張固定圖片逐字比較，保留空格與大小寫；兩個 profile 都必須通過。缺少模型、Runtime metadata、字表不符、來源hash不符或多出未允許的 ONNX，均不能產生通過的候選。
 
-解壓後可用系統PowerShell執行（無需Python／pip／下載／提權）：
+GitHub Actions 另在 Windows 對該 EXE 設 outbound firewall block，重跑兩種 probes，核對 ZIP、EXE、source commit、model hashes 與同一份 test results。
+
+輸出位於 artifacts：版本化 ZIP、EXE、BUILD_MANIFEST、SOURCE_MANIFEST、SHA256、候選驗證報告及授權說明。
+
+解壓後可在一般使用者權限執行：
 
 ```powershell
 .\Validate-Candidate.ps1 -BundleDirectory . -ReportDirectory .\candidate-check
 ```
 
-脚本核對manifest／EXE／source manifest並執行兩種probe；輸出`candidate-gate.json`，保持`clean_machine_verified=false`。這只能驗候選probe，仍須另外記錄機器安裝／快取／斷網及完整UI工作流程。
+這是候選一致性檢查，不是完整的乾淨機器或 UI 驗收。
 
-## 候選與正式版的界線
+## 尚未代替的驗收
 
-GitHub Actions 會在 Linux／Windows 執行測試，Windows 建置 EXE，並針對該 EXE 加入 outbound firewall block 後執行self-test及full-app lifecycle probe。Runner 不是乾淨使用者電腦；此紀錄僅屬 build/integration gate。成品需另外在無 Python、無 pip、無 OCR 快取、斷網的 Windows VM，以一般使用者執行完整流程。記錄 OS build、CPU 架構、ZIP／EXE SHA256、測試結果及網路事件。
+Windows runner 已安裝的系統元件可能掩蓋 DLL 依賴。仍需真正無 Python／pip／模型快取、斷網、一般使用者的 Windows VM，測冷啟動／第二次啟動、中文含空白路徑、框選、編輯、候選確認、匯出及退出。
 
-## Optional engine 架構尚待選擇
+混合 DPI、多螢幕、RDP／休眠及 native inference 永久不返回時的程序隔離仍未完成。NOT_RUN 項目必須留在報告，不得因 CI 成功就改成完成。
 
-| 方案 | 必須交付及驗證 |
-|---|---|
-| Core | 目前固定 RapidOCR v4；先完成乾淨機器 gate |
-| Full | 另包 Paddle native runtime、精確模型及授權；量測 EXE/RSS/冷啟動 |
-| Plugin | 定義受驗證的獨立程序協定、版本與資產簽章；host pip 不是 plugin |
-| Onedir | 可降低重複解包成本；需測完整資料夾搬移、DLL 路徑、更新原子性 |
-| 另載引擎 | 在有網路的準備機下載並驗證完整離線包，搬入目標機；不可要求目標機首次連網 |
-
-沒有選定模型遷移方案。Phase 2 的 v6 recognition 結果包含已知回退，須先通過模型 gate。
-
-參考原始文件：
-- https://www.pyinstaller.org/en/stable/operating-mode.html
-- https://www.pyinstaller.org/en/stable/runtime-information.html
+發佈 job 只接受此 repository、fix/ocr-model-upgrade 分支及精確的 publish-prerelease: v1.7.0-rc.1 commit marker，並只取同一 run 通過驗證的成品。普通 push／PR 不會發佈。

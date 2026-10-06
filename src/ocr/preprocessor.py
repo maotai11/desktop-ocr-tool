@@ -60,6 +60,16 @@ def plan_ocr_tiles(shape, min_short_side=960):
         raise ValueError('max_image_short_side must be between 32 and 1920')
     h, w = map(int, shape[:2])
     short = min(h, w)
+    # A tightly selected word must not be enlarged 40-100x merely to satisfy
+    # a detector's minimum side. Keep its information intact at <=3x, then
+    # supply background context rather than extending boundary ink strokes.
+    if short < 128 and max(h, w) <= 512:
+        rw, rh = w * 3, h * 3
+        pw, ph = max(DETECTOR_MIN_SIDE, rw), max(DETECTOR_MIN_SIDE, rh)
+        return [dict(source_xywh=[0, 0, w, h], resized_hw=[rh, rw],
+                     inference_hw=[ph, pw], scale_xy=[3., 3.],
+                     padding_xy=[(pw - rw) // 2, (ph - rh) // 2],
+                     padding_mode='border_median', strategy='bounded_small_region')]
     old_scale = min_short_side / short if short < min_short_side else (
         1920 / short if short > 1920 else 1.0)
     if (max(h, w) <= 2000 and h * w * old_scale ** 2 <= 16_000_000
@@ -96,14 +106,40 @@ def plan_ocr_tiles(shape, min_short_side=960):
     return tiles
 
 
+def small_region_padding_color(image):
+    """Change added padding only; never erase border or source text pixels.
+
+    A completely uniform closed frame can dominate the perimeter while its
+    uniform interior is the actual background. Content-bearing frames stay on
+    the original edge-median path, including single-stroke and box characters.
+    """
+    edges = np.concatenate((image[0], image[-1], image[:, 0], image[:, -1]), axis=0)
+    border = np.median(edges, axis=0)
+    color, reason = border, 'edge_median'
+    if min(image.shape[:2]) >= 3 and np.all(np.ptp(edges.astype(np.int16), axis=0) == 0):
+        interior = image[1:-1, 1:-1].reshape(-1, 3)
+        background = np.median(interior, axis=0)
+        uniform = np.all(np.ptp(interior.astype(np.int16), axis=0) == 0)
+        if uniform and np.max(np.abs(background - border)) >= 32:
+            color, reason = background, 'closed_perimeter_uniform_interior'
+    return tuple(float(v) for v in color), reason
+
+
 def prepare_ocr_tile(image, tile):
-    """Materialize one bounded BGR tile with edge-replicated padding."""
+    """Materialize one bounded tile; small ROIs avoid extending edge strokes."""
     import cv2
     x, y, w, h = tile['source_xywh']
     rh, rw = tile['resized_hw']
     ph, pw = tile['inference_hw']
     px, py = tile['padding_xy']
-    crop = cv2.resize(image[y:y + h, x:x + w], (rw, rh), interpolation=cv2.INTER_CUBIC)
+    source = image[y:y + h, x:x + w]
+    crop = cv2.resize(source, (rw, rh), interpolation=cv2.INTER_CUBIC)
+    if tile.get('padding_mode') == 'border_median':
+        background, reason = small_region_padding_color(source)
+        tile['padding_color_bgr'] = list(background)
+        tile['padding_color_reason'] = reason
+        return cv2.copyMakeBorder(crop, py, ph - rh - py, px, pw - rw - px,
+                                 cv2.BORDER_CONSTANT, value=background)
     return cv2.copyMakeBorder(crop, py, ph - rh - py, px, pw - rw - px,
                               cv2.BORDER_REPLICATE)
 

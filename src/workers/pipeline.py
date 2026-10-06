@@ -102,11 +102,14 @@ class Pipeline(QObject):
             self.widget.set_ocr_progress(0)
         if result.status == 'failed' or not result.text:
             self.widget.set_ocr_status(f'OCR #{item_id} 失敗；已保留先前文字')
+        elif result.status == 'needs_review' or item.ocr_status == 'needs_review':
+            self.widget.set_ocr_status(f'OCR #{item_id} 待確認；請核對候選與原圖')
         else:
             self.widget.set_ocr_status(f'OCR #{item_id} 完成')
             if (not self.closing and item.edited_text is None and
                     item.edit_revision == result.base_edit_revision and
-                    result.status in ('done', 'needs_review', 'confirmed')):
+                    result.status in ('done', 'confirmed') and
+                    item.ocr_status in ('done', 'confirmed')):
                 from ..clipboard.writer import write_text_to_clipboard
                 write_text_to_clipboard(item.get_effective_text())
 

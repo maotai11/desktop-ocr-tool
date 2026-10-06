@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import hashlib
 import time
 import cv2
 import numpy as np
@@ -9,6 +10,7 @@ from .preprocess import enhance_for_ocr, upscale_if_small
 from .preprocessor import (plan_ocr_tiles, prepare_ocr_tile, restore_tile_results,
                            validate_image_shape, MAX_ENCODED_BYTES)
 from .secondary_engine import SecondaryEngineBase, NullSecondaryEngine
+from .model_validator import DEFAULT_MODEL_PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ except ImportError:
 
 
 class OcrEngine:
-    """OCR 引擎，使用 RapidOCR PP-OCRv4（ONNX Runtime，離線輕量）。"""
+    """Offline RapidOCR with explicit, verified and reversible model profiles."""
 
     # 預設值；Patch 9D 會改由 config 傳入
     _DEFAULT_MAX_SHORT_SIDE = 960
@@ -34,11 +36,16 @@ class OcrEngine:
                  confidence_review: float = 0.60,
                  max_image_short_side: int = _DEFAULT_MAX_SHORT_SIDE,
                  enable_second_pass: bool = _DEFAULT_SECOND_PASS,
-                 enable_handwriting_mode: bool = _DEFAULT_HANDWRITING):
+                 enable_handwriting_mode: bool = _DEFAULT_HANDWRITING,
+                 model_profile: str = DEFAULT_MODEL_PROFILE,
+                 max_ocr_passes: int = 2):
+        self.model_profile = model_profile
+        self.model_identity = {}
         self._confidence_accept = confidence_accept
         self._confidence_review = confidence_review
         self._max_short_side = max_image_short_side
         self._enable_second_pass = enable_second_pass
+        self._max_ocr_passes = self._validate_pass_limit(max_ocr_passes)
         self._enable_handwriting = enable_handwriting_mode
         self._engine = None
         self._ready = False
@@ -60,22 +67,35 @@ class OcrEngine:
             if progress_cb:
                 progress_cb(pct, msg)
 
-        logger.info("開始載入 OCR 引擎 [RapidOCR PP-OCRv4]...")
+        self._ready = False
+        self._engine = None
+        logger.info("開始載入 OCR 引擎 [RapidOCR %s]...", self.model_profile)
         _progress(0, "初始化...")
         t0 = time.time()
 
-        _progress(20, "載入 RapidOCR PP-OCRv4 (ONNX)...")
+        _progress(20, f"載入 RapidOCR {self.model_profile} (ONNX)...")
         # Opt out before importing the wrapper or creating any ORT session.
         import onnxruntime as ort
         ort.disable_telemetry_events()
-        from .model_validator import verified_model_manifest
-        manifest = verified_model_manifest()
+        from .model_validator import verified_model_manifest, verify_recognizer_identity
+        from .bounded_recognizer import BoundedRecognizer
+        from importlib.metadata import version
+        manifest = verified_model_manifest(profile=self.model_profile)
         from rapidocr_onnxruntime import RapidOCR
-        self._engine = RapidOCR(**{f'{key}_model_path': info['absolute_path']
+        engine = RapidOCR(**{f'{key}_model_path': info['absolute_path']
                                   for key, info in manifest.items()},
-                                intra_op_num_threads=2, inter_op_num_threads=1)
-        self._model_version = ';'.join(f'{key}:{info["sha256"]}' for key,info in sorted(manifest.items()))
-        logger.info("RapidOCR PP-OCRv4 引擎已建立")
+                                intra_op_num_threads=2, inter_op_num_threads=1,
+                                rec_batch_num=1, rec_img_shape=[3, 48, 320])
+        identity = verify_recognizer_identity(engine.text_rec, manifest['rec'])
+        engine.text_rec = BoundedRecognizer(engine.text_rec)
+        self.model_identity = {'profile': self.model_profile, 'runtime': 'rapidocr_onnxruntime',
+                               'runtime_version': version('rapidocr-onnxruntime'),
+                               'recognition': identity, 'recognition_batch': 1,
+                               'max_recognition_width': BoundedRecognizer.MAX_WIDTH}
+        self._engine = engine
+        self._model_version = self.model_profile + ';' + ';'.join(
+            f'{key}:{info["version"]}:{info["sha256"]}' for key,info in sorted(manifest.items()))
+        logger.info("RapidOCR %s 引擎已建立", self.model_profile)
 
         _progress(90, "暖機推論...")
         dummy = np.zeros((64, 256, 3), dtype=np.uint8)
@@ -122,6 +142,8 @@ class OcrEngine:
             self._max_short_side = int(kwargs['max_image_short_side'])
         if 'enable_second_pass' in kwargs:
             self._enable_second_pass = bool(kwargs['enable_second_pass'])
+        if 'max_ocr_passes' in kwargs:
+            self._max_ocr_passes = self._validate_pass_limit(kwargs['max_ocr_passes'])
         if 'enable_handwriting_mode' in kwargs:
             self._enable_handwriting = bool(kwargs['enable_handwriting_mode'])
         if 'confidence_accept' in kwargs:
@@ -141,6 +163,9 @@ class OcrEngine:
 
     def run_ocr(self, image: np.ndarray, mode: str = 'screen') -> dict:
         started = time.monotonic()
+        recognizer = getattr(self._engine, 'text_rec', None)
+        if hasattr(recognizer, 'reset_budget'):
+            recognizer.reset_budget()
         try:
             if not isinstance(image, np.ndarray):
                 raise ValueError('OCR input must be a NumPy image')
@@ -195,11 +220,13 @@ class OcrEngine:
                 row['text_source'] = 'tile_fusion'
             engines = sorted({r['engine'] for r in tile_evidence})
             versions = sorted({r['model_version'] for r in tile_evidence})
+            small_region = len(tiles) == 1 and tiles[0].get('strategy') == 'bounded_small_region'
             final.update(engine=engines[0] if len(engines) == 1 else 'mixed:' + ','.join(engines),
                          model_version='|'.join(versions),
-                         warnings=['Tiled OCR: review text at tile boundaries'] + warnings,
+                         warnings=[('Small-region OCR: review characters touching the selection boundary'
+                                    if small_region else 'Tiled OCR: review text at tile boundaries')] + warnings,
                          hypotheses={'tiles': tile_hypotheses},
-                         preprocessing={'strategy': 'overlapping_tiles',
+                         preprocessing={'strategy': 'bounded_small_region' if small_region else 'overlapping_tiles',
                                         'source_hw': list(image.shape[:2]), 'tiles': tile_evidence})
             return final
         except Exception as exc:
@@ -221,45 +248,95 @@ class OcrEngine:
             if not preprocessed:
                 image = upscale_if_small(image, self._max_short_side)
             warnings = []
-            hypotheses = {}
+            hypotheses = {'pass_metadata': {}, 'retry_policy': {
+                'max_passes': self._max_ocr_passes if self._enable_second_pass else 1,
+                'selection': 'retain_prior_text_on_conflict',
+                'confidence_is_accuracy': False}}
+            metadata = hypotheses['pass_metadata']
 
-            # Step 2: 第一次推論（raw BGR） (50%)
             if self._progress_callback and not preprocessed:
                 self._progress_callback(30, "文字辨識中...")
+            first_started = time.monotonic()
             try:
                 results = self._do_ocr_array(image)
             except Exception as primary_error:
-                failed = dict(text='',confidence=0.,status='failed',error=str(primary_error))
+                failed = dict(text='', confidence=0., status='failed', error=str(primary_error))
                 if self._should_use_secondary(failed, mode):
-                    candidate = self._secondary.recognize(image,mode)
-                    if self._is_better(candidate,failed):
+                    candidate = self._secondary.recognize(image, mode)
+                    if self._is_better(candidate, failed):
                         candidate.update(engine=self._secondary.name,
                                          elapsed_ms=int((time.time()-t0)*1000))
-                        candidate.setdefault('model_version','unknown')
+                        candidate.setdefault('model_version', 'unknown')
                         return self._original_coordinates(candidate, original_hw, image.shape[:2])
                 raise
 
             hypotheses['first_pass'] = self._snapshot_results(results)
-
-            # Step 3: 判斷是否需要 second pass (70%)
-            needs_second = self._enable_second_pass and self._should_retry(results)
-            if needs_second:
+            metadata['first_pass'] = {'variant': 'original_bgr', 'reason': ['initial'],
+                                      'outcome': 'completed',
+                                      'elapsed_ms': int((time.monotonic()-first_started)*1000)}
+            initial_reasons = self._retry_reasons(results)
+            conflicts = False
+            last_retry_error = None
+            pass_limit = self._max_ocr_passes if self._enable_second_pass else 1
+            # Fingerprints avoid holding two enhanced images at once. Every
+            # variant keeps the same bounded image shape and recognition budget.
+            seen_images = {self._image_fingerprint(image)}
+            for pass_number in range(2, pass_limit + 1):
+                reasons = self._retry_reasons(results)
+                if conflicts:
+                    reasons.append('conflicting_text')
+                if not reasons:
+                    break
+                pass_name = ('second_pass', 'third_pass')[pass_number - 2]
+                binarize = self._enable_handwriting or mode == 'handwriting'
+                variant = ('clahe_denoise_otsu' if binarize else 'clahe_denoise') if pass_number == 2 else (
+                    'grayscale_unsharp' if binarize else 'grayscale_otsu')
+                metadata[pass_name] = {'variant': variant, 'reason': reasons, 'outcome': 'started'}
                 if self._progress_callback and not preprocessed:
-                    self._progress_callback(60, "二次辨識中...")
-                binarize = self._enable_handwriting or (mode == 'handwriting')
+                    self._progress_callback(50 + 10 * pass_number, f'第 {pass_number}/{pass_limit} 次辨識...')
+                retry_started = time.monotonic()
+                enhanced = None
                 try:
-                    enhanced = enhance_for_ocr(image, binarize=binarize)
-                    results2 = self._do_ocr_array(enhanced)
-                    hypotheses['second_pass'] = self._snapshot_results(results2)
-                    if has_text_conflicts(results, results2):
-                        warnings.append('Overlapping first/second-pass text disagrees; review raw hypotheses')
-                    results = self._merge_results(results, results2)
-                    logger.debug("OCR second-pass 觸發，合併後 %d 筆", len(results))
+                    enhanced = (enhance_for_ocr(image, binarize=binarize) if pass_number == 2
+                                else self._third_pass_image(image, binarize))
+                    fingerprint = self._image_fingerprint(enhanced)
+                    if fingerprint in seen_images:
+                        metadata[pass_name]['outcome'] = 'skipped_identical_image'
+                        continue
+                    seen_images.add(fingerprint)
+                    candidate = self._do_ocr_array(enhanced)
+                    hypotheses[pass_name] = self._snapshot_results(candidate)
+                    disagree = has_text_conflicts(results, candidate)
+                    conflicts = conflicts or disagree
+                    metadata[pass_name].update(outcome='completed', conflict=disagree,
+                                               selection='prior_retained' if disagree else 'compatible_merge')
+                    if disagree:
+                        # Confidence is not an accuracy certificate. In particular,
+                        # never auto-replace amounts, dates, names or rare glyphs
+                        # merely because a correlated retry reports a higher score.
+                        warnings.append(f'{pass_name}: overlapping text disagrees; prior text retained for review')
+                    else:
+                        results = self._merge_results(results, candidate)
                 except Exception as retry_error:
-                    logger.warning('二次辨識失敗，保留第一次結果: %s', retry_error)
-                    if not results:
-                        raise
-                    warnings.append(f'Second pass failed; first-pass text retained: {retry_error}')
+                    last_retry_error = retry_error
+                    metadata[pass_name].update(outcome='failed', error=str(retry_error))
+                    logger.warning('%s failed; retaining earlier text: %s', pass_name, retry_error)
+                    warnings.append(f'{pass_name}: retry failed; first-pass text retained: {retry_error}')
+                    # A budget rejection is not permission to reset and try again.
+                    # Stop on errors, retaining useful text and all prior evidence.
+                    break
+                finally:
+                    metadata[pass_name]['elapsed_ms'] = int((time.monotonic()-retry_started)*1000)
+                    del enhanced
+            if last_retry_error is not None and not results:
+                return {'text': '', 'confidence': 0., 'status': 'failed', 'detail': [],
+                        'elapsed_ms': int((time.time()-t0)*1000), 'error': str(last_retry_error),
+                        'hypotheses': hypotheses, 'warnings': warnings,
+                        'engine': 'rapidocr_onnxruntime', 'model_version': self._model_version}
+            # A weak first reading remains visibly unconfirmed, even when a
+            # correlated retry agrees. Confidence scores are not measured accuracy.
+            if initial_reasons:
+                warnings.append('Initial OCR needs review: ' + ', '.join(initial_reasons))
 
             # Step 4: 合併結果 (90%)
             if self._progress_callback and not preprocessed:
@@ -280,14 +357,22 @@ class OcrEngine:
                 except Exception:
                     logger.exception('第二引擎失敗，保留第一引擎結果')
                     secondary_result = {'text':'', 'status':'failed'}
-                # 若第二引擎有更好的結果，採用之；否則保留主引擎結果
-                if self._is_better(secondary_result, primary_result):
+                hypotheses['secondary'] = secondary_result.get('detail', [])
+                metadata['secondary'] = {'variant': self._secondary.name,
+                    'reason': ['secondary_fallback'], 'outcome': secondary_result.get('status', 'unknown')}
+                # Provider scores are not calibrated across engines. Keep the
+                # first useful transcript whenever the provider disagrees.
+                if primary_result.get('text') and secondary_result.get('text') != primary_result['text']:
+                    if secondary_result.get('text'):
+                        warnings.append('Secondary engine text disagrees; prior text retained for review')
+                        primary_result.update(status='needs_review', warnings=warnings)
+                elif self._is_better(secondary_result, primary_result):
                     secondary_result['elapsed_ms'] = int((time.time() - t0) * 1000)
                     secondary_result['engine'] = self._secondary.name
                     secondary_result.setdefault('model_version', 'unknown')
-                    secondary_result['hypotheses'] = dict(hypotheses, secondary=secondary_result.get('detail', []))
-                    logger.debug("第二引擎結果較優 (conf=%.3f > %.3f)，採用",
-                                 secondary_result['confidence'], primary_result['confidence'])
+                    secondary_result['hypotheses'] = hypotheses
+                    if warnings:
+                        secondary_result.update(status='needs_review', warnings=warnings)
                     return self._original_coordinates(secondary_result, original_hw, image.shape[:2])
                 logger.debug("第二引擎結果未優於主引擎，保留主引擎結果")
 
@@ -388,22 +473,44 @@ class OcrEngine:
             'elapsed_ms': elapsed_ms
         }
 
+    @staticmethod
+    def _validate_pass_limit(value):
+        if isinstance(value, bool) or not isinstance(value, int) or value not in (1, 2, 3):
+            raise ValueError('max_ocr_passes must be 1, 2 or 3')
+        return value
+
+    @staticmethod
+    def _image_fingerprint(image):
+        return hashlib.sha256(memoryview(np.ascontiguousarray(image))).digest()
+
+    @staticmethod
+    def _third_pass_image(image, previous_binarized=False):
+        """Independent, same-size variant; no enlarged tensors or extra model."""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if previous_binarized:
+            blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+            variant = cv2.addWeighted(gray, 1.5, blurred, -.5, 0)
+        else:
+            _, variant = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return cv2.cvtColor(variant, cv2.COLOR_GRAY2BGR)
+
+    def _retry_reasons(self, results):
+        rows = self._snapshot_results(results)
+        usable = [row for row in rows if row['raw_text'] and .1 < row['confidence'] <= 1.]
+        if not usable:
+            return ['empty_text']
+        confs = [row['confidence'] for row in usable]
+        reasons = []
+        raw_count = sum(item is not None for item in results)
+        if len(usable) != len(rows) or len(rows) != raw_count or min(confs) < self._confidence_review:
+            reasons.append('weak_region')
+        if sum(confs) / len(confs) < self._confidence_accept:
+            reasons.append('low_average_confidence')
+        return reasons
+
     def _should_retry(self, results) -> bool:
-        """Retry empty output or any weak region; a page average can hide rare glyphs."""
-        if not results:
-            return True
-        confs = []
-        for item in results:
-            if item is None:
-                continue
-            try:
-                conf = float(item[2]) if len(item) >= 3 else float(item[1][1])
-                confs.append(conf)
-            except Exception:
-                continue
-        if not confs:
-            return True
-        return any(not np.isfinite(c) or c < self._confidence_review for c in confs)
+        """Retry an empty output, low mean confidence, or any weak region."""
+        return bool(self._retry_reasons(results))
 
     def _should_use_secondary(self, primary_result: dict, mode: str) -> bool:
         """Patch H1/H3: 決定是否啟動第二引擎 fallback。

@@ -11,9 +11,9 @@ def test_publish_workflow_is_fixed_push_only_and_job_scoped():
     job = workflow['jobs']['publish_prerelease']
     assert job['needs'] == 'validate'
     assert job['permissions'] == {'contents': 'write', 'actions': 'read'}
-    for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/fix/offline-release-hardening'",
+    for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/fix/ocr-model-upgrade'",
                    "github.repository == 'maotai11/desktop-ocr-tool'",
-                   "github.event.head_commit.message == 'publish-prerelease: v1.6.2-rc.2'"):
+                   "github.event.head_commit.message == 'publish-prerelease: v1.7.0-rc.1'"):
         assert clause in job['if']
     assert job['steps'][0]['with']['ref'] == '${{ github.sha }}'
     assert job['steps'][0]['with']['persist-credentials'] == 'false'

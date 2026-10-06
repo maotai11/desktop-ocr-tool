@@ -220,7 +220,7 @@ class TestRunOcrFastPath:
         # configure(enable_secondary_engine=True) 未呼叫 → 開關維持預設 False
         eng._engine = MagicMock(return_value=(self._make_rapid_result(), None))  # test seam
 
-        result = eng.run_ocr(np.zeros((64, 256, 3), np.uint8), 'screen')
+        result = eng.run_ocr(np.zeros((128, 256, 3), np.uint8), 'screen')
         assert result['status'] == 'done'
         assert fake.call_count == 0
 
@@ -237,7 +237,7 @@ class TestRunOcrFastPath:
         eng.configure(enable_secondary_engine=True)   # public API
         eng._engine = MagicMock(return_value=([], None))  # test seam
 
-        result = eng.run_ocr(np.zeros((64, 256, 3), np.uint8), 'screen')
+        result = eng.run_ocr(np.zeros((128, 256, 3), np.uint8), 'screen')
         assert fake.call_count == 1
         assert result['text'] == '手寫識別結果'
         assert result['confidence'] == pytest.approx(0.88)
@@ -265,6 +265,6 @@ class TestRunOcrFastPath:
         )
         eng._engine = MagicMock(return_value=(primary_raw, None))  # test seam
 
-        result = eng.run_ocr(np.zeros((64, 256, 3), np.uint8), 'screen')
+        result = eng.run_ocr(np.zeros((128, 256, 3), np.uint8), 'screen')
         assert fake.call_count == 1
         assert '主引擎文字' in result['text']

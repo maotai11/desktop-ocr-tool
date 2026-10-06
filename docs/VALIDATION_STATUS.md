@@ -1,3 +1,9 @@
+# 1.7.0-rc.1 更新
+
+2026-10-06：新版本已改為可選 PP-OCRv6 Small／Medium 辨字、Small 找字；不提供舊文字模型 fallback。新增小ROI背景補邊及有上限的待確認重辨。當前驗證與限制見 [升級報告](OCR_UPGRADE_20261006.md)；Windows frozen／乾淨機器 gate 依最終同一commit報告判定。
+
+以下為 1.6.2-rc.2 歷史紀錄，不代表新v6成品已驗收：
+
 # v1.6.2-rc.2 預發布啟用候選
 
 384本機tests passed、0 failed、0 skipped，9.03s；包含68個mocked publication contracts，沒有用mock tests冒充live GitHub發佈。前一dcad28c的push/PR Windows與Linux CI已成功，native Windows297 passed、2 POSIX-only skips，source/frozen/firewall全部passed；本次新增payload／ZIP byte核對與固定版本發布流程後，必須再次同一SHA native驗證。

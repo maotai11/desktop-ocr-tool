@@ -35,6 +35,8 @@ jobs:
           python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt
           python -m pip check
           python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
+      - name: Prepare pinned offline model payload
+        run: python scripts/prepare_models.py
       - run: python -m pytest -q --junitxml=test-results.xml
       - run: python src/main.py --self-test source-selftest.json
       - run: python src/main.py --smoke-app source-app-smoke.json
@@ -53,6 +55,16 @@ jobs:
           try {
             & ./scripts/validate_windows_bundle.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
             if ($LASTEXITCODE -ne 0) { throw 'Outbound-blocked frozen candidate gate failed' }
+            $stressReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-runtime-stress.json'
+            $stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru
+            if (-not $stressProcess.WaitForExit(900000)) { $stressProcess.Kill(); throw 'Frozen stress timed out' }
+            if ($stressProcess.ExitCode -ne 0) { throw 'Frozen stress failed' }
+            $stress = Get-Content $stressReport -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (-not $stress.passed -or $stress.iterations_per_profile -ne 500 -or -not $stress.frozen -or $stress.executable_sha256 -ne $manifest.executable_sha256 -or $stress.version -ne $manifest.version) { throw 'Incomplete frozen stress report' }
+            foreach ($profile in @('v6-small', 'v6-medium')) {
+              $record = $stress.profiles.$profile
+              if (-not $record.passed -or $record.iterations_completed -ne 500 -or $record.identity.profile -ne $profile) { throw ('Incomplete stress profile: ' + $profile) }
+            }
           } finally {
             Remove-NetFirewallRule -DisplayName $rule
           }
@@ -95,9 +107,9 @@ jobs:
     # One fixed, explicitly approved candidate; never publish from a PR event.
     if: >-
       github.event_name == 'push' &&
-      github.ref == 'refs/heads/fix/offline-release-hardening' &&
+      github.ref == 'refs/heads/fix/ocr-model-upgrade' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.6.2-rc.2'
+      github.event.head_commit.message == 'publish-prerelease: v1.7.0-rc.1'
     runs-on: ubuntu-latest
     permissions:
       contents: write

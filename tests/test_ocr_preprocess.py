@@ -102,7 +102,7 @@ class TestShouldRetry:
 
     def test_high_confidence_no_retry(self):
         e = self._engine()
-        results = [([[0, 0], [10, 0], [10, 10], [0, 10]], "Hello", 0.80)]
+        results = [([[0, 0], [10, 0], [10, 10], [0, 10]], "Hello", 0.90)]
         assert e._should_retry(results) is False
 
 

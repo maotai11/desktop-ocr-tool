@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.6.2-rc.2. Merely preparing files
+This program is deliberately specific to v1.7.0-rc.1. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -23,8 +23,8 @@ import zipfile
 
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
-BRANCH_REF = "refs/heads/fix/offline-release-hardening"
-TAG = "v1.6.2-rc.2"
+BRANCH_REF = "refs/heads/fix/ocr-model-upgrade"
+TAG = "v1.7.0-rc.1"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -132,7 +132,8 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     return f"""## Desktop OCR Tool {TAG} candidate prerelease
 
 Windows x64 single-file executable with bundled Python, Qt, ONNX Runtime,
-RapidOCR/PaddleOCR v4 ONNX models (det/rec/cls). No Python/pip installation or
+PP-OCRv6 Small detection and Small/Medium recognition through RapidOCR/ONNX Runtime.
+Both models are bundled; failures never fall back to old OCR weights. No Python/pip installation or
 first-run model download is required by the bundle.
 
 Native Windows source checks, frozen OCR/database and application-lifecycle
@@ -140,6 +141,10 @@ candidate probes, and frozen probes under an outbound Windows Firewall block
 passed for the EXE SHA256 below. These are bounded candidate checks.
 No clean Windows runtime/installation/cache audit has passed. This is not a
 stable-release acceptance gate or a claim of zero OCR errors/no data egress.
+
+New: bounded small-region padding, selectable verified v6 models, and reviewable
+1/2/3-pass retries. Uncertain results do not auto-copy. Model confidence is not
+a calibrated accuracy probability. Larger models and more passes can still regress.
 
 Known limits: rare characters and small text can be misrecognized; tile seams
 and field holdouts still need review; mixed-DPI/multi-monitor behavior has not
@@ -217,7 +222,7 @@ class GitHubClient:
                           "automatic GITHUB_TOKEN cannot grant that permission. "
                           "No broader credential or token fallback is attempted")
             raise PublicationError(f"GitHub {method} failed (HTTP {exc.code}){suffix}; no credentials logged") from None
-        except (error.URLError, OSError, ValueError) as exc:
+        except (error.URLError, OSError, ValueError):
             raise PublicationError("GitHub request failed; inspect the draft before retrying") from None
         finally:
             if stream is not None:

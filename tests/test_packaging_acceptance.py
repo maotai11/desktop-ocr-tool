@@ -6,6 +6,7 @@ import sys
 import zipfile
 
 import pytest
+from model_profile_fixtures import profile_report
 
 from scripts import build
 from scripts.record_dependency_inventory import inventory_wheels
@@ -85,6 +86,7 @@ def test_version_hook_bakes_build_version(tmp_path, monkeypatch):
     build.write_version_hook(paths)
     source = paths['version_hook'].read_text()
     assert 'os.environ["DESKTOP_OCR_VERSION"] = "2.3.4-test.5"' in source
+    monkeypatch.setattr(build, 'bundled_data_files', lambda _: [])
     assert str(paths['version_hook']) in build.pyinstaller_command(tmp_path, paths)
 
 
@@ -94,7 +96,7 @@ def valid_reports(paths):
                   'clean_machine_verified': False, 'database_integrity': 'ok'}
     return {
         '--self-test': dict(common, probe='ocr_database', telemetry_env='1',
-                            models=json.loads((build.ROOT / 'models/models.lock.json').read_text()),
+                            **profile_report(build.bundled_model_profiles(build.ROOT), build.bundled_validation_fixtures(build.ROOT)),
                             checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
         '--smoke-app': dict(common, probe='application_lifecycle', phase_a=True,
                             engine_ready=True, shutdown_clean=True,
@@ -158,6 +160,11 @@ def test_package_contains_provenance_and_explicit_remaining_gates(tmp_path):
     assert manifest['source']['working_tree_sha256'] == 'c' * 64
     assert manifest['source_manifest_sha256'] == build.sha256_file(paths['release_dir'] / 'SOURCE_MANIFEST.json')
     assert manifest['candidate_probes'] == 'NOT_RUN'
+    assert manifest['default_model_profile'] == 'v6-small'
+    assert set(manifest['model_profiles']) == {'v6-small', 'v6-medium'}
+    assert manifest['models'] == manifest['model_profiles']['v6-small']
+    assert all('absolute_path' not in info for models in manifest['model_profiles'].values()
+               for info in models.values())
     for key in ('clean_machine_gate', 'mixed_dpi_gate', 'dependency_hash_lock', 'dependency_license_review'):
         assert manifest[key] == 'NOT_RUN'
     with zipfile.ZipFile(paths['zip_path']) as archive:

@@ -199,8 +199,8 @@ def test_default_settings_match_packaged_manifest():
 
 
 def test_pipeline_returns_original_image_coordinates(monkeypatch):
-    engine=OcrEngine(max_image_short_side=100,enable_second_pass=False)
+    engine=OcrEngine(max_image_short_side=384,enable_second_pass=False)
     engine._ready=True
     monkeypatch.setattr(engine,'_do_ocr_array',lambda image:[([[0,0],[100,0],[100,100],[0,100]],'臺灣',.9)])
-    result=engine.run_ocr(np.zeros((50,50,3),np.uint8))
+    result=engine.run_ocr(np.zeros((192,192,3),np.uint8))
     assert result['detail'][0]['box']==[[0.,0.],[50.,0.],[50.,50.],[0.,50.]]
