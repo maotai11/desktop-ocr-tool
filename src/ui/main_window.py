@@ -603,10 +603,10 @@ class MainWindow(QMainWindow):
             return
         text = self._selected_item.get_effective_text()
         if text:
-            from ..clipboard.writer import write_text_to_clipboard
-            write_text_to_clipboard(text)
-            self._status_lbl.setText("已複製到剪貼簿")
-            QTimer.singleShot(2000, lambda: self._status_lbl.setText("就緒"))
+            from ..clipboard.writer import copy_text
+            if copy_text(text, self._cfg):
+                self._status_lbl.setText("已複製到剪貼簿")
+                QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _delete_selected(self):
         selected_rows = self._table.selectionModel().selectedRows()
@@ -852,10 +852,10 @@ class MainWindow(QMainWindow):
     def _copy_item_text(self, item):
         text = item.get_effective_text()
         if text:
-            from ..clipboard.writer import write_text_to_clipboard
-            write_text_to_clipboard(text)
-            self._status_lbl.setText("已複製文字到剪貼簿")
-            QTimer.singleShot(2000, lambda: self._status_lbl.setText("就緒"))
+            from ..clipboard.writer import copy_text
+            if copy_text(text, self._cfg):
+                self._status_lbl.setText("已複製文字到剪貼簿")
+                QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _copy_item_image(self, item):
         if not item.raw_image_path:

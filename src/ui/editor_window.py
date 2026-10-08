@@ -101,6 +101,8 @@ class EditorWindow(QDialog):
         self._setup_ui()
         self._load_data()
         self.setStyleSheet(_EDITOR_QSS)
+        # The default Save button otherwise receives initial Ctrl+V.
+        self._text_edit.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _setup_ui(self):
         vbox = QVBoxLayout(self)

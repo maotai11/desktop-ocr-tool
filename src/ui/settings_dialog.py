@@ -263,6 +263,21 @@ class SettingsDialog(QDialog):
         )
         clf.addRow("文字：", self._cb_auto_text)
 
+        from ..clipboard.text_cleanup import COPY_CLEANUP_OPTIONS
+        self._copy_cleanup_checks = {}
+        for key, label, _ in COPY_CLEANUP_OPTIONS:
+            check = QCheckBox(label)
+            check.setChecked(self._cfg.get('clipboard', key, default=False) is True)
+            self._copy_cleanup_checks[key] = check
+            clf.addRow('複製清理：', check)
+        cleanup_note = QLabel(
+            '全部預設不勾；只改複製輸出，原始辨識、候選與人工校正不變。\n'
+            '一般文字的逗號／撇號也會移除；負號、小數點、其他符號與空格保留。\n'
+            '移除換行會把 123 與下一行 456 拼成 123456，請確認是同一個數字。\n'
+            '批量複製仍保留不同記錄的分隔。儲存後，複製清理立即生效。')
+        cleanup_note.setWordWrap(True)
+        clf.addRow('', cleanup_note)
+
         self._cb_auto_image = QCheckBox("自動收錄剪貼簿圖片")
         self._cb_auto_image.setChecked(
             self._cfg.get('clipboard', 'auto_save_image', default=False)
@@ -349,6 +364,8 @@ class SettingsDialog(QDialog):
             self._cfg.set('ocr', 'model_profile', self._model_profile.currentData())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
+        for key, check in self._copy_cleanup_checks.items():
+            self._cfg.set('clipboard', key, check.isChecked())
 
         from ..core.autostart import set_autostart
         set_autostart(self._cb_autostart.isChecked())

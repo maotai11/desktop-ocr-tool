@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.7.0-rc.1. Merely preparing files
+This program is deliberately specific to v1.7.0-rc.2. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -23,8 +23,8 @@ import zipfile
 
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
-BRANCH_REF = "refs/heads/fix/ocr-model-upgrade"
-TAG = "v1.7.0-rc.1"
+BRANCH_REF = "refs/heads/fix/pending-paste-numeric-copy"
+TAG = "v1.7.0-rc.2"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -142,9 +142,20 @@ passed for the EXE SHA256 below. These are bounded candidate checks.
 No clean Windows runtime/installation/cache audit has passed. This is not a
 stable-release acceptance gate or a claim of zero OCR errors/no data egress.
 
-New: bounded small-region padding, selectable verified v6 models, and reviewable
-1/2/3-pass retries. Uncertain results do not auto-copy. Model confidence is not
-a calibrated accuracy probability. Larger models and more passes can still regress.
+New: usable current OCR candidates marked needs_review now auto-copy while
+retaining the review status and warning. Failed, empty, stale, deleted, and
+manually edited results retain clipboard overwrite protections.
+Settings > Clipboard offers separate opt-in removal of commas, apostrophes,
+and line breaks. All three default off and affect copied output only; OCR
+transcripts, raw candidates, manual corrections and exports are unchanged.
+Signs and decimal points are retained. Removing line breaks joins different
+lines within one record, so enable it only when that merge is intended;
+batch copies retain boundaries between records. Editor text receives initial
+paste focus, and copy status callbacks are owned by the console window.
+
+The bundled v6 models and 1/2/3-pass retry policy are unchanged from rc.1.
+Model confidence is not a calibrated accuracy probability. Larger models
+and more passes can still regress.
 
 Known limits: rare characters and small text can be misrecognized; tile seams
 and field holdouts still need review; mixed-DPI/multi-monitor behavior has not

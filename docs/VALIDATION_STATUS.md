@@ -1,3 +1,11 @@
+# 1.7.0-rc.2 更新
+
+2026-10-08：修正待確認結果自動複製與三個預設關閉的複製清理勾選，保留狀態、候選與原始／人工文字。功能修正的本機Linux／offscreen完整suite為588 passed、10 PowerShell-only skipped、0 failed；新增33項copy／focus／data／settings回歸。原生source self-test與完整app lifecycle在Linux socket-deny下通過。這些不是Windows外部Ctrl+V／SendInput或乾淨機驗收。
+
+版本、固定發布分支與精確marker更新後，rc.2必須重新通過同一SHA的Windows／Linux CI、source/frozen/firewall及雙模型各500次推論；實際結果由 [Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.7.0-rc.2) 同run validation metadata與SHA256SUMS核對。clean-machine／mixed-DPI gates維持開放，僅發布為prerelease，不能沿用rc.1的驗收結果。詳見 [rc.2說明](RELEASE_1_7_0_RC2.md)。
+
+以下保留先前版本的歷史驗證：
+
 # 1.7.0-rc.1 更新
 
 2026-10-06：新版本已改為可選 PP-OCRv6 Small／Medium 辨字、Small 找字；不提供舊文字模型 fallback。新增小ROI背景補邊及有上限的待確認重辨。當前驗證與限制見 [升級報告](OCR_UPGRADE_20261006.md)；Windows frozen 候選已通過 563 tests＋雙模型各500次；乾淨機器 gate 仍未完成。詳見 [Windows 驗證摘要](validation/v1.7.0-rc.1-prepublication.json)，Release 成品依同一run報告判定。

@@ -107,9 +107,9 @@ jobs:
     # One fixed, explicitly approved candidate; never publish from a PR event.
     if: >-
       github.event_name == 'push' &&
-      github.ref == 'refs/heads/fix/ocr-model-upgrade' &&
+      github.ref == 'refs/heads/fix/pending-paste-numeric-copy' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.7.0-rc.1'
+      github.event.head_commit.message == 'publish-prerelease: v1.7.0-rc.2'
     runs-on: ubuntu-latest
     permissions:
       contents: write
