@@ -11,6 +11,8 @@
 - [ ] 125/150/175/200% DPI，主／非主螢幕、負座標、mixed DPI、螢幕拔除。現有 primary-screen 限制未解除。
 - [ ] 休眠／恢復、RDP、Explorer 重啟、Windows 登出／關機。
 - [ ] 新設定剪貼簿監聽關閉；手動啟用與暫停；來源含假 Token 時檢查保存／刪除範圍。
+- [ ] 待確認有可用文字時自動複製當次候選，狀態仍待確認；失敗／空結果／過時／刪除／人工修改不覆蓋剪貼簿。Windows外部程式 Ctrl+V 與 Ctrl+Shift+V 全域熱鍵分開實測。
+- [ ] 逗號／撇號／換行清理預設關閉，分別勾選與設定save/reload；負號／小數點與原始候選不變；換行合併警告、批量筆間分隔、清理後空值、編輯器初始Ctrl+V與複製後立即關窗。
 - [ ] 人工校對→failed/empty重跑、untouched／dirty editor、兩視窗stale notes、重跑中再編輯／刪除／restore、obsolete acknowledgement及不保留原圖清理競態。
 - [ ] 辨識／截圖／DB 寫入中退出，確認已接受工作及持久化結果；無 QThread destruction。
 - [ ] readonly 目錄、磁碟滿、鎖住原圖、损壞模型、刪除模型、配置 JSON 損壞；失敗訊息與重試。

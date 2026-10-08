@@ -37,7 +37,8 @@ def test_exact_marked_push_is_the_only_runtime_entry(runner):
 @pytest.mark.parametrize("field,value", [
     ("GITHUB_ACTIONS", "false"), ("GITHUB_EVENT_NAME", "pull_request"),
     ("GITHUB_EVENT_NAME", "workflow_dispatch"), ("GITHUB_REPOSITORY", "attacker/desktop-ocr-tool"),
-    ("GITHUB_REF", "refs/heads/master"), ("GITHUB_SHA", "bad"),
+    ("GITHUB_REF", "refs/heads/master"), ("GITHUB_REF", "refs/heads/fix/ocr-model-upgrade"),
+    ("GITHUB_SHA", "bad"),
     ("GITHUB_RUN_ID", ""), ("GITHUB_RUN_ATTEMPT", "0"),
 ])
 def test_runtime_entry_rejects_other_repositories_events_and_refs(runner, field, value):
@@ -405,6 +406,10 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
         assert "artifacts/firewall-validation/candidate-gate.json" in archive.namelist()
     assert "No clean Windows runtime" in prepared.body
     assert "primary screen" in prepared.body and "QThread" in prepared.body
+    assert 'marked needs_review now auto-copy' in prepared.body
+    assert 'All three default off' in prepared.body and 'affect copied output only' in prepared.body
+    assert 'Removing line breaks joins different' in prepared.body
+    assert 'Uncertain results do not auto-copy' not in prepared.body
 
 
 def test_prepared_metadata_assets_are_deterministic(candidate, tmp_path):
@@ -534,21 +539,23 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-def test_other_candidate_marker_is_outside_publication_authorization(runner):
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.1', '1.7.0-rc.3'])
+def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.7.0-rc.1'
+    assert publisher.VERSION == '1.7.0-rc.2'
     assert APP_VERSION == publisher.VERSION
-    event['head_commit']['message'] = 'publish-prerelease: v1.7.0-rc.2'
+    event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
     with pytest.raises(publisher.PublicationError, match='marker'):
         publisher.validate_runner_context(env)
 
 
-def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path):
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.1', '1.7.0-rc.3'])
+def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
-    report['version'] = '1.7.0-rc.2'
+    report['version'] = other_version
     report_path.write_text(json.dumps(report))
     with pytest.raises(publisher.PublicationError, match='does not match this release/source'):
         publisher.prepare_release(root, report_path, tmp_path / 'upload', CONTEXT)

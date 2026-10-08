@@ -1,6 +1,6 @@
 # Windows 離線成品建置
 
-版本：1.7.0-rc.1 候選。只能在 Windows 建置 Windows EXE；Linux 原始碼測試不能證明 Windows 成品可用。
+版本：1.7.0-rc.2 預發布候選。只能在 Windows 建置 Windows EXE；Linux 原始碼測試不能證明 Windows 成品可用。
 
 ## 準備與建置
 
@@ -48,4 +48,4 @@ Windows runner 已安裝的系統元件可能掩蓋 DLL 依賴。仍需真正無
 
 混合 DPI、多螢幕、RDP／休眠及 native inference 永久不返回時的程序隔離仍未完成。NOT_RUN 項目必須留在報告，不得因 CI 成功就改成完成。
 
-發佈 job 只接受此 repository、fix/ocr-model-upgrade 分支及精確的 publish-prerelease: v1.7.0-rc.1 commit marker，並只取同一 run 通過驗證的成品。普通 push／PR 不會發佈。
+發佈 job 只接受此 repository、fix/pending-paste-numeric-copy 分支及精確的 publish-prerelease: v1.7.0-rc.2 commit marker，並只取同一 run 通過驗證的成品。普通 push／PR 不會發佈，失敗的驗證不會發布；不覆寫既有版本或資產。clean-machine／mixed-DPI 門檻仍保留 NOT_RUN，只發布為 prerelease。

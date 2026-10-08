@@ -18,6 +18,7 @@
 | clipboard.monitor_clipboard | checkbox | app建立watcher，fresh default=false | config/restarttest；舊profile保留原選擇 |
 | clipboard.auto_save_text | checkbox | app text_captured→DTO→Pipeline.save_requested | 仍可能保存敏感內容；沒有retention |
 | clipboard.ignore_self | JSON | ClipboardWatcher custom MIME判斷 | source；Windowsclipboard全流程未驗收 |
+| clipboard.copy_remove_commas / copy_remove_apostrophes / copy_remove_newlines | 三個獨立checkbox，全部預設false | copy_text／copy_text_batch／paste_last 的輸出邊界 | 儲存立即生效；字元清理不改OCR／人工文字／匯出，換行合併警告；批量保留筆間分隔 |
 | clipboard.auto_save_image / auto_ocr_on_clipboard_image | 圖片checkbox停用 | 未完成 | 不以UI承諾此功能 |
 | ui.widget_opacity | JSON | FloatingWidget.setWindowOpacity | source；compositor視覺效果Windows待驗收 |
 | ui.theme / font_size | controls停用 | 未完成 | 不再宣稱重新啟動即生效 |
@@ -25,4 +26,4 @@
 | history.max_items / auto_archive_days / auto_delete_archived_days | 無完整UI | 未完成 | 文件明示無自動retention，不默默開始刪舊資料 |
 | preprocessing.* | legacy JSON | 未接到目前OcrEngine pipeline | 原有dead設定保留，enhance仍是固定流程 |
 
-`config/default_settings.json` 與 Python DEFAULT_SETTINGS有exact equality test。設定變更需重啟；被停用的controls不再寫入新值。仍有legacy/dead keys，未將此表包裝為完整設定清理已完成。
+`config/default_settings.json` 與 Python DEFAULT_SETTINGS有exact equality test。複製清理儲存後立即生效；引擎／監聽等啟動設定仍需重啟。被停用的controls不再寫入新值。仍有legacy/dead keys，未將此表包裝為完整設定清理已完成。

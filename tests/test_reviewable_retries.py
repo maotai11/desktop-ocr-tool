@@ -262,7 +262,7 @@ def test_worker_qt_persists_all_passes_and_gracefully_drains_on_close(
 
 
 @pytest.mark.parametrize('change', ['none', 'edit', 'new_job', 'review_status'])
-def test_uncertain_persisted_ack_does_not_auto_copy(
+def test_uncertain_persisted_ack_copies_usable_current_candidate_without_confirming(
         qtbot, item_repo, make_image_dto, monkeypatch, change):
     from src.workers.pipeline import Pipeline
     item_id = item_repo.insert(make_image_dto())
@@ -277,11 +277,13 @@ def test_uncertain_persisted_ack_does_not_auto_copy(
         item_repo.begin_ocr_attempt(item_id)
     elif change == 'review_status':
         dto.status = 'done'  # Re-read DB uncertainty, do not trust a stale DTO.
-    pipeline = SimpleNamespace(repo=item_repo, closing=False,
+    pipeline = SimpleNamespace(repo=item_repo, closing=False, cfg=None,
                                widget=SimpleNamespace(set_ocr_status=status.append, set_ocr_progress=lambda _: None))
     Pipeline.persisted(pipeline, item_id, dto)
-    assert not copied
+    assert copied == (['uncertain'] if change in ('none', 'review_status') else [])
     assert not status if change == 'new_job' else '待確認' in status[-1]
+    if change in ('none', 'review_status'):
+        assert item_repo.get_by_id(item_id).ocr_status == 'needs_review'
 
 
 def test_settings_persist_pass_limit_and_restart_contract(qtbot, monkeypatch):

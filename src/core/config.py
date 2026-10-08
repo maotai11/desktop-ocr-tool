@@ -62,7 +62,10 @@ DEFAULT_SETTINGS = {
         "auto_ocr_on_clipboard_image": False,
         "ignore_self": True,
         "max_text_length": 50000,
-        "deduplicate": True
+        "deduplicate": True,
+        "copy_remove_commas": False,
+        "copy_remove_apostrophes": False,
+        "copy_remove_newlines": False
     },
     "history": {
         "max_items": 10000,

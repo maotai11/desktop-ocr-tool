@@ -4,9 +4,25 @@ import logging
 from PySide6.QtCore import QMimeData, QByteArray
 from PySide6.QtWidgets import QApplication
 from ..core.constants import CUSTOM_MIME_TYPE
+from .text_cleanup import prepare_copy_text
 
 logger = logging.getLogger(__name__)
 _last_write_id: str = ''
+
+
+def copy_text(text: str, cfg=None) -> str:
+    """Copy formatted output without altering the source or clearing on empty."""
+    prepared = prepare_copy_text(text, cfg)
+    if not prepared or not prepared.strip():
+        return ''
+    return write_text_to_clipboard(prepared)
+
+
+def copy_text_batch(texts, cfg=None) -> str:
+    """Format each record separately, retaining boundaries between records."""
+    prepared = [prepare_copy_text(text, cfg) for text in texts]
+    prepared = [text for text in prepared if text and text.strip()]
+    return write_text_to_clipboard('\n\n'.join(prepared)) if prepared else ''
 
 
 def write_text_to_clipboard(text: str) -> str:

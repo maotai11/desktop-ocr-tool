@@ -100,18 +100,23 @@ class Pipeline(QObject):
             return
         if hasattr(self.widget, 'set_ocr_progress'):
             self.widget.set_ocr_progress(0)
-        if result.status == 'failed' or not result.text:
+        if result.status == 'failed' or not result.text or not result.text.strip():
             self.widget.set_ocr_status(f'OCR #{item_id} 失敗；已保留先前文字')
-        elif result.status == 'needs_review' or item.ocr_status == 'needs_review':
+            return
+        needs_review = result.status == 'needs_review' or item.ocr_status == 'needs_review'
+        if needs_review:
             self.widget.set_ocr_status(f'OCR #{item_id} 待確認；請核對候選與原圖')
         else:
             self.widget.set_ocr_status(f'OCR #{item_id} 完成')
-            if (not self.closing and item.edited_text is None and
-                    item.edit_revision == result.base_edit_revision and
-                    result.status in ('done', 'confirmed') and
-                    item.ocr_status in ('done', 'confirmed')):
-                from ..clipboard.writer import write_text_to_clipboard
-                write_text_to_clipboard(item.get_effective_text())
+        if (not self.closing and item.edited_text is None and
+                item.edit_revision == result.base_edit_revision and
+                result.status in ('done', 'needs_review', 'confirmed') and
+                item.ocr_status in ('done', 'needs_review', 'confirmed')):
+            # A usable candidate may be pasted without asserting it was reviewed.
+            # Keep every stale/deleted/manual-edit guard at publication time.
+            from ..clipboard.writer import copy_text
+            if copy_text(item.get_effective_text(), self.cfg) and needs_review:
+                self.widget.set_ocr_status(f'OCR #{item_id} 待確認；已複製候選，請核對原圖')
 
     @Slot()
     def shutdown(self):

@@ -38,6 +38,8 @@ Capture→保存raw／thumbnail→exact RGBA hash→DbWorker dedup或insert。de
 
 相對圖片路徑經FileManager containment，ZIP先驗證附件路徑，CSV危險字首文字化。SQLite/FTS仍為明文；沒有自動retention。硬刪除與檔案刪除不是跨媒介原子交易，崩潰／鎖檔仍有待修復窗口。
 
+rc.2 的剪貼簿邊界：最新、有可用文字且未人工修改的 `needs_review` 候選也可自動複製，狀態與警告不變。`copy_text` 與 `copy_text_batch` 才套用選取的逗號／撇號／換行字元清理，三項預設關閉；不回寫原始、後處理、候選或人工文字。清理後沒有文字不擦掉剪貼簿，批量仍保留筆間分隔；原生編輯框 Ctrl+C 不套用清理。
+
 ## Shutdown
 
 Tray quit→Pipeline.shutdown：停止GUI接受新操作、暫停clip、停止Hotkey、Capture.stop sentinel。Capture finished在GUI收完先前capture_done後送DB barrier；DB的item_saved已排OCR後，barrier停止OCR。OCR finished後送第二DB barrier，完成所有結果寫入；Db thread quit＋join；最後Database.close→shutdown_finished→QApplication.quit。aboutToQuit以nested QEventLoop維持queued callbacks直到drain；不以忽略wait timeout或terminate當成功。

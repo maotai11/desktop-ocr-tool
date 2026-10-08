@@ -494,8 +494,8 @@ class FloatingWidget(QWidget):
                 if text:
                     texts.append(text)
         if texts:
-            from ..clipboard.writer import write_text_to_clipboard
-            write_text_to_clipboard("\n\n".join(texts))
+            from ..clipboard.writer import copy_text_batch
+            copy_text_batch(texts, self._cfg)
         self._selected_items.clear()
         self._update_batch_button_text()
         self.refresh_list()
@@ -647,9 +647,9 @@ class FloatingWidget(QWidget):
             return
         text = item.get_effective_text()
         if text:
-            from ..clipboard.writer import write_text_to_clipboard
-            write_text_to_clipboard(text)
-            logger.info(f"已複製 item #{item_id}")
+            from ..clipboard.writer import copy_text
+            if copy_text(text, self._cfg):
+                logger.info(f"已複製 item #{item_id}")
 
     def _show_item_menu(self, pos, item, card):
         menu = QMenu(self)
@@ -816,7 +816,9 @@ class FloatingWidget(QWidget):
         items = self._item_repo.list_recent(limit=1)
         if items:
             text = items[0].get_effective_text()
-            if text:
+            from ..clipboard.text_cleanup import prepare_copy_text
+            text = prepare_copy_text(text or '', self._cfg)
+            if text and text.strip():
                 from ..clipboard.paste_simulator import simulate_paste
                 simulate_paste(text)
 
