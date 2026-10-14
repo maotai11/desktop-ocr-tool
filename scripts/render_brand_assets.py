@@ -50,8 +50,8 @@ def render(root=ROOT):
                 'files': {path.name: {'size_bytes': path.stat().st_size,
                                       'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
                           for path in files}}
-    (directory / 'manifest.json').write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    (directory / 'manifest.json').write_bytes(
+        (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
     return manifest
 
 

@@ -1,6 +1,7 @@
 """Build-only transport/installed-tool fixes; no network calls in these tests."""
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import ssl
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import zipfile
 
 import pytest
 
@@ -104,6 +106,49 @@ def test_https_redirect_cannot_downgrade_transport():
     redirect = handler.redirect_request(request, None, 302, 'test', {}, 'https://example.com/archive')
     assert redirect.full_url.startswith('https://')
     assert handler.max_redirections == 3
+
+
+def test_fresh_and_cached_model_preparation_keep_canonical_tracked_bytes(monkeypatch, tmp_path):
+    from scripts import probe_handwriting_helper
+    buffer = io.BytesIO()
+    prefix = 'tegaki-zinnia-traditional-chinese-0.3/'
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr(prefix + 'handwriting-zh_TW.model', b'model-fixture')
+        archive.writestr(prefix + 'handwriting-zh_TW.xml', b'source-fixture')
+        archive.writestr(prefix + 'COPYING', b'license-fixture')
+    monkeypatch.setattr(models, 'download_archive', lambda: buffer.getvalue())
+    monkeypatch.setattr(models, 'model_alphabet', lambda data: '臺')
+    monkeypatch.setattr(probe_handwriting_helper, 'replays', lambda root: [('臺', (((1, 2),),))])
+
+    def forbid_platform_text_write(*args, **kwargs):
+        raise AssertionError('Tracked generation must not use platform text newline translation')
+
+    monkeypatch.setattr(Path, 'write_text', forbid_platform_text_write)
+    models.prepare(tmp_path)
+    directory = tmp_path / 'models/handwriting'
+    raw = (directory / 'manifest.json').read_bytes()
+    assert b'\r' not in raw and raw.endswith(b'\n')
+    assert raw == (json.dumps(json.loads(raw), indent=2) + '\n').encode('utf-8')
+    assert json.loads((directory / 'validation.json').read_bytes())['cases'][0]['label'] == '臺'
+    before = {path.relative_to(directory): path.read_bytes() for path in directory.rglob('*') if path.is_file()}
+    models.prepare(tmp_path)  # Cached official model path must also keep bytes.
+    after = {path.relative_to(directory): path.read_bytes() for path in directory.rglob('*') if path.is_file()}
+    assert after == before
+
+
+def test_brand_manifest_generation_keeps_canonical_tracked_bytes(qapp, monkeypatch, tmp_path):
+    from scripts import render_brand_assets
+    directory = tmp_path / 'assets/branding'
+    directory.mkdir(parents=True)
+    (directory / 'inkpick.svg').write_bytes((render_brand_assets.ROOT / 'assets/branding/inkpick.svg').read_bytes())
+
+    def forbid_platform_text_write(*args, **kwargs):
+        raise AssertionError('Tracked brand metadata must be explicit canonical bytes')
+
+    monkeypatch.setattr(Path, 'write_text', forbid_platform_text_write)
+    manifest = render_brand_assets.render(tmp_path)
+    raw = (directory / 'manifest.json').read_bytes()
+    assert b'\r' not in raw and raw == (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
 
 
 def test_cmd_raw_command_preserves_quoted_installed_path():

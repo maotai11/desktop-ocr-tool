@@ -135,7 +135,7 @@ def prepare(root=ROOT):
                 'source_sha256': hashlib.sha256(source).hexdigest(),
                 'source_size_bytes': len(source),
                 'license_sha256': hashlib.sha256(license_text).hexdigest()}
-    (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    (directory / 'manifest.json').write_bytes((json.dumps(manifest, indent=2) + '\n').encode('utf-8'))
     prepare_fixtures(root)
     print('Prepared exact official Traditional Chinese model and corresponding source')
 
@@ -150,7 +150,7 @@ def prepare_fixtures(root):
     (directory / 'validation.json').write_bytes(data)
     manifest = json.loads((directory / 'manifest.json').read_text())
     manifest['validation_sha256'] = hashlib.sha256(data).hexdigest()
-    (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    (directory / 'manifest.json').write_bytes((json.dumps(manifest, indent=2) + '\n').encode('utf-8'))
 
 
 if __name__ == '__main__':

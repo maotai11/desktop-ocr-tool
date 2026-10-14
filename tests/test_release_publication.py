@@ -420,6 +420,7 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     assert '### 下載與使用' in prepared.body and '### 請先知道的限制' in prepared.body
     assert 'SHA256SUMS' in prepared.body and 'Windows 雲端剪貼簿同步' in prepared.body
     assert '候選測試版' in prepared.body and '各完成 500 次' in prepared.body
+    assert '之後在拾字筆選字或手動複製的文字' in prepared.body
     assert 'Uncertain results do not auto-copy' not in prepared.body
 
 
