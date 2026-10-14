@@ -40,8 +40,9 @@ def test_capture_saved_after_manual_copy_keeps_original_epoch(
     assert item_repo.get_by_id(1) is not None
 
 
-def test_automatic_write_signal_reentrancy_does_not_hide_manual_copy(qapp):
+def test_automatic_write_signal_reentrancy_does_not_hide_manual_copy(qapp, qtbot):
     clipboard = qapp.clipboard()
+    qapp.processEvents()  # Drain older native notifications before this write.
     entered = False
     def manual_during_notification():
         nonlocal entered
@@ -52,10 +53,38 @@ def test_automatic_write_signal_reentrancy_does_not_hide_manual_copy(qapp):
     clipboard.dataChanged.connect(manual_during_notification)
     try:
         copy_text('automatic OCR', automatic=True)
+        # Offscreen Qt emits synchronously; native Windows may queue the same
+        # notification. Keep the handler connected until its bounded delivery.
+        qtbot.waitUntil(lambda: entered, timeout=2000)
+        qtbot.waitUntil(lambda: (get_clipboard_epoch() == before + 1 and
+                                clipboard.text() == 'manual callback'), timeout=2000)
     finally:
         clipboard.dataChanged.disconnect(manual_during_notification)
     assert get_clipboard_epoch() == before + 1
     assert clipboard.text() == 'manual callback'
+
+
+def test_synchronous_write_callback_keeps_manual_epoch(qapp, monkeypatch):
+    from types import SimpleNamespace
+    from src.clipboard import writer
+
+    class SynchronousClipboard:
+        entered = False
+        mime = None
+
+        def setMimeData(self, mime):
+            self.mime = mime
+            if not self.entered:
+                self.entered = True
+                writer.write_text_to_clipboard('synchronous manual callback')
+
+    clipboard = SynchronousClipboard()
+    monkeypatch.setattr(writer, 'QApplication', SimpleNamespace(clipboard=lambda: clipboard))
+    before = get_clipboard_epoch()
+    copy_text('automatic OCR', automatic=True)
+    assert clipboard.entered
+    assert get_clipboard_epoch() == before + 1
+    assert clipboard.mime.text() == 'synchronous manual callback'
 
 
 def test_empty_copy_and_concurrent_automatic_copies_preserve_epoch(qapp):

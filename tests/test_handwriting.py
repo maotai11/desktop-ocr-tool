@@ -112,7 +112,7 @@ while True:
 @pytest.fixture
 def fake_controller(qtbot, tmp_path):
     script = tmp_path / 'fake_helper.py'
-    script.write_text(FAKE_HELPER)
+    script.write_text(FAKE_HELPER, encoding='utf-8')
     created = []
     def make(mode='delay'):
         assets = HelperAssets(Path(sys.executable).resolve(), (str(script), mode), frozenset({'臺'}))
