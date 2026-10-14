@@ -8,19 +8,8 @@ logger = logging.getLogger(__name__)
 
 
 def _create_tray_icon(size: int = 32) -> QIcon:
-    px = QPixmap(size, size)
-    px.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(px)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QBrush(QColor("#4A90D9")))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(2, 2, size - 4, size - 4)
-    painter.setPen(QPen(QColor("white"), 2))
-    m = size // 5
-    painter.drawLine(m, size // 2, size - m, size // 2)
-    painter.drawLine(size // 2, m, size // 2, size - m)
-    painter.end()
-    return QIcon(px)
+    from ..core.branding import application_icon
+    return application_icon()
 
 
 class TrayManager:
@@ -29,7 +18,8 @@ class TrayManager:
         self._tray = QSystemTrayIcon()
         self._icon = _create_tray_icon()
         self._tray.setIcon(self._icon)
-        self._tray.setToolTip("桌面OCR擷取工具")
+        from ..core.version import APP_DISPLAY_NAME
+        self._tray.setToolTip(APP_DISPLAY_NAME)
         self._build_menu()
         self._tray.activated.connect(self._on_activated)
 
@@ -49,6 +39,9 @@ class TrayManager:
 
         act_ss = menu.addAction("截圖框選  (Ctrl+Shift+S)")
         act_ss.triggered.connect(self._widget.trigger_capture_image)
+
+        act_handwriting = menu.addAction('手寫')
+        act_handwriting.triggered.connect(self._widget.open_handwriting)
 
         menu.addSeparator()
 

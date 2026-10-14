@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.7.0-rc.2. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.1. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -23,16 +23,16 @@ import zipfile
 
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
-BRANCH_REF = "refs/heads/fix/pending-paste-numeric-copy"
-TAG = "v1.7.0-rc.2"
+BRANCH_REF = "refs/heads/fix/inkpick-handwriting"
+TAG = "v1.8.0-rc.1"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
 API_VERSION = "2026-03-10"
-EXE_NAME = "DesktopOCRTool-" + TAG + ".exe"
-ZIP_NAME = "DesktopOCRTool-" + TAG + ".zip"
-CHECKSUM_NAME = "DesktopOCRTool-" + TAG + "-SHA256SUMS.txt"
-METADATA_NAME = "DesktopOCRTool-" + TAG + "-validation-metadata.zip"
+EXE_NAME = "InkPick-" + TAG + ".exe"
+ZIP_NAME = "InkPick-" + TAG + ".zip"
+CHECKSUM_NAME = "InkPick-" + TAG + "-SHA256SUMS.txt"
+METADATA_NAME = "InkPick-" + TAG + "-validation-metadata.zip"
 MAX_JSON_BYTES = 4 * 1024 * 1024
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
@@ -129,49 +129,35 @@ class PreparedRelease:
 
 def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
-    return f"""## Desktop OCR Tool {TAG} candidate prerelease
+    return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-Windows x64 single-file executable with bundled Python, Qt, ONNX Runtime,
-PP-OCRv6 Small detection and Small/Medium recognition through RapidOCR/ONNX Runtime.
-Both models are bundled; failures never fall back to old OCR weights. No Python/pip installation or
-first-run model download is required by the bundle.
+新增單字手寫板：寫下不認識的字，再點選繁體中文候選字複製。
+沿用原本的截圖辨識、歷史、搜尋與設定，並換上「拾字筆」名稱及圖示。
 
-Native Windows source checks, frozen OCR/database and application-lifecycle
-candidate probes, and frozen probes under an outbound Windows Firewall block
-passed for the EXE SHA256 below. These are bounded candidate checks.
-No clean Windows runtime/installation/cache audit has passed. This is not a
-stable-release acceptance gate or a claim of zero OCR errors/no data egress.
+### 下載與使用
+- 適用 Windows 64 位元。建議下載可攜版 ZIP、解壓後執行；也可直接使用本頁的 EXE。
+- 已內附執行環境、兩組 OCR 模型與手寫引擎，不會在首次啟動下載模型，也不需安裝 Windows 手寫語言套件。
+- ZIP 另含第三方授權說明與手寫模型來源；使用單獨 EXE 時，也請保留同版 ZIP 的說明。執行前可用 SHA256SUMS 核對下載檔案。
+- 手寫候選字只有點選後才會複製，不會自動輸入其他程式；較早開始的 OCR 不會蓋掉之後手動複製的文字。
+- 原有三項複製清理選項預設皆關閉，只影響複製內容。移除換行會把同一筆紀錄的多行文字接在一起，請按需要開啟。
 
-New: usable current OCR candidates marked needs_review now auto-copy while
-retaining the review status and warning. Failed, empty, stale, deleted, and
-manually edited results retain clipboard overwrite protections.
-Settings > Clipboard offers separate opt-in removal of commas, apostrophes,
-and line breaks. All three default off and affect copied output only; OCR
-transcripts, raw candidates, manual corrections and exports are unchanged.
-Signs and decimal points are retained. Removing line breaks joins different
-lines within one record, so enable it only when that merge is intended;
-batch copies retain boundaries between records. Editor text receives initial
-paste focus, and copy status callbacks are owned by the console window.
+### 請先知道的限制
+- 手寫字表有 11,853 字，包含「龘」，不含「尞、𠮷、𠀋」。剪貼簿能保留擴充字，不代表模型能辨識；候選排序分數也不是正確率。
+- 本版仍是候選測試版。尚未完成乾淨、斷網 Windows 10／11 的現場驗收，也沒有真人手寫準確率結果。
+- 多螢幕與混合縮放比例仍待驗收；截圖目前使用主螢幕。既有 OCR 若在底層運算卡住，仍可能拖延關閉。
+- 剪貼簿監看預設關閉；歷史及圖片以未加密檔案儲存。若已開啟 Windows 雲端剪貼簿同步，作業系統可能傳送複製的內容。
 
-The bundled v6 models and 1/2/3-pass retry policy are unchanged from rc.1.
-Model confidence is not a calibrated accuracy probability. Larger models
-and more passes can still regress.
+### 技術驗證與來源
+發布檢查綁定下列同一組檔案雜湊與來源版本：Windows 原生測試、EXE 內的 OCR／資料庫／手寫／啟閉測試，以及主程式和同次解壓的手寫引擎都被阻擋對外連線時的測試。
+兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
+GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立手寫程序有逾時終止與父程序退出檢查；既有 QThread 內的 OCR 卡住限制仍在。完整第三方授權審查尚未完成。
 
-Known limits: rare characters and small text can be misrecognized; tile seams
-and field holdouts still need review; mixed-DPI/multi-monitor behavior has not
-been audited and capture currently uses the primary screen. A hung native
-operation inside a QThread can still prevent bounded shutdown. Clipboard
-monitoring defaults off for new settings; stored history/images are plaintext.
+來源版本：`{context.source_commit}`
+同次建置的測試報告與檔案對應，請見 validation metadata ZIP。
 
-Source commit: `{context.source_commit}`
-Validation evidence: same-run Windows artifact; see the validation metadata ZIP.
-Download the portable ZIP and extract it, or use the separate bundled EXE.
-Verify downloaded bytes against SHA256SUMS before running.
-
-### Asset SHA256
+### 檔案 SHA256
 {hashes}
 """
-
 
 class NoRedirect(request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -205,7 +191,7 @@ class GitHubClient:
         self.validate_url(url, upload=asset is not None)
         require(method in {"GET", "POST", "PATCH"}, "Unsupported publication method")
         headers = {"Accept": "application/vnd.github+json", "Authorization": "Bearer " + self._token,
-                   "X-GitHub-Api-Version": API_VERSION, "User-Agent": "desktop-ocr-rc2-publisher"}
+                   "X-GitHub-Api-Version": API_VERSION, "User-Agent": "inkpick-rc1-publisher"}
         stream = None
         data = None
         if asset is not None:
@@ -430,13 +416,17 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "test-results.xml",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
-                      "artifacts/firewall-validation/frozen-app-smoke.json"]
+                      "artifacts/firewall-validation/frozen-app-smoke.json",
+                      "artifacts/firewall-validation/frozen-handwriting.json",
+                      "artifacts/firewall-validation/handwriting-firewall-gate.json",
+                      "artifacts/firewall-validation/frozen-runtime-stress.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
+                      "artifacts/candidate-validation/frozen-handwriting.json",
                       "artifacts/" + ZIP_NAME + ".sha256"]
     snapshots = {}
     for name in snapshot_names:
@@ -462,6 +452,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     payload = saved.get("frozen_payload")
     require(isinstance(payload, dict) and payload.get("inspected") is True
             and payload.get("embedded_model_hashes_verified") is True
+            and payload.get("embedded_handwriting_verified") is True
             and payload.get("required_payload") ==
             ["python312.dll", "qwindows.dll", "onnxruntime_pybind11_state.pyd"]
             and payload.get("system_dll_closure") == "NOT_A_CLEAN_HOST_CERTIFICATION",
@@ -501,7 +492,8 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         require(all((info.external_attr >> 16) & 0o170000 != 0o120000
                     for info in archive.infolist()), "Symlink member in portable ZIP")
         for name in ["BUILD_MANIFEST.json", "SOURCE_MANIFEST.json",
-                     "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json"]:
+                     "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json",
+                     "candidate-validation/frozen-handwriting.json"]:
             require(archive.getinfo(prefix + name).file_size <= MAX_JSON_BYTES,
                     "Oversized embedded validation metadata")
             metadata_files[name] = archive.read(prefix + name)

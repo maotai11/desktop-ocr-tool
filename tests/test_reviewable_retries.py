@@ -270,7 +270,7 @@ def test_uncertain_persisted_ack_copies_usable_current_candidate_without_confirm
     dto = OcrResultDTO(text='uncertain', confidence=.99, status='needs_review', job_id=job, base_edit_revision=revision)
     item_repo.update_ocr_result(item_id, dto)
     copied, status = [], []
-    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', copied.append)
+    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copied.append(text))
     if change == 'edit':
         item_repo.update_edited_text(item_id, 'manual')
     elif change == 'new_job':

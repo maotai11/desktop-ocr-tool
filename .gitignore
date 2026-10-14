@@ -107,3 +107,8 @@ models/rec/pp-ocrv6_rec_medium.onnx
 
 # Optional native runtime bookkeeping from validation, never source input.
 /:memory:.ses
+
+# Prepared handwriting runtime assets: source/locks/notices remain reviewable.
+native/handwriting/runtime/
+models/handwriting/*.model
+models/handwriting/source/*.xml

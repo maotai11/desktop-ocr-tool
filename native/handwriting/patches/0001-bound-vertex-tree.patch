@@ -1,0 +1,24 @@
+--- a/zinnia/feature.cpp
++++ b/zinnia/feature.cpp
+@@ -42,6 +42,9 @@
+ 
+   const float a = last->x - first->x;
+   const float b = last->y - first->y;
++  // Equal endpoints previously produced 0/0 (NaN), so dist > error was
++  // false. Preserve that branch while avoiding non-finite arithmetic.
++  if (a == 0.0f && b == 0.0f) return 0.0f;
+   const float c = static_cast<double>(last->y * first->x)
+     - static_cast<double>(last->x * first->y);
+ 
+@@ -180,6 +183,11 @@
+ void Features::getVertex(const Node *first, const Node *last,
+                          int id,
+                          std::vector<NodePair> *node_pairs) const {
++  // makeVertexFeature consumes only IDs 0..50 inclusive. Descendants have
++  // strictly greater IDs, so they cannot change any retained feature.
++  // Check before resize/recursion to bound tree allocation and integer IDs.
++  if (id < 0 || static_cast<size_t>(id) > kMaxCharacterSize) return;
++
+   if (node_pairs->size() <= static_cast<size_t>(id))
+     node_pairs->resize(id + 1);
+ 

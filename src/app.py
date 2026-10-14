@@ -39,6 +39,8 @@ def main(smoke_report=None) -> int:
         app = QApplication.instance() or QApplication(sys.argv)
         app.setApplicationName(APP_DISPLAY_NAME)
         app.setApplicationVersion(APP_VERSION)
+        from src.core.branding import application_icon
+        app.setWindowIcon(application_icon())
         app.setQuitOnLastWindowClosed(False)
         smoke['qt_platform'] = app.platformName()
         setup_logger()
@@ -187,18 +189,22 @@ def main(smoke_report=None) -> int:
             if pipeline.closing:
                 return
             widget.hide()
+            from src.clipboard.writer import get_clipboard_epoch
+            clipboard_epoch = get_clipboard_epoch()
             overlay.start_capture(
                 lambda x, y, w, h, mon:
-                    capture_worker.capture_region(x, y, w, h, mon, 'region_ocr')
+                    capture_worker.capture_region(x, y, w, h, mon, 'region_ocr', clipboard_epoch)
             )
 
         def do_region_image():
             if pipeline.closing:
                 return
             widget.hide()
+            from src.clipboard.writer import get_clipboard_epoch
+            clipboard_epoch = get_clipboard_epoch()
             overlay.start_capture(
                 lambda x, y, w, h, mon:
-                    capture_worker.capture_region(x, y, w, h, mon, 'region_image')
+                    capture_worker.capture_region(x, y, w, h, mon, 'region_image', clipboard_epoch)
             )
 
         def do_fullscreen():

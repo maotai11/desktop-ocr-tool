@@ -36,7 +36,10 @@ class OcrWorker(QueueWorker):
         """Configure before UI actions queue work; Qt worker owns inference only."""
         self._repo, self._files = repo, files
 
-    def queue_ocr(self, item_id, image_path, mode='screen'):
+    def queue_ocr(self, item_id, image_path, mode='screen', clipboard_epoch=None):
+        if clipboard_epoch is None:
+            from ..clipboard.writer import get_clipboard_epoch
+            clipboard_epoch = get_clipboard_epoch()
         def reserve(task):
             def source_check(relative):
                 if not relative:
@@ -47,7 +50,7 @@ class OcrWorker(QueueWorker):
             job_id, revision = self._repo.begin_ocr_attempt(item_id, source_check=check) if self._repo else (None, None)
             return (*task, job_id, revision)
         try:
-            self.submit((item_id, image_path, mode), prepare=reserve)
+            self.submit((item_id, image_path, mode, clipboard_epoch), prepare=reserve)
             return True
         except (RuntimeError, ValueError, sqlite3.Error) as exc:
             # Rejected work was never reserved, so it must not fail/supersede
@@ -65,7 +68,7 @@ class OcrWorker(QueueWorker):
         except Exception as exc:
             logger.exception('OCR 引擎載入失敗')
             self.engine_failed.emit(str(exc))
-        for item_id, image_path, mode, job_id, revision in self.tasks():
+        for item_id, image_path, mode, clipboard_epoch, job_id, revision in self.tasks():
             try:
                 if not self._engine.is_ready():
                     raise RuntimeError('OCR 引擎未就緒')
@@ -81,6 +84,7 @@ class OcrWorker(QueueWorker):
                     model_version=result.get('model_version', 'unknown'),
                     job_id=job_id, base_edit_revision=revision,
                     provenance_json=json.dumps(result, ensure_ascii=False),
+                    clipboard_epoch=clipboard_epoch,
                 )
                 self.ocr_done.emit(item_id, dto)
             except Exception as exc:
@@ -90,6 +94,7 @@ class OcrWorker(QueueWorker):
                     engine=getattr(self._engine, 'name', 'rapidocr_onnxruntime'),
                     model_version=getattr(self._engine, '_model_version', 'unknown'),
                     job_id=job_id, base_edit_revision=revision,
+                    clipboard_epoch=clipboard_epoch,
                     provenance_json=json.dumps({'error': str(exc), 'stage': 'worker'}, ensure_ascii=False)))
                 self.ocr_failed.emit(item_id, str(exc))
             finally:

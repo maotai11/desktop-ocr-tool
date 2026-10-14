@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "source": "https://github.com/tegaki/tegaki/releases/download/v0.3/tegaki-zinnia-traditional-chinese-0.3.zip",
+  "archive_sha256": "f41032e67a4eff056813d243eabc32ea07eea404c714bdb5882a5b0fcda51690",
+  "model_sha256": "cd47f16b64e7ecaa4c2813d0f98231dfea7b411f48be1ead5c9b2eeb19330b11",
+  "model_size_bytes": 52210768,
+  "label_count": 11853,
+  "license": "LGPL-2.1",
+  "alphabet_sha256": "f2d9d1e2a05ed4df86cceb32d4a45ab4043e9ca6f74aed4e4cf8d291ce084105",
+  "source_sha256": "85ab37c56bcb14a54a7ae106f2504b6505cf6c9917ca8c636312153fd9d00e53",
+  "source_size_bytes": 24523156,
+  "license_sha256": "a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7",
+  "validation_sha256": "29e7b94bbb26b413b729110357de0d81a720418e736e06b7fac561fae923af58"
+}

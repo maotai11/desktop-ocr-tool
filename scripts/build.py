@@ -70,7 +70,7 @@ def source_manifest(root: Path):
     names = sorted(set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
                        .decode('utf-8').split('\0')) - {''})
     tracked = set(git('ls-files', '-z', '--cached').decode('utf-8').split('\0'))
-    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json'}
+    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json', 'source-handwriting.json'}
     excluded = set(names) & generated - tracked
     names = [name for name in names if name not in excluded]
     files = {}
@@ -124,6 +124,7 @@ def resolve_release_paths(root: Path) -> dict[str, Path]:
         "out_exe": out_exe,
         "release_exe": release_exe,
         "version_hook": build_dir / "runtime_version.py",
+        "version_info": build_dir / "windows_version_info.txt",
         "validation_dir": artifacts_dir / "candidate-validation",
     }
 
@@ -156,6 +157,16 @@ def write_version_hook(paths):
     paths['version_hook'].write_text(
         'import os\nos.environ["DESKTOP_OCR_VERSION"] = ' + json.dumps(APP_VERSION) + '\n',
         encoding='utf-8')
+    numeric = tuple(map(int, re.match(r'(\d+)\.(\d+)\.(\d+)', APP_VERSION).groups())) + (0,)
+    paths['version_info'].write_text(
+        'VSVersionInfo(ffi=FixedFileInfo(filevers=' + repr(numeric) + ', prodvers=' + repr(numeric) +
+        ', mask=0x3f, flags=0, OS=0x40004, fileType=1, subtype=0, date=(0,0)), kids=['
+        'StringFileInfo([StringTable("040904B0", [' +
+        ','.join('StringStruct(' + repr(key) + ',' + repr(value) + ')' for key, value in (
+            ('FileDescription', APP_DISPLAY_NAME), ('ProductName', APP_NAME),
+            ('InternalName', APP_NAME), ('OriginalFilename', APP_NAME + '.exe'),
+            ('FileVersion', APP_VERSION), ('ProductVersion', APP_VERSION))) +
+        '])]), VarFileInfo([VarStruct("Translation", [1033, 1200])])])\n', encoding='utf-8')
 
 
 def bundled_data_files(root: Path):
@@ -183,9 +194,10 @@ def bundled_data_files(root: Path):
 
 
 def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
-    cmd = [sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm',
+    cmd = [sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm', '--noupx',
            '--onefile' if onefile else '--onedir', '--windowed', '--name', APP_NAME,
            '--paths', str(root), '--runtime-hook', str(root/'scripts/runtime_offline.py'),
+           '--icon', str(root/'assets/branding/inkpick.ico'), '--version-file', str(paths['version_info']),
            '--runtime-hook', str(paths['version_hook']),
            '--copy-metadata', 'rapidocr-onnxruntime',
            '--copy-metadata', 'onnxruntime', '--collect-binaries', 'onnxruntime',
@@ -196,6 +208,10 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
            '--specpath', str(paths['artifacts_dir'])]
     for source, destination in bundled_data_files(root):
         cmd += ['--add-data', f'{source}{os.pathsep}{destination}']
+    from scripts.handwriting_bundle import data_files, HELPER_PATH
+    for source, destination in data_files(root):
+        cmd += ['--add-data', f'{source}{os.pathsep}{destination}']
+    cmd += ['--add-binary', f'{root / HELPER_PATH}{os.pathsep}{Path(HELPER_PATH).parent}']
     for name in ('paddle', 'paddleocr', 'paddlex', 'torch', 'torchvision', 'cnocr',
                  'cnstd', 'pytest', 'IPython', 'matplotlib', 'tkinter'):
         cmd += ['--exclude-module', name]
@@ -209,11 +225,17 @@ def build_with_pyinstaller(root: Path, paths: dict[str, Path], onefile=True) -> 
     if not onefile:
         raise RuntimeError('This release driver packages one-file builds only')
     write_version_hook(paths)
+    from scripts.handwriting_bundle import identity
+    handwriting = identity(root)
+    if handwriting['helper'].get('platform') != 'win32':
+        raise RuntimeError('A Windows x64 handwriting helper is required')
     subprocess.run(pyinstaller_command(root, paths, onefile), cwd=root, check=True, timeout=900)
     from scripts.verify_candidate_bundle import inspect_frozen_payload
     # Reject accidental vendor/default/baseline ONNX additions before running an EXE.
     inspect_frozen_payload(paths['out_exe'], bundled_model_profiles(root),
-                           validation_fixtures=bundled_validation_fixtures(root))
+                           validation_fixtures=bundled_validation_fixtures(root), handwriting=handwriting)
+    from scripts.verify_windows_branding import verify
+    verify(paths['out_exe'], root)
 
 
 def _run_probe(executable: Path, mode: str, report_path: Path, timeout=180):
@@ -273,6 +295,17 @@ def validate_candidate(paths):
         reports[name] = {'sha256': sha256_file(report_path), 'status': 'PASSED'}
     if sha256_file(paths['out_exe']) != expected_hash:
         raise RuntimeError('Executable changed while validating the candidate')
+    from scripts.handwriting_bundle import identity
+    from scripts.verify_candidate_bundle import check_handwriting_probe
+    handwriting = identity(ROOT)
+    path = paths['validation_dir'] / 'frozen-handwriting.json'
+    report = _run_probe(paths['out_exe'], '--self-test-handwriting', path)
+    try:
+        check_handwriting_probe(report, {'version': APP_VERSION, 'executable_sha256': expected_hash,
+                                         'handwriting': handwriting}, True)
+    except ValueError as exc:
+        raise RuntimeError('Incomplete handwriting candidate gate') from exc
+    reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
     return reports
 
 
@@ -298,6 +331,8 @@ def write_release_readme(path: Path) -> None:
 def package_release(paths: dict[str, Path], validation_reports=None, source=None) -> None:
     from src.ocr.model_validator import DEFAULT_MODEL_PROFILE
     profiles = bundled_model_profiles(ROOT)
+    from scripts.handwriting_bundle import identity
+    handwriting = identity(ROOT)
     shutil.copy2(paths["out_exe"], paths["release_exe"])
     write_release_readme(paths["release_dir"] / "README.txt")
     from importlib import metadata
@@ -310,6 +345,7 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
                     "models": profiles[DEFAULT_MODEL_PROFILE],
                     "default_model_profile": DEFAULT_MODEL_PROFILE,
                     "model_profiles": profiles,
+                    "handwriting": handwriting,
                     "ocr_validation_fixtures": bundled_validation_fixtures(ROOT),
                     "build_environment_dependencies": {d.metadata['Name']:d.version for d in metadata.distributions()},
                     "source": {key: value for key, value in source.items() if key != 'files'},
@@ -317,6 +353,9 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
                     "candidate_probes": validation_reports or 'NOT_RUN',
                     "clean_machine_gate": 'NOT_RUN', "mixed_dpi_gate": 'NOT_RUN',
                     "dependency_license_review": 'NOT_RUN', "dependency_hash_lock": 'NOT_RUN'}
+    if sys.platform == 'win32':
+        from scripts.verify_windows_branding import verify
+        manifest['windows_branding'] = verify(paths['release_exe'], ROOT)
     inventory = paths['artifacts_dir'] / 'dependency-inventory.json'
     if inventory.exists():
         shutil.copy2(inventory, paths['release_dir'] / inventory.name)
@@ -332,6 +371,15 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
         shutil.copytree(paths['validation_dir'], paths['release_dir'] / 'candidate-validation')
     shutil.copy2(ROOT / 'scripts/validate_windows_bundle.ps1',
                  paths['release_dir'] / 'Validate-Candidate.ps1')
+    # Corresponding machine-readable model source and both licenses accompany
+    # the same release, independent of upstream links becoming unavailable.
+    source_dir = paths['release_dir'] / 'handwriting-source'
+    shutil.copytree(ROOT / 'models/handwriting/source', source_dir / 'tegaki-zh_TW')
+    shutil.copy2(ROOT / 'models/handwriting/manifest.json', source_dir / 'MODEL_MANIFEST.json')
+    shutil.copytree(ROOT / 'native/handwriting/vendor', source_dir / 'zinnia/vendor')
+    shutil.copytree(ROOT / 'native/handwriting/patches', source_dir / 'zinnia/patches')
+    for name in ('UPSTREAM_MANIFEST.json', 'helper.cpp', 'model_and_strokes.h', 'CMakeLists.txt'):
+        shutil.copy2(ROOT / 'native/handwriting' / name, source_dir / 'zinnia' / name)
     shutil.make_archive(
         str(paths["zip_path"]).removesuffix(".zip"),
         "zip",

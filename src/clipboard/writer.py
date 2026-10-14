@@ -8,14 +8,21 @@ from .text_cleanup import prepare_copy_text
 
 logger = logging.getLogger(__name__)
 _last_write_id: str = ''
+_manual_epoch = 0
 
 
-def copy_text(text: str, cfg=None) -> str:
+def get_clipboard_epoch() -> int:
+    """Owner-thread token: later explicit copies outrank pending OCR results."""
+    return _manual_epoch
+
+
+def copy_text(text: str, cfg=None, *, automatic=False) -> str:
     """Copy formatted output without altering the source or clearing on empty."""
     prepared = prepare_copy_text(text, cfg)
     if not prepared or not prepared.strip():
         return ''
-    return write_text_to_clipboard(prepared)
+    return (write_text_to_clipboard(prepared, automatic=True) if automatic
+            else write_text_to_clipboard(prepared))
 
 
 def copy_text_batch(texts, cfg=None) -> str:
@@ -25,20 +32,22 @@ def copy_text_batch(texts, cfg=None) -> str:
     return write_text_to_clipboard('\n\n'.join(prepared)) if prepared else ''
 
 
-def write_text_to_clipboard(text: str) -> str:
-    global _last_write_id
+def write_text_to_clipboard(text: str, *, automatic=False) -> str:
+    global _last_write_id, _manual_epoch
     write_id = str(uuid.uuid4())
     _last_write_id = write_id
     mime = QMimeData()
     mime.setText(text)
     mime.setData(CUSTOM_MIME_TYPE, QByteArray(write_id.encode('utf-8')))
     QApplication.clipboard().setMimeData(mime)
+    if not automatic:
+        _manual_epoch += 1
     logger.debug(f"已寫入文字到剪貼簿 (id={write_id[:8]})")
     return write_id
 
 
 def write_image_to_clipboard(image_path: str) -> str:
-    global _last_write_id
+    global _last_write_id, _manual_epoch
     from PySide6.QtGui import QImage
     write_id = str(uuid.uuid4())
     _last_write_id = write_id
@@ -48,6 +57,7 @@ def write_image_to_clipboard(image_path: str) -> str:
         mime.setImageData(img)
     mime.setData(CUSTOM_MIME_TYPE, QByteArray(write_id.encode('utf-8')))
     QApplication.clipboard().setMimeData(mime)
+    _manual_epoch += 1
     logger.debug(f"已寫入圖片到剪貼簿 (id={write_id[:8]})")
     return write_id
 

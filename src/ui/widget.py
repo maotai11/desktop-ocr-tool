@@ -35,6 +35,7 @@ class FloatingWidget(QWidget):
         self.setWindowOpacity(max(0.3, min(1., float(cfg.get('ui', 'widget_opacity', default=0.95)))))
         self._data_dir = data_dir
         self._console = None
+        self._handwriting = None
         self._clip_paused = False
         self._ocr_ready = False
         self._items = []
@@ -51,6 +52,10 @@ class FloatingWidget(QWidget):
         self.refresh_list()
 
     def _setup_ui(self):
+        from ..core.version import APP_DISPLAY_NAME
+        from ..core.branding import application_icon
+        self.setWindowTitle(APP_DISPLAY_NAME)
+        self.setWindowIcon(application_icon())
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -340,9 +345,28 @@ class FloatingWidget(QWidget):
         """)
 
         bottom_bar.addWidget(self._btn_console)
+        self._btn_handwriting = QPushButton('手寫')
+        self._btn_handwriting.setToolTip('離線手寫，點選候選字即可複製')
+        self._btn_handwriting.clicked.connect(self.open_handwriting)
+        bottom_bar.addWidget(self._btn_handwriting)
         bottom_bar.addStretch()
         bottom_bar.addWidget(self._btn_pause)
         vbox.addLayout(bottom_bar)
+
+    def open_handwriting(self):
+        if self._handwriting is None:
+            from .handwriting_window import HandwritingWindow
+            self._handwriting = HandwritingWindow(self)
+        self._handwriting.show()
+        self._handwriting.raise_()
+        self._handwriting.activateWindow()
+
+    def shutdown_handwriting(self):
+        if self._handwriting is not None:
+            self._handwriting.shutdown()
+
+    def handwriting_is_stopped(self):
+        return self._handwriting is None or self._handwriting.controller.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')

@@ -61,6 +61,8 @@ class ItemCreateDTO:
     source_window_title: Optional[str] = None
     capture_region: Optional[str] = None
     capture_monitor: int = 0
+    # Transient only, never persisted as user content or a schema change.
+    clipboard_epoch: Optional[int] = None
 
 
 @dataclass
@@ -76,6 +78,7 @@ class OcrResultDTO:
     job_id: Optional[str] = None
     base_edit_revision: Optional[int] = None
     provenance_json: Optional[str] = None
+    clipboard_epoch: Optional[int] = None
 
 
 @dataclass

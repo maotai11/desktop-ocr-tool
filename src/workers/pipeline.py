@@ -22,6 +22,10 @@ class Pipeline(QObject):
         self.hotkeys, self.clipboard = hotkeys, clipboard
         ocr.set_repository(repo, files)
         self.closing = self.closed = False
+        self._database_closed = False
+        self._tools_poll = QTimer(self)
+        self._tools_poll.setInterval(25)
+        self._tools_poll.timeout.connect(self._finish_shutdown)
         self._shutdown_timer = QTimer(self)
         self._shutdown_timer.setSingleShot(True)
         self._shutdown_timer.setInterval(15000)
@@ -34,7 +38,9 @@ class Pipeline(QObject):
         self.barrier_requested.connect(db_worker.barrier, Qt.ConnectionType.QueuedConnection)
         capture.capture_done.connect(self.captured)
         capture.capture_failed.connect(self.capture_failed)
-        db_worker.item_saved.connect(self.saved)
+        # Preserve the public item_saved(int) signal for existing UI consumers;
+        # the contextual acknowledgement avoids a late DB save resetting intent.
+        db_worker.item_saved_with_context.connect(self.saved)
         db_worker.item_updated.connect(self.updated)
         db_worker.save_failed.connect(self.save_failed)
         db_worker.ocr_persisted.connect(self.persisted)
@@ -69,13 +75,15 @@ class Pipeline(QObject):
         self.widget.set_ocr_status('儲存失敗：' + error)
 
     @Slot(int)
-    def saved(self, item_id):
+    @Slot(int, object)
+    def saved(self, item_id, clipboard_epoch=None):
         self.widget.refresh_list()
         item = self.repo.get_by_id(item_id)
         auto_capture = self.cfg and self.cfg.get('capture', 'auto_ocr_on_capture', default=True)
         if item and item.raw_image_path and (item.source_mode == 'region_ocr' or
                 (auto_capture and item.source_mode in ('region_image', 'fullscreen'))):
-            self.ocr.queue_ocr(item_id, self.files.get_abs_path(item.raw_image_path))
+            self.ocr.queue_ocr(item_id, self.files.get_abs_path(item.raw_image_path),
+                               clipboard_epoch=clipboard_epoch)
 
     @Slot(int)
     def updated(self, item_id):
@@ -114,8 +122,12 @@ class Pipeline(QObject):
                 item.ocr_status in ('done', 'needs_review', 'confirmed')):
             # A usable candidate may be pasted without asserting it was reviewed.
             # Keep every stale/deleted/manual-edit guard at publication time.
-            from ..clipboard.writer import copy_text
-            if copy_text(item.get_effective_text(), self.cfg) and needs_review:
+            from ..clipboard.writer import copy_text, get_clipboard_epoch
+            if (result.clipboard_epoch is not None and
+                    result.clipboard_epoch != get_clipboard_epoch()):
+                return
+            copied = copy_text(item.get_effective_text(), self.cfg, automatic=True)
+            if copied and needs_review:
                 self.widget.set_ocr_status(f'OCR #{item_id} 待確認；已複製候選，請核對原圖')
 
     @Slot()
@@ -125,6 +137,8 @@ class Pipeline(QObject):
         self.closing = True
         self._shutdown_timer.start()
         self.widget.setEnabled(False)
+        if hasattr(self.widget, 'shutdown_handwriting'):
+            self.widget.shutdown_handwriting()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
             self.clipboard.pause(True)
@@ -141,7 +155,8 @@ class Pipeline(QObject):
         # Native in-process inference cannot safely be killed. Surface the
         # delay without reporting success, terminating a QThread, or closing
         # SQLite underneath a live writer. Process isolation is a separate gate.
-        message = '關閉仍在等待背景工作；資料庫尚未關閉，請勿強制結束程式'
+        message = ('關閉仍在等待手寫引擎；資料庫已關閉' if self._database_closed else
+                   '關閉仍在等待背景工作；資料庫尚未關閉，請勿強制結束程式')
         logger.error(message)
         self.widget.set_ocr_status(message)
         self.shutdown_stalled.emit(message)
@@ -174,6 +189,19 @@ class Pipeline(QObject):
         if self.hotkeys:
             self.hotkeys.wait()
         self.database.close()
+        self._database_closed = True
+        self._finish_shutdown()
+
+    @Slot()
+    def _finish_shutdown(self):
+        if not self._database_closed or self.closed:
+            return
+        if (hasattr(self.widget, 'handwriting_is_stopped') and
+                not self.widget.handwriting_is_stopped()):
+            # QProcess remains owned until finished, never a GUI-thread wait.
+            self._tools_poll.start()
+            return
+        self._tools_poll.stop()
         self._shutdown_timer.stop()
         self.closed = True
         self.shutdown_finished.emit()

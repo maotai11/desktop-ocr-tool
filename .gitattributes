@@ -1,0 +1,7 @@
+# Hash-pinned source/fixtures must retain identical bytes on Windows checkout.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.onnx binary
+*.model binary
+*.zip binary

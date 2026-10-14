@@ -1,51 +1,32 @@
-# Windows 離線成品建置
+# InkPick 1.8.0-rc.1 離線候選建置
 
-版本：1.7.0-rc.2 預發布候選。只能在 Windows 建置 Windows EXE；Linux 原始碼測試不能證明 Windows 成品可用。
+Windows EXE 必須在 Windows x64 建置，最低 Windows 10 1809（Qt 6.11 支援平台）。Linux 原始碼測試不能代替 Windows 成品。
 
-## 準備與建置
+## 固定輸入
 
-在有網路的 Windows x64 建置機使用 Python 3.12：
+使用 Python 3.12 與 requirements-dev.txt。依 README 順序準備兩組 PP-OCRv6 模型、官方 Tegaki 0.3 模型及固定 Zinnia 原始碼。Microsoft x64 C++ helper 使用 Release `/MT`，核對 Windows 系統 DLL imports；SHA256 使用 Windows 10 起提供的 BCrypt API。不能交付 Linux helper、Debug CRT 或未驗證舊 DLL。
 
-```powershell
-python -m pip install -r requirements-dev.txt
-python scripts/prepare_models.py
-python -m pytest -q
-python src/main.py --self-test source-selftest.json
-python src/main.py --smoke-app source-app-smoke.json
-python scripts/build.py
-```
+SVG 確定性產生 16–256px PNG／ICO。app、視窗及系統匣共用 PNG；EXE 的 PE icon 與產品名稱另核對實際資源。執行期不新增 QtSvg／WebEngine 匯入。
 
-prepare_models 只用在建置／開發階段，依 manifest 下載固定官方模型並驗證 SHA256 與大小。既有檔案 hash 不符會失敗，不擅自覆寫。目標電腦執行 EXE 時沒有下載步驟。
+PyInstaller 使用明確白名單：兩組 OCR 權重及圖片、手寫模型／字表／16 筆原始模型筆跡 fixture、Windows helper／identity lock、InkPick raster assets。多餘 ONNX、缺少資產或 hash 不符皆拒絕。手寫模型約 49.8MiB；one-file 冷啟動解壓成本須在成品量測，不能拿 Linux helper 時間代填。
 
-## 內含內容
+## 同一成品驗證
 
-- Python、Qt、ONNX Runtime、RapidOCR 程式與必要資源
-- v6 Small detector、v6 Small／Medium recognizer、固定方向分類輔助模型
-- 兩組模型 manifest、固定繁中／金額／日期/API 圖片與正解
-- 模型版號、SHA256、有序字表及 tensor 契約驗證
+1. Windows／Linux tests 與 source OCR／SQLite／app lifecycle／手寫 probes
+2. 同一 Windows EXE 的 payload、OCR 字表、helper source／x64／DLL imports、PE 圖示及產品名稱
+3. frozen OCR／SQLite、app lifecycle、手寫候選／最新佇列／Unicode 剪貼簿／安全停止
+4. 臨時 runner 封鎖外層 EXE；手寫 probe 啟動模型前以握手取得同一 one-file 程序已校驗的 helper 路徑，再封鎖該 helper
+5. 規則生效時重跑 probes，Small／Medium 各 500 次推論，finally 移除本次規則
+6. ZIP、EXE、模型、來源 commit、報告及同一 run 測試結果逐一核對
 
-使用明確的檔案白名單，沒有整包收進 vendor 的 v4 預設權重、ORT demo ONNX 或其他實驗模型。兩組文字辨識都用 v6，不會在錯誤時回退舊文字模型。
+握手只控制驗證流程；app 不自行宣稱 OS 規則生效。PowerShell 讀回規則並記錄 hash-bound gate。完成的公開報告不保留 nonce 或 helper 暫存絕對路徑。
 
-## 成品驗證
+## 授權與來源
 
-建置後先檢查實際 PyInstaller payload，再對同一 EXE 執行 OCR／SQLite 及 app lifecycle probes。三張固定圖片逐字比較，保留空格與大小寫；兩個 profile 都必須通過。缺少模型、Runtime metadata、字表不符、來源hash不符或多出未允許的 ONNX，均不能產生通過的候選。
+portable ZIP 的 handwriting-source 內含原始模型 XML、LGPL 2.1 文字、模型 manifest，以及固定 Zinnia BSD 原始碼／COPYING、資源界限修補及 helper/CMake 原始碼。建置與發布再次核對這些 bytes；不能只交付模型及上游連結。完整第三方相依／法務審查仍是獨立門檻，見 THIRD_PARTY_NOTICES.md。
 
-GitHub Actions 另在 Windows 對該 EXE 設 outbound firewall block，重跑兩種 probes，核對 ZIP、EXE、source commit、model hashes 與同一份 test results。
+## 固定發布門檻
 
-輸出位於 artifacts：版本化 ZIP、EXE、BUILD_MANIFEST、SOURCE_MANIFEST、SHA256、候選驗證報告及授權說明。
+只接受 maotai11/desktop-ocr-tool 的 fix/inkpick-handwriting 分支與精確 `publish-prerelease: v1.8.0-rc.1` commit marker。一般 push／PR 只驗證；不發布、不覆寫舊資產。必須用同一 run／commit 的新 Windows 成品，不沿用 rc.2 EXE 或舊結果。
 
-解壓後可在一般使用者權限執行：
-
-```powershell
-.\Validate-Candidate.ps1 -BundleDirectory . -ReportDirectory .\candidate-check
-```
-
-這是候選一致性檢查，不是完整的乾淨機器或 UI 驗收。
-
-## 尚未代替的驗收
-
-Windows runner 已安裝的系統元件可能掩蓋 DLL 依賴。仍需真正無 Python／pip／模型快取、斷網、一般使用者的 Windows VM，測冷啟動／第二次啟動、中文含空白路徑、框選、編輯、候選確認、匯出及退出。
-
-混合 DPI、多螢幕、RDP／休眠及 native inference 永久不返回時的程序隔離仍未完成。NOT_RUN 項目必須留在報告，不得因 CI 成功就改成完成。
-
-發佈 job 只接受此 repository、fix/pending-paste-numeric-copy 分支及精確的 publish-prerelease: v1.7.0-rc.2 commit marker，並只取同一 run 通過驗證的成品。普通 push／PR 不會發佈，失敗的驗證不會發布；不覆寫既有版本或資產。clean-machine／mixed-DPI 門檻仍保留 NOT_RUN，只發布為 prerelease。
+GitHub runner 的系統元件可能掩蓋乾淨機器依賴。clean-machine、真人滑鼠／觸控筆跡、混合 DPI／多螢幕、RDP／休眠及 shell 圖示快取仍需現場驗收，僅發布 prerelease。既有 OCR QThread 永久不返回仍未隔離；手寫限時終止不代表 OCR hang 已解決。

@@ -27,11 +27,17 @@ class CaptureWorker(QueueWorker):
         self._file_manager = file_manager
 
     def capture_region(self, x: int, y: int, w: int, h: int,
-                       monitor_idx: int, source_mode: str):
-        self._submit_capture(('region', x, y, w, h, monitor_idx, source_mode))
+                       monitor_idx: int, source_mode: str, clipboard_epoch=None):
+        if clipboard_epoch is None:
+            from ..clipboard.writer import get_clipboard_epoch
+            clipboard_epoch = get_clipboard_epoch()
+        self._submit_capture(('region', x, y, w, h, monitor_idx, source_mode, clipboard_epoch))
 
-    def capture_fullscreen(self, monitor_idx: int = 1):
-        self._submit_capture(('fullscreen', monitor_idx))
+    def capture_fullscreen(self, monitor_idx: int = 1, clipboard_epoch=None):
+        if clipboard_epoch is None:
+            from ..clipboard.writer import get_clipboard_epoch
+            clipboard_epoch = get_clipboard_epoch()
+        self._submit_capture(('fullscreen', monitor_idx, clipboard_epoch))
 
     def _submit_capture(self, task):
         try:
@@ -47,12 +53,12 @@ class CaptureWorker(QueueWorker):
                 if backend is None:
                     backend = get_capture_backend()
                 if task[0] == 'region':
-                    _, x, y, w, h, monitor_idx, source_mode = task
+                    _, x, y, w, h, monitor_idx, source_mode, clipboard_epoch = task
                     img = backend.capture_region(x, y, w, h, monitor_idx)
                     region_json = json.dumps({'x': x, 'y': y, 'w': w, 'h': h})
                     monitor = monitor_idx
                 elif task[0] == 'fullscreen':
-                    _, monitor_idx = task
+                    _, monitor_idx, clipboard_epoch = task
                     img = backend.capture_monitor(monitor_idx)
                     region_json = None
                     monitor = monitor_idx
@@ -84,6 +90,7 @@ class CaptureWorker(QueueWorker):
                     ocr_status='none',
                     capture_region=region_json,
                     capture_monitor=monitor,
+                    clipboard_epoch=clipboard_epoch,
                 )
                 self.capture_done.emit(abs_path, dto)
             except Exception as e:

@@ -69,7 +69,9 @@ def test_build_data_allowlist_excludes_baseline_and_vendor_models(tmp_path):
                  if arg in ('--collect-data', '--collect-all')}
     assert 'rapidocr_onnxruntime' not in collected
     data_args = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == '--add-data']
-    assert len(data_args) == len(destinations)
+    from scripts.handwriting_bundle import data_files
+    assert len(data_args) == len(destinations) + len(data_files(tmp_path))
+    assert '--icon' in args and '--version-file' in args and '--add-binary' in args
     assert f'{tmp_path / "models"}{os.pathsep}models' not in data_args
 
 

@@ -147,7 +147,7 @@ try {
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -ne 'win32') { throw 'Invalid Windows build manifest' }
     Assert-ProfileManifests $manifest
-    if ($manifest.executable_name -notmatch '^DesktopOCRTool-v[0-9A-Za-z.+_-]+\.exe$') { throw 'Unsafe executable name' }
+    if ($manifest.executable_name -notmatch '^InkPick-v[0-9A-Za-z.+_-]+\.exe$') { throw 'Unsafe executable name' }
     $exe = Join-Path $bundle $manifest.executable_name
     $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($hash -cne $manifest.executable_sha256) { throw 'Executable SHA256 differs from manifest' }

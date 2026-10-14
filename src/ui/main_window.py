@@ -134,7 +134,10 @@ class MainWindow(QMainWindow):
         self._current_items = []
         self._batch_mode = False
 
-        self.setWindowTitle("桌面OCR擷取工具 - 主控台")
+        from ..core.version import APP_DISPLAY_NAME
+        from ..core.branding import application_icon
+        self.setWindowTitle(f"{APP_DISPLAY_NAME} - 主控台")
+        self.setWindowIcon(application_icon())
         self.resize(1200, 800)
         self._setup_ui()
         self._setup_menu()

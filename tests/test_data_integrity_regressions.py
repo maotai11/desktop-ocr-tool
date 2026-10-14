@@ -255,7 +255,7 @@ def test_queued_ack_rechecks_item_before_clipboard_publication(
         qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch, change):
     pipeline, worker, thread, ocr, capture, widget = make_pipeline(tmp_db, item_repo, file_mgr)
     copies = []
-    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', copies.append)
+    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     worker.ocr_persisted.disconnect(pipeline.persisted)
     worker.ocr_persisted.connect(pipeline.persisted, Qt.ConnectionType.QueuedConnection)
     item_id = item_repo.insert(make_image_dto())
@@ -275,7 +275,7 @@ def test_unmodified_current_ack_copies_success_and_clears_progress(
         qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch):
     pipeline, worker, thread, ocr, capture, widget = make_pipeline(tmp_db, item_repo, file_mgr)
     copies = []
-    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', copies.append)
+    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     item_id = item_repo.insert(make_image_dto())
     worker.update_ocr(item_id, reserve(item_repo, item_id))
     assert copies == ['new OCR'] and widget.progress[-1] == 0
@@ -371,7 +371,7 @@ def test_real_qthreads_latest_failed_rerun_keeps_manual_and_last_good_until_drai
     worker, thread = create_db_worker_in_thread(item_repo, file_mgr, enable_dedup=False)
     pipeline = Pipeline(capture, ocr, worker, thread, tmp_db, item_repo, file_mgr, widget, None)
     copies = []
-    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', copies.append)
+    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     try:
         assert ocr.queue_ocr(item_id, absolute)
         qtbot.waitUntil(entered.is_set)

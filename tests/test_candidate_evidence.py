@@ -7,6 +7,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts.verify_candidate_bundle import VERSION, sha256_file, verify_candidate
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence
 
 
 def encoded(value):
@@ -14,7 +15,11 @@ def encoded(value):
 
 
 @pytest.fixture
-def candidate(tmp_path):
+def candidate(tmp_path, monkeypatch):
+    # Small byte fixtures isolate source-distribution checks, which have separate real-byte tests.
+    from scripts import verify_candidate_bundle as verifier
+    monkeypatch.setattr(verifier, 'verify_handwriting_source_distribution',
+                        lambda *args: {'verified': True, 'synthetic_unit_boundary': True})
     artifacts = tmp_path / 'artifacts'
     artifacts.mkdir()
     firewall = artifacts / 'firewall-validation'
@@ -35,8 +40,9 @@ def candidate(tmp_path):
                                      engine_ready=True, shutdown_clean=True,
                                      threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True}),
     }
-    manifest = {'schema': 2, 'platform': 'win32', 'version': VERSION,
-                'executable_name': f'DesktopOCRTool-v{VERSION}.exe',
+    probes['frozen-handwriting.json'] = handwriting_probe(VERSION, hashlib.sha256(exe).hexdigest())
+    manifest = {'handwriting': handwriting_identity(), 'schema': 2, 'platform': 'win32', 'version': VERSION,
+                'executable_name': f'InkPick-v{VERSION}.exe',
                 'executable_sha256': hashlib.sha256(exe).hexdigest(), 'models': models,
                 'default_model_profile': 'v6-small', 'model_profiles': profiles,
                 'ocr_validation_fixtures': fixture_validation()[0],
@@ -49,7 +55,7 @@ def candidate(tmp_path):
                 **{'candidate-validation/' + name: encoded(value) for name, value in probes.items()}}
 
     def write_bundle():
-        path = artifacts / f'DesktopOCRTool-v{VERSION}.zip'
+        path = artifacts / f'InkPick-v{VERSION}.zip'
         with zipfile.ZipFile(path, 'w') as archive:
             for name, raw in contents.items():
                 archive.writestr(f'release-v{VERSION}/' + name, raw)
@@ -59,12 +65,13 @@ def candidate(tmp_path):
     write_bundle()
     for name, value in probes.items():
         (firewall / name).write_bytes(encoded(value))
-        source_name = 'source-selftest.json' if name == 'frozen-selftest.json' else 'source-app-smoke.json'
+        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json'}[name]
         (tmp_path / source_name).write_bytes(encoded(dict(value, frozen=False, executable_sha256=None)))
     gate = {'passed': True, 'version': VERSION, 'executable_sha256': manifest['executable_sha256'],
             'clean_machine_verified': False,
             'probes': {name: {'status': 'PASSED', 'sha256': sha256_file(firewall / name)} for name in probes}}
     (firewall / 'candidate-gate.json').write_bytes(encoded(gate))
+    extra_evidence(tmp_path, manifest)
     (tmp_path / 'test-results.xml').write_text(
         '<testsuites><testsuite failures="0" errors="0"><testcase name="one"/></testsuite></testsuites>')
     return tmp_path, manifest, contents, write_bundle
@@ -88,7 +95,7 @@ def test_metadata_never_accepts_mismatched_bytes_or_failed_gates(candidate, defe
     if defect == 'source': contents['SOURCE_MANIFEST.json'] += b' '
     write_bundle()
     if defect == 'zip':
-        (root / 'artifacts' / f'DesktopOCRTool-v{VERSION}.zip.sha256').write_text('0' * 64)
+        (root / 'artifacts' / f'InkPick-v{VERSION}.zip.sha256').write_text('0' * 64)
     if defect == 'firewall':
         (root / 'artifacts/firewall-validation/candidate-gate.json').write_bytes(encoded({'passed': False}))
     if defect == 'tests':
@@ -121,7 +128,7 @@ def test_verifier_rejects_missing_testcases(candidate):
 def test_verifier_rejects_ambiguous_or_redirected_archive_members(candidate, kind):
     import stat
     root, _, _, _ = candidate
-    path = root / 'artifacts' / f'DesktopOCRTool-v{VERSION}.zip'
+    path = root / 'artifacts' / f'InkPick-v{VERSION}.zip'
     with zipfile.ZipFile(path, 'a') as archive:
         if kind == 'duplicate':
             with pytest.warns(UserWarning, match='Duplicate'):
@@ -231,5 +238,78 @@ def test_same_run_evidence_requires_secondary_at_every_probe_stage(candidate, st
             gate = json.loads(gate_path.read_bytes())
             gate['probes']['frozen-selftest.json']['sha256'] = hashlib.sha256(updated).hexdigest()
             gate_path.write_bytes(encoded(gate))
+    with pytest.raises(ValueError):
+        verify_candidate(root, 'a' * 40)
+
+
+@pytest.mark.parametrize('stage', ['embedded', 'source', 'firewall'])
+@pytest.mark.parametrize('defect', ['helper_hash', 'model_hash', 'rank', 'duplicate_labels',
+                                   'unknown_candidate', 'job_missing', 'stopped_missing',
+                                   'clipboard_missing', 'private_path', 'clean_host_claim'])
+def test_handwriting_evidence_cannot_be_substituted_or_overclaim(candidate, stage, defect):
+    root, manifest, contents, write_bundle = candidate
+    name = 'candidate-validation/frozen-handwriting.json'
+    path = root / ('source-handwriting.json' if stage == 'source'
+                   else 'artifacts/firewall-validation/frozen-handwriting.json')
+    report = json.loads(contents[name] if stage == 'embedded' else path.read_bytes())
+    if defect == 'helper_hash': report['helper_sha256'] = '0' * 64
+    if defect == 'model_hash': report['model_sha256'] = '0' * 64
+    if defect == 'rank': report['cases'][0]['rank'] = 2
+    if defect == 'duplicate_labels': report['cases'][0] = report['cases'][1]
+    if defect == 'unknown_candidate': report['cases'][0]['candidates'].append('𠮷')
+    if defect == 'job_missing': report['job_assigned'] = False
+    if defect == 'stopped_missing': report['helper_stopped'] = False
+    if defect == 'clipboard_missing': report['clipboard_roundtrip'] = False
+    if defect == 'private_path': report['helper_path'] = 'C:/private/test-only'
+    if defect == 'clean_host_claim': report['clean_machine_verified'] = True
+    raw = encoded(report)
+    if stage == 'embedded':
+        contents[name] = raw
+        manifest['candidate_probes']['frozen-handwriting.json']['sha256'] = hashlib.sha256(raw).hexdigest()
+        contents['BUILD_MANIFEST.json'] = encoded(manifest)
+        write_bundle()
+    else:
+        path.write_bytes(raw)
+        if stage == 'firewall':
+            gate_path = root / 'artifacts/firewall-validation/handwriting-firewall-gate.json'
+            gate = json.loads(gate_path.read_bytes())
+            gate['report_sha256'] = hashlib.sha256(raw).hexdigest()
+            gate_path.write_bytes(encoded(gate))
+    with pytest.raises(ValueError):
+        verify_candidate(root, 'a' * 40)
+
+
+@pytest.mark.parametrize('defect', ['unblocked_child', 'unblocked_parent', 'wrong_child', 'wrong_report', 'missing_ack', 'disabled_firewall'])
+def test_handwriting_firewall_requires_both_exact_processes(candidate, defect):
+    root, _, _, _ = candidate
+    path = root / 'artifacts/firewall-validation/handwriting-firewall-gate.json'
+    gate = json.loads(path.read_bytes())
+    if defect == 'unblocked_child': gate['helper_outbound_blocked'] = False
+    if defect == 'unblocked_parent': gate['executable_outbound_blocked'] = False
+    if defect == 'wrong_child': gate['helper_sha256'] = '0' * 64
+    if defect == 'wrong_report': gate['report_sha256'] = '0' * 64
+    if defect == 'disabled_firewall': gate['firewall_profiles_enabled'] = False
+    if defect == 'missing_ack':
+        report_path = root / 'artifacts/firewall-validation/frozen-handwriting.json'
+        report = json.loads(report_path.read_bytes())
+        report['firewall_gate_acknowledged'] = False
+        report_path.write_bytes(encoded(report))
+        gate['report_sha256'] = sha256_file(report_path)
+    path.write_bytes(encoded(gate))
+    with pytest.raises(ValueError):
+        verify_candidate(root, 'a' * 40)
+
+
+@pytest.mark.parametrize('defect', ['wrong_exe', 'short_run', 'profile_missing', 'failed_iteration', 'wrong_model'])
+def test_release_requires_500_stress_iterations_of_both_exact_profiles(candidate, defect):
+    root, _, _, _ = candidate
+    path = root / 'artifacts/firewall-validation/frozen-runtime-stress.json'
+    report = json.loads(path.read_bytes())
+    if defect == 'wrong_exe': report['executable_sha256'] = '0' * 64
+    if defect == 'short_run': report['profiles']['v6-medium']['iterations_completed'] = 499
+    if defect == 'profile_missing': del report['profiles']['v6-medium']
+    if defect == 'failed_iteration': report['profiles']['v6-small']['failures'] = [{'iteration': 1}]
+    if defect == 'wrong_model': report['profiles']['v6-medium']['identity']['runtime_version'] = 'wrong'
+    path.write_bytes(encoded(report))
     with pytest.raises(ValueError):
         verify_candidate(root, 'a' * 40)

@@ -210,7 +210,88 @@ def _check_probe(report, manifest, frozen):
         raise ValueError('Unknown probe kind')
 
 
-def inspect_frozen_payload(path, model_profiles, source_files=None, validation_fixtures=None):
+def check_handwriting_probe(report, manifest, frozen, *, firewall=False):
+    """Bind real native/Qt handwriting checks to this candidate, never mocks."""
+    from src.handwriting.assets import ALPHABET_SHA256, MODEL_BYTES, MODEL_SHA256
+    identity = manifest.get('handwriting', {})
+    helper = identity.get('helper', {})
+    source = helper.get('source', {})
+    digest = lambda value: isinstance(value, str) and len(value) == 64 and all(
+        char in '0123456789abcdef' for char in value)
+    imports = helper.get('native_imports')
+    if (identity.get('model_sha256') != MODEL_SHA256
+            or identity.get('model_size_bytes') != MODEL_BYTES
+            or identity.get('alphabet_sha256') != ALPHABET_SHA256
+            or identity.get('label_count') != 11853
+            or not digest(identity.get('validation_sha256'))
+            or helper.get('schema') != 1 or helper.get('protocol') != 1
+            or helper.get('platform') != 'win32' or helper.get('machine') != 'AMD64'
+            or helper.get('name') != 'inkpick-handwriting.exe'
+            or helper.get('crt') != 'MSVC /MT Release'
+            or type(helper.get('size_bytes')) is not int or not 0 < helper['size_bytes'] <= 10000000
+            or not digest(helper.get('sha256')) or not digest(source.get('sha256'))
+            or source.get('upstream_commit') != '581faa8f6f15e4a7b21964be3a5ec36265c80e5b'
+            or not isinstance(imports, list) or not imports
+            or not {'kernel32.dll', 'bcrypt.dll'} <= set(imports)
+            or not set(imports) <= {'kernel32.dll', 'bcrypt.dll', 'advapi32.dll', 'user32.dll', 'ntdll.dll'}):
+        raise ValueError('Invalid handwriting build identity')
+    expected = {'schema': 1, 'probe': 'handwriting_lifecycle', 'passed': True,
+                'frozen': frozen, 'platform': 'win32', 'qt_platform': 'windows',
+                'version': VERSION, 'clean_machine_verified': False, 'phase': 'completed',
+                'executable_sha256': manifest['executable_sha256'] if frozen else None,
+                'helper_sha256': helper['sha256'], 'model_sha256': MODEL_SHA256,
+                'alphabet_sha256': ALPHABET_SHA256,
+                'validation_sha256': identity['validation_sha256'],
+                'helper_source_sha256': source['sha256'], 'helper_architecture': 'AMD64',
+                'queue_latest_only': True, 'clipboard_roundtrip': True,
+                'self_mime_preserved': True, 'helper_stopped': True, 'job_assigned': True,
+                'firewall_gate_acknowledged': firewall,
+                'accuracy_evidence': 'UPSTREAM_TRAINING_REPLAY_ONLY'}
+    for key, value in expected.items():
+        if type(report.get(key)) is not type(value) or report.get(key) != value:
+            raise ValueError('Incomplete or mismatched handwriting probe: ' + key)
+    if set(report) != set(expected) | {'cases'}:
+        raise ValueError('Unexpected or transient data in completed handwriting evidence')
+    alphabet_bytes = (ROOT / 'models/handwriting/alphabet.txt').read_bytes()
+    if hashlib.sha256(alphabet_bytes).hexdigest() != ALPHABET_SHA256:
+        raise ValueError('Verifier handwriting alphabet changed')
+    alphabet = frozenset(alphabet_bytes.decode('utf-8'))
+    cases = report.get('cases')
+    labels = set('一二十己已巳臺灣龜鬱鑑靈壹貳參龘')
+    if (not isinstance(cases, list) or len(cases) != len(labels)
+            or any(not isinstance(case, dict) for case in cases)
+            or {case.get('label') for case in cases} != labels):
+        raise ValueError('Incomplete handwriting training-trace checks')
+    for case in cases:
+        values = case.get('candidates')
+        if (set(case) != {'label', 'candidates', 'rank', 'passed'}
+                or case['passed'] is not True or type(case['rank']) is not int or case['rank'] != 1
+                or not isinstance(values, list) or not 1 <= len(values) <= 10
+                or any(not isinstance(value, str) or value not in alphabet for value in values)
+                or len(set(values)) != len(values) or values[0] != case['label']):
+            raise ValueError('Handwriting expected-candidate check failed')
+
+
+def check_frozen_stress(report, manifest):
+    expected = {'schema': 1, 'probe': 'model_runtime_stress', 'version': VERSION,
+                'platform': 'win32', 'frozen': True, 'passed': True,
+                'executable_sha256': manifest['executable_sha256'],
+                'iterations_per_profile': 500, 'telemetry_env': '1',
+                'clean_machine_verified': False}
+    if any(type(report.get(key)) is not type(value) or report.get(key) != value
+           for key, value in expected.items()):
+        raise ValueError('Incomplete frozen runtime stress')
+    profiles = report.get('profiles')
+    if not isinstance(profiles, dict) or set(profiles) != set(MODEL_PROFILES):
+        raise ValueError('Incomplete stress profile set')
+    for profile, data in profiles.items():
+        if (data.get('passed') is not True or type(data.get('iterations_completed')) is not int
+                or data['iterations_completed'] != 500 or data.get('failures') != []):
+            raise ValueError('Incomplete stress profile iterations')
+        check_model_identity(data.get('identity'), profile, manifest['model_profiles'][profile])
+
+
+def inspect_frozen_payload(path, model_profiles, source_files=None, validation_fixtures=None, handwriting=None):
     from PyInstaller.archive.readers import CArchiveReader
     check_profile_manifests(model_profiles)
     reader = CArchiveReader(str(path))
@@ -252,6 +333,9 @@ def inspect_frozen_payload(path, model_profiles, source_files=None, validation_f
     fixture_lock_path = 'models/validation/fixtures.json'
     allowed_model_data = allowed_onnx | {'models/' + name for name in MODEL_PROFILES.values()} | {
         fixture_lock_path, *('models/validation/' + case['file'] for case in validation_fixtures['cases'])}
+    if handwriting is not None:
+        from scripts.handwriting_bundle import MODEL_FILES
+        allowed_model_data.update(MODEL_FILES)
     actual_model_data = {name for name in names if name.lower().startswith('models/')}
     if actual_model_data != allowed_model_data:
         raise ValueError('Frozen model-data allowlist mismatch')
@@ -293,7 +377,13 @@ def inspect_frozen_payload(path, model_profiles, source_files=None, validation_f
             hashes[role] = info['sha256']
         evidence[profile] = {'manifest_path': lock_path, 'manifest_sha256': lock_hash,
                              'model_hashes': hashes, 'verified': True}
+    handwriting_evidence = None
+    if handwriting is not None:
+        from scripts.handwriting_bundle import inspect_payload
+        handwriting_evidence = inspect_payload(reader, names, handwriting, source_files)
     return {'inspected': True, 'entry_count': len(names), 'entries': sorted(names),
+            'handwriting': handwriting_evidence,
+            'embedded_handwriting_verified': bool(handwriting_evidence and handwriting_evidence['verified']),
             'dlls': sorted(name for name in names if name.lower().endswith(('.dll', '.pyd'))),
             'required_payload': list(required), 'embedded_model_hashes_verified': True,
             'embedded_model_profiles': evidence,
@@ -304,10 +394,67 @@ def inspect_frozen_payload(path, model_profiles, source_files=None, validation_f
             'system_dll_closure': 'NOT_A_CLEAN_HOST_CERTIFICATION'}
 
 
+def verify_handwriting_source_distribution(archive, prefix, identity, source_files):
+    """Check actual same-release corresponding-source/notices bytes."""
+    from scripts.handwriting_bundle import SOURCE_SHA256, LICENSE_SHA256
+    base = prefix + 'handwriting-source/'
+    patch_hash = '120abca04044db3de43436d9d78c10a1a32a2b3130bd38dd10bd811f5574aa45'
+    bsd_hash = '822856fc8cec7c88e90e182dacd8eca5306836fc09df817c9dbb1d6337f6a1cc'
+
+    def checked(name, expected_hash, maximum, *, exact=None, source_path=None):
+        info = archive.getinfo(base + name)
+        if info.file_size > maximum or (exact is not None and info.file_size != exact):
+            raise ValueError('Source distribution size mismatch: ' + name)
+        digest = hashlib.sha256()
+        with archive.open(base + name) as stream:
+            for block in iter(lambda: stream.read(1048576), b''):
+                digest.update(block)
+        if digest.hexdigest() != expected_hash:
+            raise ValueError('Source distribution hash mismatch: ' + name)
+        if source_path and source_files.get(source_path) != {'sha256': expected_hash}:
+            raise ValueError('Source distribution differs from committed source: ' + name)
+
+    checked('tegaki-zh_TW/handwriting-zh_TW.xml', SOURCE_SHA256, 24523156, exact=24523156)
+    checked('tegaki-zh_TW/COPYING-LGPL-2.1.txt', LICENSE_SHA256, 50000)
+    checked('zinnia/vendor/zinnia/COPYING', bsd_hash, 10000,
+            source_path='native/handwriting/vendor/zinnia/COPYING')
+    checked('zinnia/patches/0001-bound-vertex-tree.patch', patch_hash, 10000,
+            source_path='native/handwriting/patches/0001-bound-vertex-tree.patch')
+    for name, source_path in (('MODEL_MANIFEST.json', 'models/handwriting/manifest.json'),
+                              ('zinnia/UPSTREAM_MANIFEST.json', 'native/handwriting/UPSTREAM_MANIFEST.json')):
+        info = archive.getinfo(base + name)
+        if info.file_size > 100000:
+            raise ValueError('Oversized source distribution manifest')
+        raw = archive.read(base + name)
+        if source_files.get(source_path) != {'sha256': hashlib.sha256(raw).hexdigest()}:
+            raise ValueError('Source distribution manifest hash mismatch')
+        value = _json(raw)
+        if name == 'MODEL_MANIFEST.json':
+            if value != {key: data for key, data in identity.items() if key not in ('helper', 'branding')}:
+                raise ValueError('Source distribution model manifest mismatch')
+        else:
+            upstream = value
+    helper_source = identity['helper']['source']
+    files = helper_source['files']
+    if (upstream.get('commit') != '581faa8f6f15e4a7b21964be3a5ec36265c80e5b'
+            or upstream.get('feature_patch_sha256') != patch_hash
+            or set(files) != {'vendor/' + name for name in upstream['files']} |
+                             {'helper.cpp', 'model_and_strokes.h', 'CMakeLists.txt'}
+            or hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest() != helper_source['sha256']):
+        raise ValueError('Source distribution native-source identity mismatch')
+    for name, digest in files.items():
+        if PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts or '\\' in name:
+            raise ValueError('Unsafe source distribution path')
+        checked('zinnia/' + name, digest, 100000, source_path='native/handwriting/' + name)
+    return {'verified': True, 'model_source_sha256': SOURCE_SHA256,
+            'model_license_sha256': LICENSE_SHA256, 'engine_license_sha256': bsd_hash,
+            'patch_sha256': patch_hash, 'native_source_sha256': helper_source['sha256']}
+
+
 def verify_candidate(root, expected_commit, inspect_payload=False):
     root = Path(root)
     artifacts = root / 'artifacts'
-    bundles = list(artifacts.glob(f'DesktopOCRTool-v{VERSION}.zip'))
+    bundles = list(artifacts.glob(f'InkPick-v{VERSION}.zip'))
     if len(bundles) != 1:
         raise ValueError('Expected exactly one current candidate ZIP')
     bundle = bundles[0]
@@ -339,8 +486,10 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
         check_validation_fixtures(manifest.get('ocr_validation_fixtures'))
         if portable_models(manifest.get('models')) != portable_models(manifest['model_profiles'][DEFAULT_MODEL_PROFILE]):
             raise ValueError('Default model manifest mismatch')
+        source_distribution = verify_handwriting_source_distribution(
+            archive, prefix, manifest.get('handwriting', {}), source.get('files', {}))
         name = manifest['executable_name']
-        if name != f'DesktopOCRTool-v{VERSION}.exe':
+        if name != f'InkPick-v{VERSION}.exe':
             raise ValueError('Unexpected executable name')
         executable_hash = hashlib.sha256()
         with tempfile.TemporaryDirectory(prefix='ocr-payload-verify-') as directory:
@@ -352,7 +501,8 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             if executable_hash.hexdigest() != manifest['executable_sha256']:
                 raise ValueError('EXE checksum mismatch')
             payload = (inspect_frozen_payload(executable, manifest['model_profiles'], source.get('files', {}),
-                                              manifest['ocr_validation_fixtures']) if inspect_payload else
+                                              manifest['ocr_validation_fixtures'],
+                                              handwriting=manifest.get('handwriting')) if inspect_payload else
                        {'inspected': False, 'system_dll_closure': 'NOT_RUN'})
             executable_size = executable.stat().st_size
         probes = {}
@@ -363,17 +513,43 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
                 raise ValueError('Embedded probe checksum mismatch')
             _check_probe(_json(raw), manifest, True)
             probes[report_name] = 'PASSED'
+        report_name = 'frozen-handwriting.json'
+        raw = archive.read(prefix + 'candidate-validation/' + report_name)
+        if manifest['candidate_probes'][report_name] != {
+                'sha256': hashlib.sha256(raw).hexdigest(), 'status': 'PASSED'}:
+            raise ValueError('Embedded handwriting probe checksum mismatch')
+        check_handwriting_probe(_json(raw), manifest, True)
+        probes[report_name] = 'PASSED'
     gate = _json((artifacts / 'firewall-validation/candidate-gate.json').read_bytes())
     if (gate.get('passed') is not True or gate.get('executable_sha256') != executable_hash.hexdigest()
             or gate.get('version') != VERSION or gate.get('clean_machine_verified') is not False):
         raise ValueError('Outbound-blocked gate mismatch')
     for name in probes:
         path = artifacts / 'firewall-validation' / name
+        if name == 'frozen-handwriting.json':
+            continue  # The separate gate binds both the outer EXE and extracted helper.
         if gate['probes'][name] != {'sha256': sha256_file(path), 'status': 'PASSED'}:
             raise ValueError('Outbound-blocked probe checksum mismatch')
         _check_probe(_json(path.read_bytes()), manifest, True)
+    handwriting_path = artifacts / 'firewall-validation/frozen-handwriting.json'
+    handwriting_gate = _json((artifacts / 'firewall-validation/handwriting-firewall-gate.json').read_bytes())
+    expected_handwriting_gate = {
+        'schema': 1, 'passed': True, 'helper_outbound_blocked': True,
+        'executable_outbound_blocked': True, 'clean_machine_verified': False,
+        'firewall_service_running': True, 'firewall_profiles_enabled': True,
+        'helper_sha256': manifest['handwriting']['helper']['sha256'],
+        'executable_sha256': executable_hash.hexdigest(), 'version': VERSION,
+        'report_sha256': sha256_file(handwriting_path),
+    }
+    if any(type(handwriting_gate.get(key)) is not type(value) or handwriting_gate.get(key) != value
+           for key, value in expected_handwriting_gate.items()):
+        raise ValueError('Handwriting outbound-blocked gate mismatch')
+    check_handwriting_probe(_json(handwriting_path.read_bytes()), manifest, True, firewall=True)
     for name in ('source-selftest.json', 'source-app-smoke.json'):
         _check_probe(_json((root / name).read_bytes()), manifest, False)
+    check_handwriting_probe(_json((root / 'source-handwriting.json').read_bytes()), manifest, False)
+    stress_path = artifacts / 'firewall-validation/frozen-runtime-stress.json'
+    check_frozen_stress(_json(stress_path.read_bytes()), manifest)
     suites = ET.parse(root / 'test-results.xml').getroot()
     if not list(suites.iter('testcase')):
         raise ValueError('No Windows test evidence')
@@ -391,6 +567,11 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             'model_profiles': {profile: 'PASSED' for profile in MODEL_PROFILES},
             'source_probes': 'PASSED', 'frozen_probes': probes,
             'outbound_blocked_frozen_probes': 'PASSED',
+            'handwriting_probes': {'source': 'PASSED', 'frozen': 'PASSED',
+                                   'outer_and_helper_outbound_blocked': 'PASSED'},
+            'handwriting_source_distribution': source_distribution,
+            'frozen_runtime_stress': {'status': 'PASSED', 'iterations_per_profile': 500,
+                                     'sha256': sha256_file(stress_path)},
             'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
             'workflow_run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
             'workflow': {'repository': os.environ.get('GITHUB_REPOSITORY'),

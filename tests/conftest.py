@@ -5,6 +5,26 @@ Pytest 共用 fixtures
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def release_synthetic_clipboard_mime(request):
+    """Test-owned payload only; avoid known Qt offscreen finalization failure.
+
+    The unmodified writer also reproduces this interpreter-teardown fault.
+    Never apply clipboard clearing to production app shutdown. A separate real
+    Windows child-process test leaves MIME intact and verifies persistence.
+    """
+    yield
+    if 'qapp' in request.fixturenames:
+        from src.core.constants import CUSTOM_MIME_TYPE
+        app = request.getfixturevalue('qapp')
+        if app.platformName() != 'offscreen':
+            return
+        clipboard = app.clipboard()
+        mime = clipboard.mimeData()
+        if mime is not None and mime.hasFormat(CUSTOM_MIME_TYPE):
+            clipboard.clear()
+
+
 # ---- 資料庫 ----------------------------------------------------------------
 
 @pytest.fixture

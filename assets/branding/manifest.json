@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "concept": "InkPick crop frame with fountain nib",
+  "qt_renderer_version": "6.11.2",
+  "sizes": [
+    16,
+    20,
+    24,
+    32,
+    40,
+    48,
+    64,
+    128,
+    256
+  ],
+  "files": {
+    "inkpick.svg": {
+      "size_bytes": 909,
+      "sha256": "e81a769825a22f2f1fb0e81641c422f45b789092c47e5ebd54f155d4275b6952"
+    },
+    "inkpick.ico": {
+      "size_bytes": 37085,
+      "sha256": "64446470bcf5797007325c0167c340b617df1632f8909c73f6066c5ac141cc9b"
+    },
+    "inkpick-16.png": {
+      "size_bytes": 786,
+      "sha256": "5e9373acc34b3007adbb1aaae9da07cd1450ed075def1f86f1db2a669ab54e4c"
+    },
+    "inkpick-20.png": {
+      "size_bytes": 1112,
+      "sha256": "0f36334a5702323ae1484366f0f1fdc17122cdf8705954b73987e321ea44d6a5"
+    },
+    "inkpick-24.png": {
+      "size_bytes": 1447,
+      "sha256": "d1d8b9b19a3500269badeac42921ca206f20cb91f2887344ead66e4d73cb6106"
+    },
+    "inkpick-32.png": {
+      "size_bytes": 1997,
+      "sha256": "b894986203aedeadfde50be3b86b4da8d03fd43cac9d73390425fdadf01cab05"
+    },
+    "inkpick-40.png": {
+      "size_bytes": 2511,
+      "sha256": "0dc9bce2ef8a9ff83b538a60d850fc2a7644225df3323506dbeb0723cf9da4a9"
+    },
+    "inkpick-48.png": {
+      "size_bytes": 3068,
+      "sha256": "f897d19b318641ea141963c49fcd6dc021be55c2ac15f1ce0093109f62a10437"
+    },
+    "inkpick-64.png": {
+      "size_bytes": 3994,
+      "sha256": "16d60a985af0b61fb3921076a9db628908693caaa999d7d9473dff1fcd6b0faa"
+    },
+    "inkpick-128.png": {
+      "size_bytes": 7241,
+      "sha256": "35e8ebea87255f59f6a7c4484add97d71e8d6a74aa1cbc335ba89b1ebae2ab9e"
+    },
+    "inkpick-256.png": {
+      "size_bytes": 13968,
+      "sha256": "60db6633aa67b7f590927153dfe53cb98fc77500723ff55288cad907940eb69d"
+    }
+  }
+}

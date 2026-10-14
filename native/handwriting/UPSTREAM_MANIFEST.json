@@ -1,0 +1,86 @@
+{
+  "repository": "taku910/zinnia",
+  "commit": "581faa8f6f15e4a7b21964be3a5ec36265c80e5b",
+  "files": {
+    "zinnia/feature.cpp": {
+      "git_blob_sha1": "4cdc17f588c79151b51e153536839ec05260cf9d",
+      "sha256": "895ddab1c83f7573aff52606c82a5dba0ad5fdd1482d78dd7cc9d2d5429c0a52",
+      "size_bytes": 5103,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/feature.cpp"
+    },
+    "zinnia/character.cpp": {
+      "git_blob_sha1": "217cf52eea1659b129a14a74086243d1d30800ce",
+      "sha256": "a2d1f28a134559d6976147fe8900a276100c5e257cb23b7d5c3d21657ea26239",
+      "size_bytes": 4843,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/character.cpp"
+    },
+    "zinnia/libzinnia.cpp": {
+      "git_blob_sha1": "be502920171802f0ca298e8d789966469a7e5792",
+      "sha256": "4c609e8480a8cc070964c7605f0941bb6d1a8c7765eda7c6ec13cd16c00c417c",
+      "size_bytes": 11631,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/libzinnia.cpp"
+    },
+    "zinnia/zinnia.h": {
+      "git_blob_sha1": "8467e5a5918a2e0d111c364ea43657ce152c81af",
+      "sha256": "7f89fb64dd633c714aa164049e408ebb3d98a5fd01705e8dc38cc5ba747376cc",
+      "size_bytes": 8433,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/zinnia.h"
+    },
+    "zinnia/feature.h": {
+      "git_blob_sha1": "78a9beb5e6629f56b54c281140abccf16147ba0a",
+      "sha256": "422974751cf8c8ff9bb2124b79612dd0673e278b468c9fd3454eef3d3afdaf18",
+      "size_bytes": 1338,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/feature.h"
+    },
+    "zinnia/common.h": {
+      "git_blob_sha1": "21f7c2c979c805eeb3f0ae76a3205babbde995dc",
+      "sha256": "e7ee93b94d1517230528974e98d3285907c51e80461577e84e3a8bbdc62762db",
+      "size_bytes": 3405,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/common.h"
+    },
+    "zinnia/mmap.h": {
+      "git_blob_sha1": "334d05259245f87f57665b83c9f40719189033fa",
+      "sha256": "6dcfb49702670c09b9bd299f402390dd2aa13af82c95fef2e866bef4137a196c",
+      "size_bytes": 4973,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/mmap.h"
+    },
+    "zinnia/scoped_ptr.h": {
+      "git_blob_sha1": "fc7cd0076f2af1abddaca0d5c9e7fdc93c0cfc92",
+      "sha256": "2f57b8423c48e32a8be8d24f18022d55a3d7f1055ba7f0104a97917d1ea40d8f",
+      "size_bytes": 1783,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/scoped_ptr.h"
+    },
+    "zinnia/sexp.h": {
+      "git_blob_sha1": "340138a4ed9c3520440d81398bc5e5c68d5a7d1c",
+      "sha256": "c132202920a945e15d8b87694ce990106598b542f85d7d32d20dfdb3e44c584c",
+      "size_bytes": 1937,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/sexp.h"
+    },
+    "zinnia/sexp.cpp": {
+      "git_blob_sha1": "33078b45a03714294c8337150313d4d107554012",
+      "sha256": "258d8d41c115329a1927a7d231bfae0a467c87b49ebfe52978fa213390507b5c",
+      "size_bytes": 3307,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/sexp.cpp"
+    },
+    "zinnia/recognizer.cpp": {
+      "git_blob_sha1": "b23160789668466ea8f91138ce7e8687aa21e669",
+      "sha256": "5004186e88d6de8b30a5ef453e85e99503f8f9e6d40960af9cef5e8c8f25a1cd",
+      "size_bytes": 4872,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/recognizer.cpp"
+    },
+    "zinnia/COPYING": {
+      "git_blob_sha1": "93be0204274f50fd85b220522cb51c315cb2a669",
+      "sha256": "822856fc8cec7c88e90e182dacd8eca5306836fc09df817c9dbb1d6337f6a1cc",
+      "size_bytes": 1494,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/COPYING"
+    },
+    "zinnia/freelist.h": {
+      "git_blob_sha1": "a661557a1d9dbd708873e4fe3fae9f3183bc0ac1",
+      "sha256": "4cc32b009802b6f7a2c53c0a86ed4c65adaf23edd6012fd0036383095377fdb0",
+      "size_bytes": 1419,
+      "url": "https://github.com/taku910/zinnia/blob/581faa8f6f15e4a7b21964be3a5ec36265c80e5b/zinnia/freelist.h"
+    }
+  },
+  "feature_patch_sha256": "120abca04044db3de43436d9d78c10a1a32a2b3130bd38dd10bd811f5574aa45",
+  "patched_feature_sha256": "5c76e5764dee36ea0df2a69c72f037c4cb5c36772c80835fcec7e992e1d02b4c"
+}

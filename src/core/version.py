@@ -1,8 +1,9 @@
 import os
 
-APP_NAME = "DesktopOCRTool"
-APP_DISPLAY_NAME = "桌面 OCR 擷取工具"
-APP_VERSION = os.environ.get("DESKTOP_OCR_VERSION", "1.7.0-rc.2")
+APP_NAME = "InkPick"
+# Persistent paths, mutex/MIME/registry keys retain the old compatibility ID.
+APP_DISPLAY_NAME = "InkPick 拾字筆"
+APP_VERSION = os.environ.get("DESKTOP_OCR_VERSION", "1.8.0-rc.1")
 
 
 def release_dir_name() -> str:

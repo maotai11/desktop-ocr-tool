@@ -14,6 +14,7 @@ class DbWorker(QObject):
     Database serializes write transactions; each thread owns its connection.
     """
     item_saved = Signal(int)
+    item_saved_with_context = Signal(int, object)
     item_updated = Signal(int)
     item_deleted = Signal(int)
     save_failed = Signal(str)
@@ -50,6 +51,7 @@ class DbWorker(QObject):
             item_id = self._repo.insert(dto)
             if item_id:
                 logger.info(f"已儲存 item #{item_id}")
+                self.item_saved_with_context.emit(item_id, dto.clipboard_epoch)
                 self.item_saved.emit(item_id)
             else:
                 self.save_failed.emit("儲存失敗")

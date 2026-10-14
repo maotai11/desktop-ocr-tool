@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>InkPick 拾字筆</title>
+  <desc>Approved crop-frame and fountain-nib concept. Navy with a teal upper-right corner.</desc>
+  <rect x="4" y="4" width="248" height="248" rx="48" fill="#F7F5F0"/>
+  <g fill="none" stroke-width="22" stroke-linejoin="round">
+    <path d="M98 49 H65 Q49 49 49 65 V98" stroke="#0A213E"/>
+    <path d="M158 49 H191 Q207 49 207 65 V98" stroke="#169F98"/>
+    <path d="M49 158 V191 Q49 207 65 207 H98" stroke="#0A213E"/>
+    <path d="M207 158 V191 Q207 207 191 207 H158" stroke="#0A213E"/>
+  </g>
+  <path d="M120 76 C117 99 103 119 88 138 L111 183 V207 H145 V183 L168 138 C153 119 139 99 136 76 Q133 72 128 72 Q123 72 120 76 Z" fill="#0A213E"/>
+  <path d="M128 76 V179" stroke="#F7F5F0" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="128" cy="146" r="10" fill="#F7F5F0"/>
+</svg>

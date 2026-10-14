@@ -36,10 +36,15 @@ jobs:
           python -m pip check
           python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
       - name: Prepare pinned offline model payload
-        run: python scripts/prepare_models.py
+        run: |
+          python scripts/prepare_models.py
+          python scripts/prepare_handwriting_model.py
+          python scripts/build_handwriting_helper.py
+          python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
       - run: python -m pytest -q --junitxml=test-results.xml
       - run: python src/main.py --self-test source-selftest.json
       - run: python src/main.py --smoke-app source-app-smoke.json
+      - run: python src/main.py --self-test-handwriting source-handwriting.json
       - if: runner.os == 'Windows'
         run: python scripts/build.py
       - if: runner.os == 'Windows'
@@ -55,6 +60,8 @@ jobs:
           try {
             & ./scripts/validate_windows_bundle.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
             if ($LASTEXITCODE -ne 0) { throw 'Outbound-blocked frozen candidate gate failed' }
+            & ./scripts/validate_handwriting_firewall.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
+            if ($LASTEXITCODE -ne 0) { throw 'Outer/helper outbound-blocked handwriting gate failed' }
             $stressReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-runtime-stress.json'
             $stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru
             if (-not $stressProcess.WaitForExit(900000)) { $stressProcess.Kill(); throw 'Frozen stress timed out' }
@@ -79,8 +86,10 @@ jobs:
             test-results.xml
             *selftest.json
             *app-smoke.json
+            source-handwriting.json
             artifacts/*.sha256
             artifacts/verified-bundle.json
+            artifacts/handwriting-native-probe.json
             artifacts/dependency-inventory.json
             artifacts/release-*/BUILD_MANIFEST.json
             artifacts/release-*/SOURCE_MANIFEST.json
@@ -95,10 +104,12 @@ jobs:
             test-results.xml
             *selftest.json
             *app-smoke.json
+            source-handwriting.json
             artifacts/*.zip
             artifacts/*.sha256
             artifacts/dependency-inventory.json
             artifacts/verified-bundle.json
+            artifacts/handwriting-native-probe.json
             artifacts/candidate-validation/*.json
             artifacts/firewall-validation/*.json
           if-no-files-found: warn
@@ -107,9 +118,9 @@ jobs:
     # One fixed, explicitly approved candidate; never publish from a PR event.
     if: >-
       github.event_name == 'push' &&
-      github.ref == 'refs/heads/fix/pending-paste-numeric-copy' &&
+      github.ref == 'refs/heads/fix/inkpick-handwriting' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.7.0-rc.2'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.1'
     runs-on: ubuntu-latest
     permissions:
       contents: write

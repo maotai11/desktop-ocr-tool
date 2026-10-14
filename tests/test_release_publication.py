@@ -10,6 +10,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts import publish_prerelease as publisher
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence
 from scripts.verify_candidate_bundle import verify_candidate
 
 COMMIT = "a" * 40
@@ -328,6 +329,9 @@ def candidate(tmp_path, monkeypatch):
     # Unit fixtures use the one explicitly approved candidate namespace.
     from scripts import verify_candidate_bundle
     monkeypatch.setattr(verify_candidate_bundle, 'VERSION', publisher.VERSION)
+    # Dedicated source-distribution tests exercise actual source/license archive bytes.
+    monkeypatch.setattr(verify_candidate_bundle, 'verify_handwriting_source_distribution',
+                        lambda *args: {'verified': True, 'synthetic_unit_boundary': True})
     for name, value in {"GITHUB_REPOSITORY": publisher.REPOSITORY, "GITHUB_RUN_ID": CONTEXT.run_id,
                         "GITHUB_RUN_ATTEMPT": CONTEXT.run_attempt}.items():
         monkeypatch.setenv(name, value)
@@ -353,7 +357,8 @@ def candidate(tmp_path, monkeypatch):
               "frozen-app-smoke.json": dict(common, probe="application_lifecycle", phase_a=True,
                                           engine_ready=True, shutdown_clean=True,
                                           threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True})}
-    manifest = {"schema": 2, "platform": "win32", "version": publisher.VERSION,
+    probes["frozen-handwriting.json"] = handwriting_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
+    manifest = {"handwriting": handwriting_identity(), "schema": 2, "platform": "win32", "version": publisher.VERSION,
                 "executable_name": publisher.EXE_NAME, "executable_sha256": hashlib.sha256(exe).hexdigest(),
                 "models": models, "model_profiles": profiles, "default_model_profile": "v6-small",
                 "ocr_validation_fixtures": fixture_validation()[0], "source_manifest_sha256": hashlib.sha256(source_bytes).hexdigest(),
@@ -372,18 +377,19 @@ def candidate(tmp_path, monkeypatch):
     for name, probe in probes.items():
         (frozen / name).write_bytes(encoded(probe))
         (firewall / name).write_bytes(encoded(probe))
-        source_name = "source-selftest.json" if name == "frozen-selftest.json" else "source-app-smoke.json"
+        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json"}[name]
         (root / source_name).write_bytes(encoded(dict(probe, frozen=False, executable_sha256=None)))
     gate = {"schema": 1, "passed": True, "version": publisher.VERSION,
             "executable_sha256": manifest["executable_sha256"], "clean_machine_verified": False,
             "probes": {name: {"status": "PASSED", "sha256": publisher.sha256_file(firewall / name)} for name in probes}}
     (firewall / "candidate-gate.json").write_bytes(encoded(gate))
+    extra_evidence(root, manifest)
     (root / "test-results.xml").write_text('<testsuites><testsuite failures="0" errors="0"><testcase name="one"/></testsuite></testsuites>')
     report_path = artifacts / "verified-bundle.json"
     def save_report():
         report = verify_candidate(root, COMMIT)
         report["workflow"] = {"repository": publisher.REPOSITORY, "run_id": "1234", "run_attempt": "1", "source_commit": COMMIT}
-        report["frozen_payload"] = {"inspected": True, "embedded_model_hashes_verified": True,
+        report["frozen_payload"] = {"inspected": True, "embedded_model_hashes_verified": True, "embedded_handwriting_verified": True,
                                     "required_payload": ["python312.dll", "qwindows.dll", "onnxruntime_pybind11_state.pyd"],
                                     "system_dll_closure": "NOT_A_CLEAN_HOST_CERTIFICATION"}
         report_path.write_bytes(encoded(report))
@@ -404,11 +410,16 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     with zipfile.ZipFile(tmp_path / "upload" / publisher.METADATA_NAME) as archive:
         assert "verified-bundle.json" in archive.namelist()
         assert "artifacts/firewall-validation/candidate-gate.json" in archive.namelist()
-    assert "No clean Windows runtime" in prepared.body
-    assert "primary screen" in prepared.body and "QThread" in prepared.body
-    assert 'marked needs_review now auto-copy' in prepared.body
-    assert 'All three default off' in prepared.body and 'affect copied output only' in prepared.body
-    assert 'Removing line breaks joins different' in prepared.body
+    assert "尚未完成乾淨、斷網 Windows 10／11" in prepared.body
+    assert "主螢幕" in prepared.body and "QThread" in prepared.body
+    assert 'InkPick 拾字筆' in prepared.body and '11,853' in prepared.body
+    assert '不能當作未見過的真人筆跡準確率' in prepared.body
+    assert '主程式和同次解壓的手寫引擎都被阻擋對外連線' in prepared.body
+    assert '三項複製清理選項預設皆關閉，只影響複製內容' in prepared.body
+    assert '移除換行會把同一筆紀錄的多行文字接在一起' in prepared.body
+    assert '### 下載與使用' in prepared.body and '### 請先知道的限制' in prepared.body
+    assert 'SHA256SUMS' in prepared.body and 'Windows 雲端剪貼簿同步' in prepared.body
+    assert '候選測試版' in prepared.body and '各完成 500 次' in prepared.body
     assert 'Uncertain results do not auto-copy' not in prepared.body
 
 
@@ -539,11 +550,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.1', '1.7.0-rc.3'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.7.0-rc.2'
+    assert publisher.VERSION == '1.8.0-rc.1'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -551,7 +562,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.1', '1.7.0-rc.3'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
@@ -560,3 +571,17 @@ def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate,
     with pytest.raises(publisher.PublicationError, match='does not match this release/source'):
         publisher.prepare_release(root, report_path, tmp_path / 'upload', CONTEXT)
     assert not (tmp_path / 'upload').exists()
+
+
+def test_public_metadata_never_sweeps_arbitrary_logs_or_private_notes(candidate, tmp_path):
+    root, report, _, _, _ = candidate
+    (root / 'internal-private.log').write_text('synthetic-private-marker')
+    (root / 'artifacts/private-notes.json').write_text('{"synthetic_private": true}')
+    prepared = publisher.prepare_release(root, report, tmp_path / 'upload-allowlisted', CONTEXT)
+    metadata = next(asset.path for asset in prepared.assets if asset.name == publisher.METADATA_NAME)
+    with zipfile.ZipFile(metadata) as archive:
+        assert not any('private' in name or name.endswith('.log') for name in archive.namelist())
+        assert all(b'synthetic-private-marker' not in archive.read(name) for name in archive.namelist())
+        assert 'source-handwriting.json' in archive.namelist()
+        assert 'artifacts/firewall-validation/handwriting-firewall-gate.json' in archive.namelist()
+        assert 'artifacts/firewall-validation/frozen-runtime-stress.json' in archive.namelist()

@@ -107,10 +107,14 @@ def valid_reports(paths):
 @pytest.mark.parametrize('defect', ['none', 'wrong_hash', 'not_frozen', 'wrong_version',
                                   'offscreen', 'model_hash', 'thread_running', 'claimed_clean'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
+    from handwriting_release_fixtures import identity, probe
+    from scripts import handwriting_bundle
+    monkeypatch.setattr(handwriting_bundle, 'identity', lambda _: identity())
     paths = build.resolve_release_paths(tmp_path)
     build.reset_output_dirs(paths)
     paths['out_exe'].write_bytes(b'candidate-executable')
     reports = valid_reports(paths)
+    reports['--self-test-handwriting'] = probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     if defect == 'wrong_hash': reports['--self-test']['executable_sha256'] = '0' * 64
     if defect == 'not_frozen': reports['--self-test']['frozen'] = False
     if defect == 'wrong_version': reports['--self-test']['version'] = '0.0.0'
@@ -123,7 +127,7 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
         return reports[mode]
     monkeypatch.setattr(build, '_run_probe', run)
     if defect == 'none':
-        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json'}
+        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json'}
     else:
         with pytest.raises(RuntimeError):
             build.validate_candidate(paths)
@@ -148,7 +152,10 @@ def test_source_identity_covers_dirty_file_bytes(tmp_path, monkeypatch):
     assert before['dirty'] is True
 
 
-def test_package_contains_provenance_and_explicit_remaining_gates(tmp_path):
+def test_package_contains_provenance_and_explicit_remaining_gates(tmp_path, monkeypatch):
+    # Byte-fixture packaging contract, not a native PE resource test.
+    from scripts import verify_windows_branding
+    monkeypatch.setattr(verify_windows_branding, 'verify', lambda *args: {'verified': True})
     paths = build.resolve_release_paths(tmp_path)
     build.reset_output_dirs(paths)
     paths['out_exe'].write_bytes(b'candidate-executable')
