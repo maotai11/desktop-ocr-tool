@@ -1,11 +1,16 @@
 """Build/development-only official model preparation; never used at runtime."""
 import hashlib
+import http.client
 import io
 import json
 from pathlib import Path
 import struct
+import ssl
 import sys
+import time
+import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +21,53 @@ ARCHIVE_BYTES = 36773128
 ARCHIVE_SHA256 = 'f41032e67a4eff056813d243eabc32ea07eea404c714bdb5882a5b0fcda51690'
 MODEL_BYTES = 52210768
 MODEL_SHA256 = 'cd47f16b64e7ecaa4c2813d0f98231dfea7b411f48be1ead5c9b2eeb19330b11'
+
+
+class HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    max_redirections = 3
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme != 'https':
+            raise ValueError('Official model redirect must retain HTTPS')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def transient_download_error(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in (408, 429, 500, 502, 503, 504)
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    # Certificate failures, missing assets and integrity mismatches fail closed.
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return False
+    return isinstance(reason, (ConnectionResetError, ConnectionAbortedError,
+                               TimeoutError, http.client.IncompleteRead, ssl.SSLEOFError))
+
+
+def download_archive():
+    opener = urllib.request.build_opener(HttpsOnlyRedirect())  # default verified TLS
+    for attempt in range(3):
+        try:
+            deadline = time.monotonic() + 120
+            with opener.open(SOURCE, timeout=30) as response:
+                data = bytearray()
+                while len(data) <= ARCHIVE_BYTES:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError('Official model download deadline exceeded')
+                    chunk = response.read1(min(65536, ARCHIVE_BYTES + 1 - len(data)))
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+            if len(data) < ARCHIVE_BYTES:
+                raise http.client.IncompleteRead(bytes(data), ARCHIVE_BYTES - len(data))
+            if (len(data) != ARCHIVE_BYTES or
+                    hashlib.sha256(data).hexdigest() != ARCHIVE_SHA256):
+                raise ValueError('Official model archive hash/size mismatch')
+            return bytes(data)
+        except (OSError, urllib.error.URLError, http.client.IncompleteRead) as error:
+            if attempt == 2 or not transient_download_error(error):
+                raise
+            print(f'Official model transport interrupted; retry {attempt + 2}/3', file=sys.stderr)
+            time.sleep(attempt + 1)
 
 
 def model_alphabet(model):
@@ -56,11 +108,7 @@ def prepare(root=ROOT):
         model_alphabet(existing.read_bytes())
         prepare_fixtures(root)
         return
-    with urllib.request.urlopen(SOURCE, timeout=120) as response:
-        archive_bytes = response.read(ARCHIVE_BYTES + 1)
-    if (len(archive_bytes) != ARCHIVE_BYTES or
-            hashlib.sha256(archive_bytes).hexdigest() != ARCHIVE_SHA256):
-        raise ValueError('Official model archive hash/size mismatch')
+    archive_bytes = download_archive()
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
         prefix = 'tegaki-zinnia-traditional-chinese-0.3/'
         names = set(archive.namelist())

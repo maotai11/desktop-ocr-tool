@@ -26,21 +26,26 @@ jobs:
           cache: pip
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1
-      - name: Resolve wheelhouse and record exact input hashes
-        run: |
-          python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt
-          python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
+      # One native command per step: Windows PowerShell must propagate each
+      # exit code before a later successful command can replace LASTEXITCODE.
+      - name: Resolve wheelhouse
+        run: python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt
+      - name: Record exact input hashes
+        run: python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
       - name: Install only from recorded local wheels
-        run: |
-          python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt
-          python -m pip check
-          python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
-      - name: Prepare pinned offline model payload
-        run: |
-          python scripts/prepare_models.py
-          python scripts/prepare_handwriting_model.py
-          python scripts/build_handwriting_helper.py
-          python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
+        run: python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt
+      - name: Check installed dependencies
+        run: python -m pip check
+      - name: Record installed dependency inventory
+        run: python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
+      - name: Prepare pinned offline OCR models
+        run: python scripts/prepare_models.py
+      - name: Prepare pinned offline handwriting model
+        run: python scripts/prepare_handwriting_model.py
+      - name: Build pinned handwriting helper
+        run: python scripts/build_handwriting_helper.py
+      - name: Probe pinned handwriting helper
+        run: python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
       - run: python -m pytest -q --junitxml=test-results.xml
       - run: python src/main.py --self-test source-selftest.json
       - run: python src/main.py --smoke-app source-app-smoke.json

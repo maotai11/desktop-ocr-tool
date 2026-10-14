@@ -34,3 +34,30 @@ def test_handwriting_build_and_both_process_firewall_gate_are_mandatory():
     assert script.index('Add-ExactBlock $helperPath') < script.index('Set-Content -LiteralPath $startPath')
     assert 'Remove-NetFirewallRule -Name $name' in script
     assert 'clean_machine_verified = $false' in script
+
+
+def test_dependency_and_native_preparation_propagate_every_exit_code():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load((root / '.github/workflows/validate.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['validate']['steps']
+    commands = [step.get('run', '') for step in steps]
+    expected = [
+        'python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt',
+        'python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json',
+        'python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt',
+        'python -m pip check',
+        'python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json',
+        'python scripts/prepare_models.py',
+        'python scripts/prepare_handwriting_model.py',
+        'python scripts/build_handwriting_helper.py',
+        'python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json',
+    ]
+    start = commands.index(expected[0])
+    indexes = list(range(start, start + len(expected)))
+    assert commands[start:start + len(expected)] == expected
+    for index in indexes:
+        # Default hosted shell propagates the only native command's exit code;
+        # later prep steps run only if all preceding steps succeeded.
+        assert '\n' not in commands[index]
+        assert not steps[index].get('continue-on-error')
+        assert 'if' not in steps[index] and 'shell' not in steps[index]

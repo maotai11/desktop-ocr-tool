@@ -39,11 +39,30 @@ def compiler_environment():
     if not installation:
         raise RuntimeError('Installed Microsoft x64 compiler not found')
     setup = Path(installation) / 'Common7/Tools/VsDevCmd.bat'
-    output = subprocess.check_output(['cmd.exe', '/d', '/s', '/c',
-        f'call "{setup}" -no_logo -arch=x64 -host_arch=x64 >nul && set'],
-        timeout=30, text=True)
-    env.update(line.split('=', 1) for line in output.splitlines() if '=' in line and not line.startswith('='))
+    cmd = Path(os.environ['SystemRoot']) / 'System32/cmd.exe'
+    # CMD does not use the MS C-runtime quoting that subprocess applies to a
+    # list. Pass its reviewed raw /S /C string, preserving the inner path quotes.
+    output = subprocess.check_output(vs_environment_command(cmd, setup),
+        executable=str(cmd), timeout=30, encoding='utf-16le')
+    merge_command_environment(env, output)
     return env
+
+
+def vs_environment_command(cmd, setup):
+    # These are installed tool paths, not arbitrary shell input. CALL performs
+    # another expansion pass, so reject expansion/control metacharacters too.
+    if any(char in str(cmd) + str(setup) for char in '"%&|<>^!\r\n'):
+        raise ValueError('Unsafe installed compiler path')
+    return f'"{cmd}" /d /u /s /c "call "{setup}" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+
+
+def merge_command_environment(env, output):
+    # Windows keys are case-insensitive, but this copy is a plain Python dict.
+    # SET may emit Path rather than PATH: never leave the stale original value.
+    for line in output.splitlines():
+        if '=' in line and not line.startswith('='):
+            key, value = line.split('=', 1)
+            env[key.upper()] = value
 
 
 def build(root=ROOT):
