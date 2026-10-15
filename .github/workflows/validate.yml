@@ -109,12 +109,14 @@ jobs:
       - name: Prepare verified public portable files on the Windows runner
         id: public_release
         if: runner.os == 'Windows'
-        run: python scripts/prepare_public_release.py --artifact-root . --output-dir ../inkpick-public-release
+        env:
+          INKPICK_PUBLIC_DIR: ${{ runner.temp }}/inkpick-public-release
+        run: python scripts/prepare_public_release.py --artifact-root . --output-dir "$env:INKPICK_PUBLIC_DIR"
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows' && success() && steps.public_release.outcome == 'success'
         with:
           name: inkpick-public-candidate-Windows
-          path: ../inkpick-public-release/
+          path: ${{ runner.temp }}/inkpick-public-release/
           if-no-files-found: error
           retention-days: 7
       # Raw gates, logs, JUnit and original candidate ZIP remain runner-local.

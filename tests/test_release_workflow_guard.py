@@ -61,3 +61,18 @@ def test_dependency_and_native_preparation_propagate_every_exit_code():
         assert '\n' not in commands[index]
         assert not steps[index].get('continue-on-error')
         assert 'if' not in steps[index] and 'shell' not in steps[index]
+
+
+def test_public_upload_uses_same_absolute_runner_temp_directory():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load((root / '.github/workflows/validate.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['validate']['steps']
+    prepare = next(step for step in steps if step.get('id') == 'public_release')
+    upload = next(step for step in steps if step.get('with', {}).get('name') == 'inkpick-public-candidate-Windows')
+    directory = prepare['env']['INKPICK_PUBLIC_DIR']
+    assert directory == '${{ runner.temp }}/inkpick-public-release'
+    assert '--output-dir "$env:INKPICK_PUBLIC_DIR"' in prepare['run']
+    assert upload['with']['path'] == directory + '/'
+    assert '..' not in upload['with']['path'].split('/')
+    assert upload['with']['if-no-files-found'] == 'error'
+    assert "steps.public_release.outcome == 'success'" in upload['if']
