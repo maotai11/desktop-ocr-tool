@@ -133,12 +133,13 @@ def test_workflow_uploads_only_new_safe_directory_and_keeps_raw_gates():
     assert all('always()' in s['if'] and "steps.public_metadata.outcome == 'success'" in s['if'] for s in metadata)
     binaries = [s for s in uploads if s not in metadata]
     assert len(binaries)==1
-    assert binaries[0]['with']['path']=='../inkpick-public-release/'
+    assert binaries[0]['with']['path']=='${{ runner.temp }}/inkpick-public-release/'
     assert "success()" in binaries[0]['if'] and "steps.public_release.outcome == 'success'" in binaries[0]['if']
     assert "always()" not in binaries[0]['if']
     stage=next(s for s in steps if s.get('id')=='public_release')
     assert stage['if']=="runner.os == 'Windows'"
-    assert stage['run']=='python scripts/prepare_public_release.py --artifact-root . --output-dir ../inkpick-public-release'
+    assert stage['env']['INKPICK_PUBLIC_DIR']=='${{ runner.temp }}/inkpick-public-release'
+    assert stage['run']=='python scripts/prepare_public_release.py --artifact-root . --output-dir "$env:INKPICK_PUBLIC_DIR"'
     assert steps.index(stage)>next(i for i,s in enumerate(steps) if s.get('id')=='bundle_verify')
     prepare=next(s for s in steps if s.get('id')=='public_metadata')
     assert prepare['if']=='always()'
