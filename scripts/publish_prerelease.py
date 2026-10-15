@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.1. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.2. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -23,8 +23,8 @@ import zipfile
 
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
-BRANCH_REF = "refs/heads/fix/inkpick-handwriting"
-TAG = "v1.8.0-rc.1"
+BRANCH_REF = "refs/heads/fix/inkpick-handwriting-review-20261015"
+TAG = "v1.8.0-rc.2"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -131,7 +131,9 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-新增單字手寫板：寫下不認識的字，再點選繁體中文候選字複製。
+手寫候選加入原始／置中筆畫雙路辨識，每路取 30 字，去重後最多 60 字；候選可展開、捲動及以鍵盤選取。
+另提供手動且可取消的「影像補辨」，使用內含 Small OCR 補充最多兩個單字候選，不會自動複製。
+修正跨平台 ZIP 檔名驗證、公開封裝與發布交接，公開檔案排除原始診斷與建置路徑。
 沿用原本的截圖辨識、歷史、搜尋與設定，並換上「拾字筆」名稱及圖示。
 
 ### 下載與使用
@@ -191,7 +193,7 @@ class GitHubClient:
         self.validate_url(url, upload=asset is not None)
         require(method in {"GET", "POST", "PATCH"}, "Unsupported publication method")
         headers = {"Accept": "application/vnd.github+json", "Authorization": "Bearer " + self._token,
-                   "X-GitHub-Api-Version": API_VERSION, "User-Agent": "inkpick-rc1-publisher"}
+                   "X-GitHub-Api-Version": API_VERSION, "User-Agent": "inkpick-candidate-publisher"}
         stream = None
         data = None
         if asset is not None:
@@ -602,14 +604,30 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-root", required=True, type=Path)
-    parser.add_argument("--verified-bundle", required=True, type=Path)
+    parser.add_argument("--artifact-root", type=Path)
+    parser.add_argument("--public-input", type=Path)
+    parser.add_argument("--verified-bundle", type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--prepare-only", action="store_true", help="Verify/prepare without reading GH_TOKEN or using network")
     args = parser.parse_args(argv)
     try:
         context = validate_runner_context(os.environ)
-        prepared = prepare_release(args.artifact_root, args.verified_bundle, args.output_dir, context)
+        if args.public_input is not None:
+            require(args.artifact_root is None and args.verified_bundle is None,
+                    "Conflicting public/private artifact inputs")
+            project_root = str(Path(__file__).resolve().parents[1])
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from scripts.public_release_receipt import load_prepared
+            prepared = load_prepared(args.public_input, context)
+            require(not args.output_dir.exists() and not args.output_dir.is_symlink()
+                    and not any(x.is_symlink() for x in args.output_dir.parents),
+                    "Publication evidence output must be fresh")
+            args.output_dir.mkdir(parents=True, exist_ok=False)
+        else:
+            require(args.artifact_root is not None and args.verified_bundle is not None,
+                    "Missing private candidate inputs")
+            prepared = prepare_release(args.artifact_root, args.verified_bundle, args.output_dir, context)
         if args.prepare_only:
             print("Four candidate assets prepared; no network or token access")
             return 0

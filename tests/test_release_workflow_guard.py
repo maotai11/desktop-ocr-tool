@@ -11,13 +11,13 @@ def test_publish_workflow_is_fixed_push_only_and_job_scoped():
     job = workflow['jobs']['publish_prerelease']
     assert job['needs'] == 'validate'
     assert job['permissions'] == {'contents': 'write', 'actions': 'read'}
-    for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/fix/inkpick-handwriting'",
+    for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/fix/inkpick-handwriting-review-20261015'",
                    "github.repository == 'maotai11/desktop-ocr-tool'",
-                   "github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.1'"):
+                   "github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.2'"):
         assert clause in job['if']
     assert job['steps'][0]['with']['ref'] == '${{ github.sha }}'
     assert job['steps'][0]['with']['persist-credentials'] == 'false'
-    assert any(step.get('with', {}).get('name') == 'validation-Windows' for step in job['steps'])
+    assert any(step.get('with', {}).get('name') == 'inkpick-public-candidate-Windows' for step in job['steps'])
 
 
 def test_handwriting_build_and_both_process_firewall_gate_are_mandatory():

@@ -147,9 +147,9 @@ jobs:
     # One fixed, explicitly approved candidate; never publish from a PR event.
     if: >-
       github.event_name == 'push' &&
-      github.ref == 'refs/heads/fix/inkpick-handwriting' &&
+      github.ref == 'refs/heads/fix/inkpick-handwriting-review-20261015' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.1'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.2'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -164,10 +164,10 @@ jobs:
           python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
-          name: validation-Windows
+          name: inkpick-public-candidate-Windows
           path: release-input
       - name: Publish only the same-run verified candidate prerelease
-        run: python scripts/publish_prerelease.py --artifact-root release-input --verified-bundle release-input/artifacts/verified-bundle.json --output-dir release-upload
+        run: python scripts/publish_prerelease.py --public-input release-input --output-dir release-upload
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4

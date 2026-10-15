@@ -584,11 +584,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.1', '1.8.0-rc.3'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.1'
+    assert publisher.VERSION == '1.8.0-rc.2'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -596,7 +596,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.1', '1.8.0-rc.3'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())

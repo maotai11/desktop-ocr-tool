@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.1'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.2'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'wheels', 'wheel_inventory',

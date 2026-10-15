@@ -22,8 +22,10 @@ def main(argv=None):
     run_id, attempt = (os.environ.get(n, '') for n in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'))
     require(all(v.isascii() and v.isdecimal() and 0 < len(v) <= 20 and int(v) > 0
                 for v in (run_id, attempt)), 'Invalid workflow identity')
-    prepare_release(args.artifact_root, args.artifact_root / 'artifacts/verified-bundle.json',
+    prepared = prepare_release(args.artifact_root, args.artifact_root / 'artifacts/verified-bundle.json',
                     args.output_dir, RunnerContext(commit, run_id, attempt))
+    from scripts.public_release_receipt import write_receipt
+    write_receipt(prepared)
     print('Public release files prepared; no release published.')
     return 0
 

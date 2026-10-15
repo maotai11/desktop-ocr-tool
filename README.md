@@ -2,14 +2,14 @@
 
 Windows 10（1809 以上）／11 x64 離線文字工具：框選 OCR、手寫選字、複製與本機歷史。沿用原本的 desktop-ocr-tool 儲存庫及資料格式。
 
-既有版本標記為 **1.8.0-rc.1 預發布候選**。本工作樹新增的候選／介面與影像補辨尚未產生新版 Windows 成品，不能以舊 EXE 的驗證結果代替。成品內含 Python、Qt、OCR 模型及手寫引擎，不使用 Windows 手寫語言套件或首次下載。請從本儲存庫的 [Release](https://github.com/maotai11/desktop-ocr-tool/releases) 取得成品並核對 SHA256；實際驗證以同版本 validation metadata 為準。Windows CI 不是乾淨使用者電腦，未完成的門檻見 [驗證狀態](docs/VALIDATION_STATUS.md)。
+目前準備 **1.8.0-rc.2 預發布候選**，保留既有 rc.1 Release。新增候選展開、置中筆畫與影像補辨，並修正公開封裝與路徑檢查。成品內含 Python、Qt、OCR 模型及手寫引擎，不使用 Windows 手寫語言套件或首次下載。請從本儲存庫的 [Release](https://github.com/maotai11/desktop-ocr-tool/releases) 取得已發布成品；分支與 Actions 候選檔不代表正式發布。實際驗證以同版本 validation metadata 為準，Windows CI 不等於乾淨使用者電腦，未完成項目見 [驗證狀態](docs/VALIDATION_STATUS.md)。
 
 ## 使用
 
 1. 解壓 ZIP 到可寫入的資料夾，執行 InkPick EXE，不需要管理員權限
 2. Ctrl+Shift+O 框選文字；結果保存在本機歷史，可編輯、搜尋及匯出
 3. 點浮動窗或系統匣的「手寫」，在方框內寫一個字
-4. 停筆後顯示候選，點選正確的字即可複製，再自行 Ctrl+V。新工作樹每路取 30 字：原始筆畫與置中筆畫去重後最多 60 字，保留原始前 10 排序；其餘可捲動或展開
+4. 停筆後顯示候選，點選正確的字即可複製，再自行 Ctrl+V。本候選每路取 30 字：原始筆畫與置中筆畫去重後最多 60 字，保留原始前 10 排序；其餘可捲動或展開
 5. Tab／方向鍵移動候選，Enter／空白鍵複製；Ctrl+Z 撤銷一筆，Escape 關閉
 6. 找不到時可手動按「影像補辨」，以內含 Small OCR 對目前筆跡補充最多兩個單字候選；再按一次可取消。補辨仍需人工選字
 7. 寫錯可用「撤銷一筆」或「清除」，也可按「辨識」重試

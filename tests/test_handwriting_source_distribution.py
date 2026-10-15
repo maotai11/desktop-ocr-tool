@@ -13,7 +13,7 @@ from scripts.build_handwriting_helper import source_identity
 from scripts.verify_candidate_bundle import verify_handwriting_source_distribution
 
 ROOT = Path(__file__).resolve().parents[1]
-PREFIX = 'release-v1.8.0-rc.1/'
+PREFIX = 'release-v1.8.0-rc.2/'
 BASE = PREFIX + 'handwriting-source/'
 
 

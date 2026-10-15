@@ -1,6 +1,6 @@
-# InkPick 1.8.0-rc.1 驗收界線
+# InkPick 1.8.0-rc.2 驗收界線
 
-實際完成結果以 Release 同一 EXE／ZIP SHA256、validation metadata、BUILD_MANIFEST 及 SOURCE_MANIFEST 為準；不能沿用 rc.2 或其他 commit 的結果。
+實際完成結果以 Release 同一 EXE／ZIP SHA256、validation metadata、BUILD_MANIFEST 及 SOURCE_MANIFEST 為準；不能沿用舊版或其他 commit 的結果。
 
 ## 發布前必須通過
 
@@ -26,12 +26,13 @@
 
 歷史：[rc.2說明](RELEASE_1_7_0_RC2.md)、[OCR升級驗證](OCR_UPGRADE_20261006.md)。新候選維持 prerelease，不宣稱乾淨 Windows 或真人手寫全面驗收完成。
 
-## 2026-10-15 本地整合狀態（未重打包）
+## 2026-10-15 整合狀態
 
 - 候選協議v2、每路Top30、raw／bbox來源與rank去重、可展開／捲動／鍵盤候選UI
 - 手動且可取消的 Small rec 影像子程序；來源碼早期分流與 bounded IPC，frozen驗證新門檻已加入
 - 已封存1536份訓練重播／幾何擾動輸入；Top1／10／30及raster對照僅定位根因，不是人體筆跡準確率
-- 仍待同一新版 Windows x64 EXE／ZIP、MSVC／Job／windowed pipe／outbound-blocked image gate、乾淨Windows與真人獨立樣本
+- 提交 741303d1a4805dd02b3f5569711368161404828e 的 Windows／Linux 驗證、Windows EXE 打包、封鎖網路壓力測試與公開候選上傳已通過，見 [Actions 38693217612](https://github.com/maotai11/desktop-ocr-tool/actions/runs/38693217612)。該檔案仍標記 rc.1，不覆蓋舊 Release
+- rc.2 新版本與同次公開檔案交接流程仍需重建重驗；乾淨 Windows 與真人獨立樣本待驗收
 - raw前10保留避免反向筆畫回歸，但小字偏角落Top1排序尚未解決；OCR字表含缺字不等於已補準
 
 完整證據範圍見 [手寫改善紀錄](HANDWRITING_IMPROVEMENT_20261015.md)。

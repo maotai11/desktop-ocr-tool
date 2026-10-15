@@ -42,8 +42,8 @@ try {
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
     }
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or $manifest.version -cne '1.8.0-rc.1' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.1.exe') { throw 'Unexpected fixed candidate identity' }
+    if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or $manifest.version -cne '1.8.0-rc.2' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.2.exe') { throw 'Unexpected fixed candidate identity' }
     $exe = Join-Path $bundle $manifest.executable_name
     $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
     $helperHash = $manifest.handwriting.helper.sha256

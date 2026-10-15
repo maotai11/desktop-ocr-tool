@@ -123,7 +123,7 @@ def test_image_frozen_gate_rejects_empty_wrong_or_duplicate_control(values):
     from handwriting_release_fixtures import image_probe
     from model_profile_fixtures import fixture_profiles
     models,_=fixture_profiles()
-    report=image_probe('1.8.0-rc.1','a'*64,models)
+    report=image_probe('1.8.0-rc.2','a'*64,models)
     # Bind to the actual code version, including development overrides.
     from src.core.version import APP_VERSION
     report['version']=APP_VERSION
