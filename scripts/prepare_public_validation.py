@@ -51,7 +51,7 @@ ENUMS = {
     'source_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
     'outbound_blocked_frozen_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
     'mixed_dpi_gate': {'NOT_RUN', 'PASSED', 'FAILED'},
-    'network_observation': {'NOT_RUN'}, 'license_review': {'NOT_RUN'},
+    'network_observation': {'NOT_RUN', 'OUTBOUND_BLOCKED_NOT_PACKET_TRACE'}, 'license_review': {'NOT_RUN'},
     'database_integrity': {'ok'},
     'helper_architecture': {'AMD64', 'x86_64'},
     'accuracy_evidence': {'UPSTREAM_TRAINING_REPLAY_ONLY',
@@ -95,7 +95,21 @@ def safe_fields(value, depth=0, context=None):
             continue  # model path/source URL/license free text is not public metadata
         if key in ('source','source_manifest') and not isinstance(item, dict):
             continue  # upstream URLs are not the structured source-identity containers
-        if key == 'models' and isinstance(item, dict) and context != 'checks':
+        if key == 'models' and type(item) is str and context in ('v6-small', 'v6-medium'):
+            # runtime_stress records OcrEngine's fixed profile/role/version/hash identity.
+            parts = item.split(';')
+            parsed = {}
+            if len(parts) == 4 and parts[0] == context:
+                for role, component in zip(('cls', 'det', 'rec'), parts[1:]):
+                    fields = component.split(':')
+                    if (len(fields) != 3 or fields[0] != role or
+                            fields[1] not in {'pp-ocrv6-small','pp-ocrv6-medium','ppocr-mobile-v2.0'} or
+                            re.fullmatch('[0-9a-f]{64}', fields[2]) is None):
+                        break
+                    parsed[role] = {'version': fields[1], 'sha256': fields[2]}
+            if len(parsed) == 3: result[key] = parsed
+            else: invalid.append(key)
+        elif key == 'models' and isinstance(item, dict) and context != 'checks':
             result[key] = safe_fields(item, depth + 1, 'models')
         elif key in BOOLS:
             if type(item) is bool: result[key] = item

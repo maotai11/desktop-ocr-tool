@@ -220,3 +220,15 @@ def test_failure_fingerprints_do_not_bypass_xml_validation():
         public.junit_failure_fingerprints(b'<!DOCTYPE x><testsuites/>')
     with pytest.raises(ValueError):
         public.junit_failure_fingerprints(b'<testsuites><testsuite tests="0" failures="0" errors="0" skipped="0"><testcase><failure/></testcase></testsuite></testsuites>')
+
+
+def test_runtime_stress_fixed_identity_and_firewall_enum_are_supported():
+    identity = 'v6-small;' + ';'.join(role+':ppocr-mobile-v2.0:'+('a'*64) for role in ('cls','det','rec'))
+    result = public.safe_fields({'passed': True, 'network_observation': 'OUTBOUND_BLOCKED_NOT_PACKET_TRACE', 'profiles': {'v6-small': {'passed': True, 'models': identity}}})
+    assert public.observed_result(result) == 'PASS_AS_RECORDED_NOT_OVERALL_APPROVAL'
+    assert result['profiles']['v6-small']['models']['rec']['sha256'] == 'a'*64
+    for invalid in (identity.replace('v6-small;', 'v6-medium;'), identity+';PRIVATE', identity.replace('cls:', 'other:'), identity.replace('a'*64, '/home/PRIVATE')):
+        result = public.safe_fields({'passed': True, 'profiles': {'v6-small': {'models': invalid}}})
+        assert public.observed_result(result) == 'INVALID_FIELDS'
+        assert 'PRIVATE' not in json.dumps(result)
+    assert public.observed_result(public.safe_fields({'network_observation':'PACKET_TRACE_VERIFIED'})) == 'INVALID_FIELDS'

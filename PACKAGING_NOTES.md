@@ -37,4 +37,4 @@ Python protocol、C++ helper、helper.lock、bundle inspector 及 native probe �
 
 新增 source-handwriting-image.json 與 candidate-validation/firewall-validation 的 frozen-handwriting-image.json。build.py、Windows runner、成品 verifier 與 publication metadata 都必須要求這些同 EXE/hash-bound 證據。影像 worker 只在 START 後載入已內含 Small rec；同 EXE 繼承 PyInstaller6.22.3 worker 環境，不設 PYINSTALLER_RESET_ENVIRONMENT。READY PID 必須等於 QProcess PID；windowed 標準管線以 Windows redirected handles 接回。此路徑需 Windows 實際成品驗證，來源碼可編譯／headless Qt 不算完成。
 
-目前未執行新版 Windows build、CI 或發佈；新的 UI、候選與手動影像補辨不能由舊 rc.1 Windows 報告背書。發布版本／marker 必須由最終核准候選決定；本次沒有 push、tag 或 release。
+2026-10-15 的審查 commit `b348f0f45b489ce301e70e6ec859574fb39f7315` 已完成 Windows build、來源 probes、同一 EXE 的封鎖網路測試與 bundle 核對（Actions run 38679675003）。Linux 同輪仍有 1 個 PowerShell helper 測試失敗；後續修正必須重新驗證。公開 artifact 只有允許清單內的統計與雜湊，並未發布新版 EXE。發布版本／marker 必須由最終核准候選決定；乾淨機器與真人筆跡仍未驗收。
