@@ -53,7 +53,7 @@ ENUMS = {
     'mixed_dpi_gate': {'NOT_RUN', 'PASSED', 'FAILED'},
     'network_observation': {'NOT_RUN', 'OUTBOUND_BLOCKED_NOT_PACKET_TRACE'}, 'license_review': {'NOT_RUN'},
     'database_integrity': {'ok'},
-    'helper_architecture': {'AMD64', 'x86_64'},
+    'helper_architecture': {'AMD64', 'x86_64', 'LINUX_X64_ASSESSMENT'},
     'accuracy_evidence': {'UPSTREAM_TRAINING_REPLAY_ONLY',
         'UPSTREAM_TRAINING_RASTER_FUNCTIONAL_ONLY',
         'UPSTREAM_TRAINING_REPLAY_AND_SYNTHETIC_ROBUSTNESS_ONLY'},

@@ -232,3 +232,10 @@ def test_runtime_stress_fixed_identity_and_firewall_enum_are_supported():
         assert public.observed_result(result) == 'INVALID_FIELDS'
         assert 'PRIVATE' not in json.dumps(result)
     assert public.observed_result(public.safe_fields({'network_observation':'PACKET_TRACE_VERIFIED'})) == 'INVALID_FIELDS'
+
+
+def test_linux_development_helper_architecture_remains_explicit():
+    result = public.safe_fields({'passed': True, 'platform': 'linux', 'helper_architecture': 'LINUX_X64_ASSESSMENT'})
+    assert result['helper_architecture'] == 'LINUX_X64_ASSESSMENT'
+    assert public.observed_result(result) == 'PASS_AS_RECORDED_NOT_OVERALL_APPROVAL'
+    assert public.observed_result(public.safe_fields({'helper_architecture': '/home/PRIVATE'})) == 'INVALID_FIELDS'
