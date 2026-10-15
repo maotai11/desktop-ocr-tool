@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from src.handwriting.assets import verified_assets
-from src.handwriting.protocol import (HEADER, MAX_REQUEST_BYTES, READY, RECOGNIZE, RESULT,
+from src.handwriting.protocol import (HEADER, MAX_REQUEST_BYTES, MAX_REPLY_BYTES, VERSION, READY, RECOGNIZE, RESULT,
                                       START, STOP, decode_candidates, encode_strokes, frame)
 
 
@@ -105,7 +105,7 @@ def probe(report_path, root=ROOT):
             raise ValueError('Truncated native probe response')
         magic, version, kind, reserved, generation, length = HEADER.unpack_from(output, cursor)
         cursor += HEADER.size
-        if magic != b'ZHW1' or version != 1 or reserved or length > 204 or cursor + length > len(output):
+        if magic != b'ZHW1' or version != VERSION or reserved or length > MAX_REPLY_BYTES or cursor + length > len(output):
             raise ValueError('Malformed native probe response')
         status, values = decode_candidates(output[cursor:cursor + length], assets.alphabet)
         cursor += length
@@ -133,7 +133,7 @@ def probe(report_path, root=ROOT):
     for name, data, expected in (
         ('header', b'BAD!' + frame(START, 0)[4:], 'PROTOCOL_HEADER'),
         ('truncated', b'ZHW', 'PROTOCOL_TRUNCATED'),
-        ('oversize', HEADER.pack(b'ZHW1', 1, RECOGNIZE, 0, 1, MAX_REQUEST_BYTES + 1), 'PROTOCOL_SIZE')):
+        ('oversize', HEADER.pack(b'ZHW1', VERSION, RECOGNIZE, 0, 1, MAX_REQUEST_BYTES + 1), 'PROTOCOL_SIZE')):
         code, output, stderr, elapsed = bounded_process(assets, data, timeout=3)
         record = {'case': name, 'exit_code': code, 'stdout_bytes': len(output), 'stderr': stderr,
                   'expected_error': expected, 'elapsed_seconds': elapsed}

@@ -1,0 +1,368 @@
+{
+  "schema": 1,
+  "scope": "UPSTREAM_TRAINING_REPLAY_AND_SYNTHETIC_STRESS_ONLY",
+  "human_accuracy": "NOT_MEASURED",
+  "source_sha256": "85ab37c56bcb14a54a7ae106f2504b6505cf6c9917ca8c636312153fd9d00e53",
+  "input_manifest_sha256": "6b20393f4a5572c1b41c547910069870577715af80ebdb2a6b8282a9bbca9e7c",
+  "selection": {
+    "count": 128,
+    "method": "first 128 labels sorted by sha256(seed+label)",
+    "seed": "InkPick-geometry-stress-v1-fixed-before-inference",
+    "selected_labels": [
+      "勸",
+      "嗼",
+      "穰",
+      "麃",
+      "穫",
+      "苦",
+      "礞",
+      "忡",
+      "枇",
+      "坢",
+      "傷",
+      "論",
+      "遛",
+      "看",
+      "崢",
+      "氤",
+      "柉",
+      "橨",
+      "樲",
+      "賀",
+      "扢",
+      "無",
+      "毦",
+      "栨",
+      "饐",
+      "彗",
+      "腢",
+      "伅",
+      "犩",
+      "鼊",
+      "諫",
+      "溒",
+      "昋",
+      "淵",
+      "已",
+      "襒",
+      "懷",
+      "輟",
+      "蹄",
+      "胠",
+      "澉",
+      "謓",
+      "窫",
+      "粢",
+      "軌",
+      "產",
+      "評",
+      "箸",
+      "佾",
+      "鴶",
+      "薈",
+      "鎰",
+      "皏",
+      "翵",
+      "悻",
+      "旲",
+      "餱",
+      "覭",
+      "輎",
+      "它",
+      "廆",
+      "國",
+      "餿",
+      "濠",
+      "韽",
+      "洄",
+      "鼸",
+      "觩",
+      "譙",
+      "禽",
+      "漫",
+      "啍",
+      "揵",
+      "岷",
+      "鏬",
+      "部",
+      "衫",
+      "唑",
+      "幪",
+      "議",
+      "腹",
+      "倵",
+      "膉",
+      "擽",
+      "祒",
+      "狼",
+      "戲",
+      "述",
+      "敊",
+      "漯",
+      "庖",
+      "畎",
+      "錫",
+      "霏",
+      "醛",
+      "扭",
+      "輔",
+      "堯",
+      "鄰",
+      "振",
+      "撙",
+      "蚺",
+      "鐼",
+      "慀",
+      "玉",
+      "刎",
+      "政",
+      "櫋",
+      "衵",
+      "晝",
+      "橖",
+      "鐹",
+      "絊",
+      "胑",
+      "窔",
+      "峪",
+      "眹",
+      "蘿",
+      "庵",
+      "囂",
+      "澱",
+      "諳",
+      "烎",
+      "矨",
+      "迎",
+      "鼙",
+      "謁",
+      "聶"
+    ]
+  },
+  "processing_policy": "bbox_800 always uses aspect-preserving longest dimension 800, centered at 500",
+  "candidate_policy": "Top1, Top10 and Top30 are prefixes of exact Zinnia ranking; no GT-dependent reranking",
+  "ocr_policy": "Raw PP-OCRv6-small recognition of fixed white 256px raster, black 3px strokes; no detector, zhconv or text cleanup",
+  "case_count": 1536,
+  "native_summary": [
+    {
+      "variant": "source",
+      "processing": "raw",
+      "cases": 128,
+      "top1": 128,
+      "top10": 128,
+      "top30": 128
+    },
+    {
+      "variant": "source",
+      "processing": "bbox_800",
+      "cases": 128,
+      "top1": 128,
+      "top10": 128,
+      "top30": 128
+    },
+    {
+      "variant": "small_center",
+      "processing": "raw",
+      "cases": 128,
+      "top1": 123,
+      "top10": 127,
+      "top30": 127
+    },
+    {
+      "variant": "small_center",
+      "processing": "bbox_800",
+      "cases": 128,
+      "top1": 128,
+      "top10": 128,
+      "top30": 128
+    },
+    {
+      "variant": "small_top_left",
+      "processing": "raw",
+      "cases": 128,
+      "top1": 0,
+      "top10": 26,
+      "top30": 54
+    },
+    {
+      "variant": "small_top_left",
+      "processing": "bbox_800",
+      "cases": 128,
+      "top1": 128,
+      "top10": 128,
+      "top30": 128
+    },
+    {
+      "variant": "small_bottom_right",
+      "processing": "raw",
+      "cases": 128,
+      "top1": 1,
+      "top10": 49,
+      "top30": 75
+    },
+    {
+      "variant": "small_bottom_right",
+      "processing": "bbox_800",
+      "cases": 128,
+      "top1": 128,
+      "top10": 128,
+      "top30": 128
+    },
+    {
+      "variant": "reverse_stroke_order",
+      "processing": "raw",
+      "cases": 128,
+      "top1": 0,
+      "top10": 7,
+      "top30": 9
+    },
+    {
+      "variant": "reverse_stroke_order",
+      "processing": "bbox_800",
+      "cases": 128,
+      "top1": 0,
+      "top10": 5,
+      "top30": 8
+    },
+    {
+      "variant": "reverse_each_stroke_direction",
+      "processing": "raw",
+      "cases": 128,
+      "top1": 24,
+      "top10": 53,
+      "top30": 69
+    },
+    {
+      "variant": "reverse_each_stroke_direction",
+      "processing": "bbox_800",
+      "cases": 128,
+      "top1": 21,
+      "top10": 48,
+      "top30": 61
+    }
+  ],
+  "old_top10_equals_expanded_top30_prefix_for_all_1536": true,
+  "raster_summary": [
+    {
+      "variant": "reverse_each_stroke_direction",
+      "processing": "raw",
+      "cases": 128,
+      "raw_text_source_exact": 64
+    },
+    {
+      "variant": "reverse_each_stroke_direction",
+      "processing": "bbox_800",
+      "cases": 128,
+      "raw_text_source_exact": 62
+    },
+    {
+      "variant": "reverse_stroke_order",
+      "processing": "raw",
+      "cases": 128,
+      "raw_text_source_exact": 64
+    },
+    {
+      "variant": "reverse_stroke_order",
+      "processing": "bbox_800",
+      "cases": 128,
+      "raw_text_source_exact": 62
+    },
+    {
+      "variant": "small_bottom_right",
+      "processing": "raw",
+      "cases": 128,
+      "raw_text_source_exact": 64
+    },
+    {
+      "variant": "small_bottom_right",
+      "processing": "bbox_800",
+      "cases": 128,
+      "raw_text_source_exact": 64
+    },
+    {
+      "variant": "small_center",
+      "processing": "raw",
+      "cases": 128,
+      "raw_text_source_exact": 66
+    },
+    {
+      "variant": "small_center",
+      "processing": "bbox_800",
+      "cases": 128,
+      "raw_text_source_exact": 65
+    },
+    {
+      "variant": "small_top_left",
+      "processing": "raw",
+      "cases": 128,
+      "raw_text_source_exact": 62
+    },
+    {
+      "variant": "small_top_left",
+      "processing": "bbox_800",
+      "cases": 128,
+      "raw_text_source_exact": 64
+    },
+    {
+      "variant": "source",
+      "processing": "raw",
+      "cases": 128,
+      "raw_text_source_exact": 64
+    },
+    {
+      "variant": "source",
+      "processing": "bbox_800",
+      "cases": 128,
+      "raw_text_source_exact": 62
+    }
+  ],
+  "raster_unique_images": 1394,
+  "raster_model_identity": {
+    "character_sha256": "f7aa897ca828a4c7c9e2739c30f9161a33306d532f020bcdb91dcfb664a5507e",
+    "character_count": 18708,
+    "output_classes": 18710,
+    "providers": [
+      "CPUExecutionProvider"
+    ],
+    "recognition_shape": [
+      3,
+      48,
+      320
+    ],
+    "input_type": "tensor(float)",
+    "input_shape": [
+      "DynamicDimension.0",
+      3,
+      48,
+      "DynamicDimension.1"
+    ],
+    "output_shape": [
+      "DynamicDimension.0",
+      "Reshape_470_o0__d2",
+      18710
+    ],
+    "blank_index": 0,
+    "space_index": 18709,
+    "decoder_sha256": "e41e95fa4e12cc4e971e2ec4ab32a205a700056bc8a46e0803cd3f59f4d93dcf"
+  },
+  "normalization_regressions": {
+    "reverse_each_stroke_direction": {
+      "top1_gain": 2,
+      "top1_loss": 5,
+      "top10_gain": 2,
+      "top10_loss": 7,
+      "top30_gain": 1,
+      "top30_loss": 9
+    },
+    "reverse_stroke_order": {
+      "top10_loss": 2
+    }
+  },
+  "limitations": [
+    "All labels already occur in the source model.",
+    "No human holdout.",
+    "No direct missing-common-character accuracy evidence.",
+    "Union candidate recall is not ranking accuracy.",
+    "Windows frozen/clean-host/DPI acceptance remains separate."
+  ]
+}

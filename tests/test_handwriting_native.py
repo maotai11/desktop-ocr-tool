@@ -21,7 +21,7 @@ def test_real_helper_candidates_latest_queue_and_normal_stop(qtbot):
         first = controller.submit(fixtures[9]['strokes'])
         qtbot.waitUntil(lambda: bool(results) or bool(failures), timeout=12000)
         assert not failures
-        assert results[0][0] == first and results[0][1][0] == fixtures[9]['label']
+        assert results[0][0] == first and results[0][1][0].label == fixtures[9]['label']
         if sys.platform == 'win32':
             assert controller._job.handle is not None
         controller.submit(fixtures[0]['strokes'])
@@ -29,7 +29,7 @@ def test_real_helper_candidates_latest_queue_and_normal_stop(qtbot):
         latest = controller.submit(fixtures[9]['strokes'])
         qtbot.waitUntil(lambda: len(results) == 2 or bool(failures), timeout=5000)
         assert not failures
-        assert results[-1][0] == latest and results[-1][1][0] == fixtures[9]['label']
+        assert results[-1][0] == latest and results[-1][1][0].label == fixtures[9]['label']
     finally:
         controller.stop()
         qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)

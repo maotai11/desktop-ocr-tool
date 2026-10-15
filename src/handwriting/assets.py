@@ -44,7 +44,7 @@ def verified_assets(root=None):
     program = runtime / name
     data = _file(program, 10000000)
     if (lock.get('schema') != 1 or lock.get('platform') != sys.platform
-            or lock.get('protocol') != 1 or lock.get('name') != name
+            or lock.get('protocol') != 2 or lock.get('name') != name
             or lock.get('size_bytes') != len(data)
             or lock.get('sha256') != hashlib.sha256(data).hexdigest()):
         raise ValueError('Handwriting helper identity mismatch')

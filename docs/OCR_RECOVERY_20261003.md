@@ -53,15 +53,15 @@ GT 沒有按輸出改寫；edits 使用既有 NFC Levenshtein，不把全半形�
 
 ## 驗證命令與結果
 
-使用父任務建立的 Python 3.12 venv、exact `requirements-dev.txt`。環境設定：
+該次驗證使用 Python 3.12 虛擬環境與 exact `requirements-dev.txt`。環境設定：
 
 ```sh
 export QT_QPA_PLATFORM=offscreen ORT_DISABLE_TELEMETRY=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
-PY=/workspace/scratch/40b4883b300a/ocr-venv/bin/python
+PY=python  # 使用已安裝上述相依的本機虛擬環境
 $PY -m pytest -q tests/test_ocr_regressions.py tests/test_ocr_preprocess.py tests/test_hardening.py tests/test_secondary_engine.py tests/test_h4_fallback_edge_cases.py
 # 137 passed，包含 52 個新 deterministic OCR tests
 $PY -m pytest -q
-# 該次共享 checkout：295 passed in 9.92s；其他工作後續測試數以父任務最終紀錄為準
+# 該次共享 checkout：295 passed in 9.92s；後續階段結果另見歷史驗證摘要
 $PY -m ruff check --select E9,F63,F7,F82 src/ocr/engine.py src/ocr/preprocessor.py src/ocr/fusion.py src/ocr/postprocessor.py tests/test_ocr_regressions.py scripts/validate_ocr_recovery.py
 # All checks passed；不是全量 ruff 清零宣稱
 $PY scripts/validate_ocr_recovery.py --baseline-ref bba210ec --font /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc --font-index 3 --output-dir docs/evidence/ocr-recovery-20261003

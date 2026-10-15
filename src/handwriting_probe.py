@@ -17,7 +17,7 @@ def run_handwriting_probe(report_path, wait_for_firewall=False):
     from src.core.constants import CUSTOM_MIME_TYPE
     from src.handwriting.assets import MODEL_SHA256, verified_assets
     from src.handwriting.controller import HandwritingController
-    from src.handwriting.protocol import encode_strokes
+    from src.handwriting.protocol import encode_strokes, VERSION
 
     app = QApplication.instance() or QApplication([])
     report = {'schema': 1, 'probe': 'handwriting_lifecycle', 'version': APP_VERSION,
@@ -49,7 +49,7 @@ def run_handwriting_probe(report_path, wait_for_firewall=False):
         report.update(helper_sha256=helper['sha256'], model_sha256=MODEL_SHA256,
                       alphabet_sha256=manifest['alphabet_sha256'], validation_sha256=manifest['validation_sha256'],
                       helper_source_sha256=helper['source']['sha256'],
-                      helper_architecture=helper.get('machine', 'LINUX_X64_ASSESSMENT'))
+                      helper_architecture=helper.get('machine', 'LINUX_X64_ASSESSMENT'), helper_protocol=VERSION)
     except (ValueError, KeyError, OSError, UnicodeError):
         report['error'] = 'HANDWRITING_ASSET_VALIDATION_FAILED'
         save()
@@ -113,6 +113,7 @@ def run_handwriting_probe(report_path, wait_for_firewall=False):
 
     def result(generation, values):
         nonlocal index
+        values = tuple(value.label for value in values)
         if generation != expected_generation or not values:
             stop('HANDWRITING_GENERATION_OR_OUTPUT_FAILED')
             return

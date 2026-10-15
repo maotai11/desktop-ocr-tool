@@ -224,7 +224,7 @@ def check_handwriting_probe(report, manifest, frozen, *, firewall=False):
             or identity.get('alphabet_sha256') != ALPHABET_SHA256
             or identity.get('label_count') != 11853
             or not digest(identity.get('validation_sha256'))
-            or helper.get('schema') != 1 or helper.get('protocol') != 1
+            or helper.get('schema') != 1 or helper.get('protocol') != 2
             or helper.get('platform') != 'win32' or helper.get('machine') != 'AMD64'
             or helper.get('name') != 'inkpick-handwriting.exe'
             or helper.get('crt') != 'MSVC /MT Release'
@@ -242,7 +242,7 @@ def check_handwriting_probe(report, manifest, frozen, *, firewall=False):
                 'helper_sha256': helper['sha256'], 'model_sha256': MODEL_SHA256,
                 'alphabet_sha256': ALPHABET_SHA256,
                 'validation_sha256': identity['validation_sha256'],
-                'helper_source_sha256': source['sha256'], 'helper_architecture': 'AMD64',
+                'helper_source_sha256': source['sha256'], 'helper_architecture': 'AMD64', 'helper_protocol': 2,
                 'queue_latest_only': True, 'clipboard_roundtrip': True,
                 'self_mime_preserved': True, 'helper_stopped': True, 'job_assigned': True,
                 'firewall_gate_acknowledged': firewall,
@@ -266,10 +266,32 @@ def check_handwriting_probe(report, manifest, frozen, *, firewall=False):
         values = case.get('candidates')
         if (set(case) != {'label', 'candidates', 'rank', 'passed'}
                 or case['passed'] is not True or type(case['rank']) is not int or case['rank'] != 1
-                or not isinstance(values, list) or not 1 <= len(values) <= 10
+                or not isinstance(values, list) or not 1 <= len(values) <= 60
                 or any(not isinstance(value, str) or value not in alphabet for value in values)
                 or len(set(values)) != len(values) or values[0] != case['label']):
             raise ValueError('Handwriting expected-candidate check failed')
+
+
+def check_handwriting_image_probe(report, manifest, frozen):
+    from src.handwriting.candidates import is_cjk_scalar
+    rec = manifest['model_profiles']['v6-small']['rec']
+    expected = {'schema': 1, 'probe': 'handwriting_image_lifecycle', 'version': VERSION,
+        'frozen': frozen, 'platform': 'win32', 'qt_platform': 'windows',
+        'executable_sha256': manifest['executable_sha256'] if frozen else None,
+        'helper_protocol': 2, 'passed': True, 'inference_completed': True,
+        'worker_pid_verified': True, 'job_assigned': True, 'cancelled_and_reaped': True,
+        'children_reaped': True, 'clean_machine_verified': False,
+        'accuracy_evidence': 'UPSTREAM_TRAINING_RASTER_FUNCTIONAL_ONLY',
+        'model_sha256': rec['sha256'], 'character_sha256': rec['character_sha256']}
+    if (set(report) != set(expected) | {'candidates'} or any(
+            type(report.get(key)) is not type(value) or report.get(key) != value
+            for key,value in expected.items())):
+        raise ValueError('Incomplete or mismatched handwriting image probe')
+    values = report['candidates']
+    if (not isinstance(values, list) or not 1 <= len(values) <= 2 or '一' not in values or
+            any(not isinstance(value,str) or not is_cjk_scalar(value) for value in values)
+            or len(set(values)) != len(values)):
+        raise ValueError('Invalid handwriting image candidates')
 
 
 def check_frozen_stress(report, manifest):
@@ -520,6 +542,13 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             raise ValueError('Embedded handwriting probe checksum mismatch')
         check_handwriting_probe(_json(raw), manifest, True)
         probes[report_name] = 'PASSED'
+        report_name = 'frozen-handwriting-image.json'
+        raw = archive.read(prefix + 'candidate-validation/' + report_name)
+        if manifest['candidate_probes'][report_name] != {
+                'sha256': hashlib.sha256(raw).hexdigest(), 'status': 'PASSED'}:
+            raise ValueError('Embedded handwriting image probe checksum mismatch')
+        check_handwriting_image_probe(_json(raw), manifest, True)
+        probes[report_name] = 'PASSED'
     gate = _json((artifacts / 'firewall-validation/candidate-gate.json').read_bytes())
     if (gate.get('passed') is not True or gate.get('executable_sha256') != executable_hash.hexdigest()
             or gate.get('version') != VERSION or gate.get('clean_machine_verified') is not False):
@@ -530,7 +559,10 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             continue  # The separate gate binds both the outer EXE and extracted helper.
         if gate['probes'][name] != {'sha256': sha256_file(path), 'status': 'PASSED'}:
             raise ValueError('Outbound-blocked probe checksum mismatch')
-        _check_probe(_json(path.read_bytes()), manifest, True)
+        if name == 'frozen-handwriting-image.json':
+            check_handwriting_image_probe(_json(path.read_bytes()), manifest, True)
+        else:
+            _check_probe(_json(path.read_bytes()), manifest, True)
     handwriting_path = artifacts / 'firewall-validation/frozen-handwriting.json'
     handwriting_gate = _json((artifacts / 'firewall-validation/handwriting-firewall-gate.json').read_bytes())
     expected_handwriting_gate = {
@@ -548,6 +580,7 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
     for name in ('source-selftest.json', 'source-app-smoke.json'):
         _check_probe(_json((root / name).read_bytes()), manifest, False)
     check_handwriting_probe(_json((root / 'source-handwriting.json').read_bytes()), manifest, False)
+    check_handwriting_image_probe(_json((root / 'source-handwriting-image.json').read_bytes()), manifest, False)
     stress_path = artifacts / 'firewall-validation/frozen-runtime-stress.json'
     check_frozen_stress(_json(stress_path.read_bytes()), manifest)
     suites = ET.parse(root / 'test-results.xml').getroot()

@@ -4,8 +4,9 @@ import sys
 
 
 class WindowsJob:
-    def __init__(self):
+    def __init__(self, memory_mib=256):
         self.handle = None
+        self.memory_mib = memory_mib
 
     def assign(self, process_id):
         if sys.platform != 'win32':
@@ -51,7 +52,7 @@ class WindowsJob:
             # accidental child trees. This is resource ownership, not a sandbox.
             limits.BasicLimitInformation.LimitFlags = 0x2000 | 0x100 | 0x8
             limits.BasicLimitInformation.ActiveProcessLimit = 1
-            limits.ProcessMemoryLimit = 256 * 1024 * 1024
+            limits.ProcessMemoryLimit = self.memory_mib * 1024 * 1024
             if not kernel.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
                 raise OSError(ctypes.get_last_error(), 'SetInformationJobObject')
             process = kernel.OpenProcess(0x0100 | 0x0001, False, process_id)

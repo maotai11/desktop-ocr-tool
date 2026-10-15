@@ -11,11 +11,16 @@ if not getattr(sys, 'frozen', False):
         sys.path.insert(0, _ROOT)
 
 def run(argv=None):
+    # Child route precedes QApplication, single-instance lock and OCR workers.
+    if (sys.argv[1:] if argv is None else argv) == ['--handwriting-image-helper']:
+        from src.handwriting.image_helper import run
+        return run()
     parser = argparse.ArgumentParser(description="Desktop OCR Tool")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--self-test", metavar="REPORT", help="offline OCR and database probe")
     mode.add_argument("--smoke-app", metavar="REPORT", help="isolated application lifecycle probe")
     mode.add_argument("--stress-ocr", metavar="REPORT", help="repeated real-model payload probe")
+    mode.add_argument("--self-test-handwriting-image", metavar="REPORT", help="bundled manual raster helper lifecycle probe")
     mode.add_argument("--self-test-handwriting", metavar="REPORT", help="bundled handwriting lifecycle probe")
     parser.add_argument('--wait-for-firewall', action='store_true', help='handwriting probe runner handshake only')
     parser.add_argument("--stress-iterations", type=int, default=500)
@@ -23,6 +28,9 @@ def run(argv=None):
     os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     if args.wait_for_firewall and args.self_test_handwriting is None:
         parser.error('--wait-for-firewall requires --self-test-handwriting')
+    if args.self_test_handwriting_image is not None:
+        from src.handwriting_image_probe import run_image_probe
+        return run_image_probe(os.path.abspath(args.self_test_handwriting_image))
     if args.self_test_handwriting is not None:
         from src.handwriting_probe import run_handwriting_probe
         return run_handwriting_probe(os.path.abspath(args.self_test_handwriting), args.wait_for_firewall)

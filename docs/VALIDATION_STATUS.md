@@ -22,6 +22,16 @@
 - 混合 DPI、多螢幕、RDP／休眠、Explorer 重啟、全域熱鍵及外部程式貼上
 - 完整相依授權審查／簽章；目前 VM LeakSanitizer 相容性未建立通過結果
 
-手寫含龘，不含尞／𠮷／𠀋。剪貼簿可保留擴充字不代表模型能辨出。既有 OCR 在 QThread 中永久不返回仍無法安全強制中止；手寫隔離不改變此限制。
+筆畫字庫含龘，但缺少內／吳／戶／辦／嚐等常用字，也不含尞／𠮷／𠀋。剪貼簿可保留擴充字不代表模型能辨出。既有 OCR 在 QThread 中永久不返回仍無法安全強制中止；手寫隔離不改變此限制。
 
 歷史：[rc.2說明](RELEASE_1_7_0_RC2.md)、[OCR升級驗證](OCR_UPGRADE_20261006.md)。新候選維持 prerelease，不宣稱乾淨 Windows 或真人手寫全面驗收完成。
+
+## 2026-10-15 本地整合狀態（未重打包）
+
+- 候選協議v2、每路Top30、raw／bbox來源與rank去重、可展開／捲動／鍵盤候選UI
+- 手動且可取消的 Small rec 影像子程序；來源碼早期分流與 bounded IPC，frozen驗證新門檻已加入
+- 已封存1536份訓練重播／幾何擾動輸入；Top1／10／30及raster對照僅定位根因，不是人體筆跡準確率
+- 仍待同一新版 Windows x64 EXE／ZIP、MSVC／Job／windowed pipe／outbound-blocked image gate、乾淨Windows與真人獨立樣本
+- raw前10保留避免反向筆畫回歸，但小字偏角落Top1排序尚未解決；OCR字表含缺字不等於已補準
+
+完整證據範圍見 [手寫改善紀錄](HANDWRITING_IMPROVEMENT_20261015.md)。

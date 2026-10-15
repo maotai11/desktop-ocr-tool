@@ -88,7 +88,7 @@ def read():
  magic,version,kind,reserved,generation,size=H.unpack(h)
  return kind,generation,sys.stdin.buffer.read(size)
 def send(kind,generation,payload):
- sys.stdout.buffer.write(H.pack(b'ZHW1',1,kind,0,generation,len(payload))+payload)
+ sys.stdout.buffer.write(H.pack(b'ZHW1',2,kind,0,generation,len(payload))+payload)
  sys.stdout.buffer.flush()
 mode=sys.argv[1]
 read()
@@ -135,7 +135,8 @@ def test_controller_one_active_one_replaceable_pending(qtbot, fake_controller):
     third = controller.submit((((3, 3),),))
     qtbot.waitUntil(lambda: bool(results), timeout=3000)
     assert first < second < third
-    assert results == [(third, ('臺',))]
+    assert results[0][0] == third
+    assert tuple(item.label for item in results[0][1]) == ('臺',)
 
 
 def test_failed_start_during_immediate_shutdown_releases_owner(qtbot, tmp_path):

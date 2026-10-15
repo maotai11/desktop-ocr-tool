@@ -346,6 +346,9 @@ class FloatingWidget(QWidget):
 
         bottom_bar.addWidget(self._btn_console)
         self._btn_handwriting = QPushButton('手寫')
+        from .design_system import apply_button
+        for button in (self._btn_console, self._btn_handwriting):
+            apply_button(button, compact=True)
         self._btn_handwriting.setToolTip('離線手寫，點選候選字即可複製')
         self._btn_handwriting.clicked.connect(self.open_handwriting)
         bottom_bar.addWidget(self._btn_handwriting)
@@ -366,7 +369,7 @@ class FloatingWidget(QWidget):
             self._handwriting.shutdown()
 
     def handwriting_is_stopped(self):
-        return self._handwriting is None or self._handwriting.controller.is_stopped
+        return self._handwriting is None or self._handwriting.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')

@@ -2,7 +2,7 @@
 
 本表對照固定基準 master 的49項發現。完整位置、Class/Function、Call Path、根因、重現、四類影響、修法、測試與 regression dossier 保留於 [原始 MASTER_FINDINGS](audit-baseline/MASTER_FINDINGS.md)。Severity／證據標記沿用原始發現，並不表示修復後仍具相同 impact。
 
-2026-10-03 追加恢復修復：見 [復原報告](RECOVERY_REPAIR_REPORT.md) 與 [七張原始像素比較](OCR_RECOVERY_20261003.md)。最新完整測試以 `docs/evidence/recovery/final-tests.xml` 為準；舊156項是 bba210ec 的歷史結果。
+2026-10-03 追加恢復修復：見 [復原報告](RECOVERY_REPAIR_REPORT.md) 與 [七張原始像素比較](OCR_RECOVERY_20261003.md)。2026-10-03各階段測試及原始hash見 [歷史摘要](evidence/HISTORICAL_VALIDATION_20261003.md)；封存最終XML為384項全過，舊156項是 bba210ec 的歷史結果，均不代表目前候選已完成驗收。
 
 **已驗證修復只適用表內測試範圍；不得解讀為所有平台及現場 gate 通過。**
 
@@ -51,7 +51,7 @@
 | [B02](audit-baseline/MASTER_FINDINGS.md#b02) | Medium | CONFIRMED | 已驗證修復 | UI/README取消host pip即可擴充既有EXE的錯誤宣稱，部署方案保留分析 |
 | [B03](audit-baseline/MASTER_FINDINGS.md#b03) | Medium | CONFIRMED | 部分修復 | repo模型已進Runtime與build；舊download脚本／供應鏈hash gate待整理 |
 | [B04](audit-baseline/MASTER_FINDINGS.md#b04) | Medium | CONFIRMED | 部分修復 | Core版本固定且單一opencv-python；transitive/wheel hash lock及license仍開放 |
-| [T01](audit-baseline/MASTER_FINDINGS.md#t01) | High | CONFIRMED | 已驗證修復 | bba210ec基準156 passed；rc.2完整結果见final-tests.xml，舊133/17failed原始證據保留 |
+| [T01](audit-baseline/MASTER_FINDINGS.md#t01) | High | CONFIRMED | 已驗證修復 | bba210ec基準156 passed；rc.2封存最終384 passed見[歷史摘要](evidence/HISTORICAL_VALIDATION_20261003.md)；舊133/17failed仍屬原審計階段 |
 | [T02](audit-baseline/MASTER_FINDINGS.md#t02) | Medium | CONFIRMED | 部分修復 | 新增CI、real Qt/SQLite adversarial與frozen smoke；非clean-machine替代 |
 | [X01](audit-baseline/MASTER_FINDINGS.md#x01) | Low | CONFIRMED | 部分修復 | 現行主要README/packaging/reviewer/smoke/OCR reports更新；baseline歷史文不改成現在狀態 |
 | [X02](audit-baseline/MASTER_FINDINGS.md#x02) | Low | CONFIRMED | 開放 | validator已接線，legacy preprocessor／signal bus／dictionary等保留為已知orphan |

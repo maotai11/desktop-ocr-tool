@@ -416,17 +416,19 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "test-results.xml",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
                       "artifacts/firewall-validation/frozen-app-smoke.json",
                       "artifacts/firewall-validation/frozen-handwriting.json",
+                      "artifacts/firewall-validation/frozen-handwriting-image.json",
                       "artifacts/firewall-validation/handwriting-firewall-gate.json",
                       "artifacts/firewall-validation/frozen-runtime-stress.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
                       "artifacts/candidate-validation/frozen-handwriting.json",
+                      "artifacts/candidate-validation/frozen-handwriting-image.json",
                       "artifacts/" + ZIP_NAME + ".sha256"]
     snapshots = {}
     for name in snapshot_names:
@@ -493,7 +495,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                     for info in archive.infolist()), "Symlink member in portable ZIP")
         for name in ["BUILD_MANIFEST.json", "SOURCE_MANIFEST.json",
                      "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json",
-                     "candidate-validation/frozen-handwriting.json"]:
+                     "candidate-validation/frozen-handwriting.json", "candidate-validation/frozen-handwriting-image.json"]:
             require(archive.getinfo(prefix + name).file_size <= MAX_JSON_BYTES,
                     "Oversized embedded validation metadata")
             metadata_files[name] = archive.read(prefix + name)

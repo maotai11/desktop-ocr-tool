@@ -1,0 +1,206 @@
+{
+  "schema": 1,
+  "kind": "sanitized_historical_validation_summary",
+  "historical_scope": "Linux source validation and recovery records from 2026-10-03; not current InkPick candidate validation",
+  "cleanup_date": "2026-10-15",
+  "base_reference": "bba210ec71c7d08d0093c11dba3964d80d0dfb27",
+  "notice": "This allowlisted summary is newly authored and is not the original raw evidence bytes. Raw logs/JUnit/model-path reports were removed from the current repository tree to avoid machine path and hostname disclosure. Their original size/hash and observed result fields are retained. Git history is unchanged.",
+  "limitations": [
+    "Historical results only; no tests, OCR, or probes were rerun for this cleanup.",
+    "Source Linux/offscreen observations do not establish Windows, frozen EXE, clean-machine, offline-host, or real-world recognition accuracy acceptance.",
+    "The raw final-tests.xml contains 384 tests, 0 failures/errors/skips, 9.020 seconds. Earlier narrative 299 tests/8.73 seconds is a separate reported intermediate stage and is not the contents of that XML.",
+    "The historical source self-test reports network_observation NOT_RUN; the separately listed seccomp guards support only their recorded per-process Linux socket-denial checks, not packet capture or inherited-descriptor closure.",
+    "Original-file hashes identify removed originals, not hashes of this summary or evidence that the originals remain publicly available in the current tree."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/evidence/full.log",
+      "purpose": "舊整套 pytest 終端輸出；含 rootdir／XML 輸出目的地",
+      "sha256": "0fa14890995f6dca3a78901518a56fea5e73d6356ed7a5ed4a90eaa34b468bdb",
+      "size_bytes": 1829,
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/full.xml",
+      "purpose": "舊整套 pytest JUnit；含 hostname／fixture 絕對路徑",
+      "sha256": "c852d4d2e926ef5f653e5fcd46ec26f27eb0fc7e6e680b0fd75152b22b7e49fd",
+      "size_bytes": 19280,
+      "test_summary": [
+        {
+          "tests": "156",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "10.750"
+        }
+      ],
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/ocr-recovery-20261003/native-run.log",
+      "purpose": "合成 OCR 配對推論終端 log；含本機原始碼路徑警告",
+      "sha256": "36d45d2c93a7c5f42f7cdc9a01937f6044b5779662d3fd06324b067ee32205a2",
+      "size_bytes": 2554,
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/baseline-tests.log",
+      "purpose": "恢復基線 pytest 終端輸出；含 rootdir／XML 目的地",
+      "sha256": "f7f43ffad409254e30fe323df987e05c9ab221e1e6f4296601e84c82fc1009d7",
+      "size_bytes": 1720,
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/baseline-tests.xml",
+      "purpose": "恢復基線 JUnit；含 hostname／fixture 路徑",
+      "sha256": "699bde7bb29ab4b877cdef3bef710ab4dbdc0fa66a451a1c43b1e18abf5d42c3",
+      "size_bytes": 19279,
+      "test_summary": [
+        {
+          "tests": "156",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "7.742"
+        }
+      ],
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/data-worker-full.xml",
+      "purpose": "data/worker 回歸 JUnit；含 hostname／fixture 路徑",
+      "sha256": "ca038de5646425ace1ab1588d5b3caaed81c41b1cc0ee34c0b5cb88aa1c37718",
+      "size_bytes": 37489,
+      "test_summary": [
+        {
+          "tests": "292",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "8.826"
+        }
+      ],
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/final-tests.log",
+      "purpose": "當年最終 pytest 終端輸出；含 rootdir／XML 目的地",
+      "sha256": "6133a12c944e9592e49552062cef6dbb3c088eab542ab60c98b359f3727b911b",
+      "size_bytes": 2771,
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/final-tests.xml",
+      "purpose": "當年最終 JUnit；含 hostname／fixture 路徑",
+      "sha256": "2d6584e687a4d521493231736ba46bb4387ca4f1c58c0efa9d6246a2d03c7d16",
+      "size_bytes": 51144,
+      "test_summary": [
+        {
+          "tests": "384",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "9.020"
+        }
+      ],
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/source-app-smoke-guard.json",
+      "purpose": "Linux app smoke seccomp guard 收據；command 含執行機 Python 路徑",
+      "sha256": "ad5bb9853af1c0ca12b724efa516c0ffd62920053cb6ca5a06480343a45272b9",
+      "size_bytes": 771,
+      "public_result_fields": {
+        "schema": 1,
+        "platform": "linux",
+        "filter_loaded": true,
+        "socket_checks": {
+          "ipv4": "EPERM",
+          "ipv6": "EPERM",
+          "unix": "EPERM"
+        },
+        "limits": [
+          "Process-local Linux test, not Windows/offline-machine acceptance",
+          "No packet capture or proof of absent historical payload",
+          "Inherited descriptors are not closed by this filter"
+        ]
+      },
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/source-app-smoke.log",
+      "purpose": "Linux app smoke 終端 log；含 Qt 暫存 runtime 路徑",
+      "sha256": "ce0abb88f90049f157296dcba742dc19da6e8f6c0237a403e2921f6e4375a5e4",
+      "size_bytes": 2849,
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/source-selftest-guard.json",
+      "purpose": "Linux OCR self-test seccomp guard 收據；command 含執行機 Python 路徑",
+      "sha256": "586e80100cef96f0c4b887d87e1dc8528477300b3e10f86d13c3d3972b93d206",
+      "size_bytes": 770,
+      "public_result_fields": {
+        "schema": 1,
+        "platform": "linux",
+        "filter_loaded": true,
+        "socket_checks": {
+          "ipv4": "EPERM",
+          "ipv6": "EPERM",
+          "unix": "EPERM"
+        },
+        "limits": [
+          "Process-local Linux test, not Windows/offline-machine acceptance",
+          "No packet capture or proof of absent historical payload",
+          "Inherited descriptors are not closed by this filter"
+        ]
+      },
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/source-selftest.json",
+      "purpose": "舊 Linux v4 OCR／DB self-test；model absolute_path 含 checkout 路徑",
+      "sha256": "787436b30e8f58d294cb67a2b388c9f1fe8110db88d78117d94bbabde21df33a",
+      "size_bytes": 4135,
+      "public_result_fields": {
+        "schema": 2,
+        "probe": "ocr_database",
+        "version": "1.6.2-rc.2",
+        "frozen": false,
+        "platform": "linux",
+        "qt_platform": "offscreen",
+        "passed": true,
+        "checks": {
+          "qt": true,
+          "models": true,
+          "ocr": true,
+          "database": true
+        },
+        "clean_machine_verified": false,
+        "network_observation": "NOT_RUN"
+      },
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/recovery/sqlite-lifetime.log",
+      "purpose": "SQLite lifetime smoke 終端 log；含 Qt 暫存 runtime 路徑",
+      "sha256": "1f8e7cfe99b4e783c3ceaf6308fa3d73681fde5dc60504c412bf7505308edfc8",
+      "size_bytes": 2936,
+      "original_bytes_in_current_tree": false
+    },
+    {
+      "path": "docs/evidence/source-selftest.json",
+      "purpose": "更早 Linux v4 self-test；model absolute_path 含舊 checkout 路徑",
+      "sha256": "d9a093c886f124f5c5e93b7b00473fc333f847a8beead34c6ad771fb3420397e",
+      "size_bytes": 2408,
+      "public_result_fields": {
+        "schema": 1,
+        "frozen": false,
+        "platform": "linux",
+        "qt_platform": "offscreen",
+        "passed": true,
+        "clean_machine_verified": false
+      },
+      "original_bytes_in_current_tree": false
+    }
+  ]
+}

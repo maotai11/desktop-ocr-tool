@@ -10,7 +10,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts import publish_prerelease as publisher
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe
 from scripts.verify_candidate_bundle import verify_candidate
 
 COMMIT = "a" * 40
@@ -358,6 +358,7 @@ def candidate(tmp_path, monkeypatch):
                                           engine_ready=True, shutdown_clean=True,
                                           threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True})}
     probes["frozen-handwriting.json"] = handwriting_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
+    probes["frozen-handwriting-image.json"] = image_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest(), profiles)
     manifest = {"handwriting": handwriting_identity(), "schema": 2, "platform": "win32", "version": publisher.VERSION,
                 "executable_name": publisher.EXE_NAME, "executable_sha256": hashlib.sha256(exe).hexdigest(),
                 "models": models, "model_profiles": profiles, "default_model_profile": "v6-small",
@@ -377,7 +378,7 @@ def candidate(tmp_path, monkeypatch):
     for name, probe in probes.items():
         (frozen / name).write_bytes(encoded(probe))
         (firewall / name).write_bytes(encoded(probe))
-        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json"}[name]
+        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json", "frozen-handwriting-image.json": "source-handwriting-image.json"}[name]
         (root / source_name).write_bytes(encoded(dict(probe, frozen=False, executable_sha256=None)))
     gate = {"schema": 1, "passed": True, "version": publisher.VERSION,
             "executable_sha256": manifest["executable_sha256"], "clean_machine_verified": False,

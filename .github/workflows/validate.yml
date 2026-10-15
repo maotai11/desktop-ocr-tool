@@ -13,6 +13,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     env:
       QT_QPA_PLATFORM: ${{ matrix.os == 'windows-latest' && 'windows' || 'offscreen' }}
       ORT_DISABLE_TELEMETRY: '1'
@@ -20,39 +21,60 @@ jobs:
       OPENBLAS_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
+        id: checkout
       - uses: actions/setup-python@v5
+        id: python
         with:
           python-version: '3.12'
           cache: pip
       - if: runner.os == 'Linux'
+        id: linux_dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1
       # One native command per step: Windows PowerShell must propagate each
       # exit code before a later successful command can replace LASTEXITCODE.
       - name: Resolve wheelhouse
+        id: wheels
         run: python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt
       - name: Record exact input hashes
+        id: wheel_inventory
         run: python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
       - name: Install only from recorded local wheels
+        id: install
         run: python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements-dev.txt
       - name: Check installed dependencies
+        id: dependency_check
         run: python -m pip check
       - name: Record installed dependency inventory
+        id: installed_inventory
         run: python scripts/record_dependency_inventory.py --wheelhouse artifacts/wheelhouse --report artifacts/dependency-inventory.json
       - name: Prepare pinned offline OCR models
+        id: models
         run: python scripts/prepare_models.py
       - name: Prepare pinned offline handwriting model
+        id: handwriting_model
         run: python scripts/prepare_handwriting_model.py
       - name: Build pinned handwriting helper
+        id: helper_build
         run: python scripts/build_handwriting_helper.py
       - name: Probe pinned handwriting helper
+        id: helper_probe
         run: python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
-      - run: python -m pytest -q --junitxml=test-results.xml
-      - run: python src/main.py --self-test source-selftest.json
-      - run: python src/main.py --smoke-app source-app-smoke.json
-      - run: python src/main.py --self-test-handwriting source-handwriting.json
+      - name: Collect and run tests with owned process and memory limits
+        id: tests
+        run: python scripts/run_bounded_pytest.py --report artifacts/pytest-bounds.json --memory-mib 4096 --timeout 1800 -- -q --junitxml=test-results.xml
+      - id: source_selftest
+        run: python src/main.py --self-test source-selftest.json
+      - id: source_app
+        run: python src/main.py --smoke-app source-app-smoke.json
+      - id: source_handwriting
+        run: python src/main.py --self-test-handwriting source-handwriting.json
+      - id: source_image
+        run: python src/main.py --self-test-handwriting-image source-handwriting-image.json
       - if: runner.os == 'Windows'
+        id: build
         run: python scripts/build.py
       - if: runner.os == 'Windows'
+        id: firewall
         shell: pwsh
         run: |
           $bundles = @(Get-ChildItem artifacts/release-* -Directory)
@@ -81,43 +103,31 @@ jobs:
             Remove-NetFirewallRule -DisplayName $rule
           }
       - name: Verify actual candidate ZIP and embedded runtime payload
+        id: bundle_verify
         if: runner.os == 'Windows'
         run: python scripts/verify_candidate_bundle.py --artifact-root . --expected-commit ${{ github.sha }} --report artifacts/verified-bundle.json --inspect-payload
+      # Raw gates, logs, JUnit and original candidate ZIP remain runner-local.
+      # Export succeeds only into a fresh allowlisted directory; never upload a
+      # stale directory after exporter failure. Review CI is metadata-only.
+      - name: Prepare allowlisted public review metadata
+        id: public_metadata
+        if: always()
+        run: python scripts/prepare_public_validation.py --expected-commit ${{ github.sha }} --platform ${{ runner.os }}
+        env:
+          VALIDATION_STEP_RESULTS: ${{ toJSON(steps) }}
+          VALIDATION_JOB_STATUS: ${{ job.status }}
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Windows' && always()
+        if: runner.os == 'Windows' && always() && steps.public_metadata.outcome == 'success'
         with:
           name: validation-metadata-Windows
-          path: |
-            test-results.xml
-            *selftest.json
-            *app-smoke.json
-            source-handwriting.json
-            artifacts/*.sha256
-            artifacts/verified-bundle.json
-            artifacts/handwriting-native-probe.json
-            artifacts/dependency-inventory.json
-            artifacts/release-*/BUILD_MANIFEST.json
-            artifacts/release-*/SOURCE_MANIFEST.json
-            artifacts/candidate-validation/*.json
-            artifacts/firewall-validation/*.json
-          if-no-files-found: warn
+          path: artifacts/public-validation/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.public_metadata.outcome == 'success'
         with:
           name: validation-${{ runner.os }}
-          path: |
-            test-results.xml
-            *selftest.json
-            *app-smoke.json
-            source-handwriting.json
-            artifacts/*.zip
-            artifacts/*.sha256
-            artifacts/dependency-inventory.json
-            artifacts/verified-bundle.json
-            artifacts/handwriting-native-probe.json
-            artifacts/candidate-validation/*.json
-            artifacts/firewall-validation/*.json
-          if-no-files-found: warn
+          path: artifacts/public-validation/
+          if-no-files-found: error
   publish_prerelease:
     needs: validate
     # One fixed, explicitly approved candidate; never publish from a PR event.

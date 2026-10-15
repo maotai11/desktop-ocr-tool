@@ -70,7 +70,7 @@ def source_manifest(root: Path):
     names = sorted(set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
                        .decode('utf-8').split('\0')) - {''})
     tracked = set(git('ls-files', '-z', '--cached').decode('utf-8').split('\0'))
-    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json', 'source-handwriting.json'}
+    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json', 'source-handwriting.json', 'source-handwriting-image.json'}
     excluded = set(names) & generated - tracked
     names = [name for name in names if name not in excluded]
     files = {}
@@ -306,6 +306,14 @@ def validate_candidate(paths):
     except ValueError as exc:
         raise RuntimeError('Incomplete handwriting candidate gate') from exc
     reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
+    from scripts.verify_candidate_bundle import check_handwriting_image_probe
+    path = paths['validation_dir'] / 'frozen-handwriting-image.json'
+    report = _run_probe(paths['out_exe'], '--self-test-handwriting-image', path)
+    try:
+        check_handwriting_image_probe(report, dict(manifest, executable_sha256=expected_hash), True)
+    except ValueError as exc:
+        raise RuntimeError('Incomplete handwriting image candidate gate') from exc
+    reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
     return reports
 
 
@@ -367,6 +375,12 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
         shutil.copy2(ROOT/name, paths['release_dir']/name)
     if (ROOT/'docs/VALIDATION_STATUS.md').exists():
         shutil.copy2(ROOT/'docs/VALIDATION_STATUS.md', paths['release_dir']/'VALIDATION_STATUS.md')
+    # Keep README's new engineering/evidence links usable inside the ZIP too.
+    documentation = paths['release_dir'] / 'docs'
+    documentation.mkdir(exist_ok=True)
+    for name in ('VALIDATION_STATUS.md', 'HANDWRITING_IMPROVEMENT_20261015.md'):
+        shutil.copy2(ROOT / 'docs' / name, documentation / name)
+    shutil.copytree(ROOT / 'docs/handwriting-evidence', documentation / 'handwriting-evidence')
     if validation_reports:
         shutil.copytree(paths['validation_dir'], paths['release_dir'] / 'candidate-validation')
     shutil.copy2(ROOT / 'scripts/validate_windows_bundle.ps1',

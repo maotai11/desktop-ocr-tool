@@ -7,7 +7,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts.verify_candidate_bundle import VERSION, sha256_file, verify_candidate
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe
 
 
 def encoded(value):
@@ -41,6 +41,7 @@ def candidate(tmp_path, monkeypatch):
                                      threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True}),
     }
     probes['frozen-handwriting.json'] = handwriting_probe(VERSION, hashlib.sha256(exe).hexdigest())
+    probes['frozen-handwriting-image.json'] = image_probe(VERSION, hashlib.sha256(exe).hexdigest(), profiles)
     manifest = {'handwriting': handwriting_identity(), 'schema': 2, 'platform': 'win32', 'version': VERSION,
                 'executable_name': f'InkPick-v{VERSION}.exe',
                 'executable_sha256': hashlib.sha256(exe).hexdigest(), 'models': models,
@@ -65,7 +66,7 @@ def candidate(tmp_path, monkeypatch):
     write_bundle()
     for name, value in probes.items():
         (firewall / name).write_bytes(encoded(value))
-        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json'}[name]
+        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json'}[name]
         (tmp_path / source_name).write_bytes(encoded(dict(value, frozen=False, executable_sha256=None)))
     gate = {'passed': True, 'version': VERSION, 'executable_sha256': manifest['executable_sha256'],
             'clean_machine_verified': False,

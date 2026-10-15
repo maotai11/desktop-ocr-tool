@@ -4,17 +4,17 @@ import math
 import struct
 
 MAGIC = b'ZHW1'
-VERSION = 1
+VERSION = 2
 START, READY, RECOGNIZE, RESULT, STOP = 1, 2, 3, 4, 5
 HEADER = struct.Struct('<4sBBHQI')
 MAX_STROKES = 128
 MAX_POINTS_PER_STROKE = 512
 MAX_POINTS = 16384
 CANVAS_SIZE = 1000
-NBEST = 10
+NBEST = 30
 MAX_LABEL_BYTES = 15
 MAX_REQUEST_BYTES = 2 + MAX_STROKES * 2 + MAX_POINTS * 4
-MAX_REPLY_BYTES = 4 + NBEST * (1 + MAX_LABEL_BYTES + 4)
+MAX_REPLY_BYTES = 4 + 2 * NBEST * (1 + MAX_LABEL_BYTES + 4)
 
 
 class ProtocolError(ValueError):
@@ -87,33 +87,43 @@ class ReplyDecoder:
         return reply
 
 
-def decode_candidates(payload, alphabet):
+def decode_candidate_records(payload, alphabet):
+    from .candidates import merge_stroke_candidates
     if len(payload) < 4 or len(payload) > MAX_REPLY_BYTES:
         raise ProtocolError('Invalid reply length')
-    status, count = struct.unpack_from('<HH', payload)
-    if status not in (0, 1, 2, 3) or count > NBEST or (status != 0 and count != 0):
+    status, raw_count, normalized_count = struct.unpack_from('<HBB', payload)
+    if (status not in (0, 1, 2, 3) or max(raw_count, normalized_count) > NBEST
+            or (status != 0 and (raw_count or normalized_count))):
         raise ProtocolError('Invalid reply status')
     offset = 4
-    result = []
-    seen = set()
-    for _ in range(count):
-        if offset >= len(payload):
-            raise ProtocolError('Truncated label')
-        length = payload[offset]
-        offset += 1
-        if not 1 <= length <= MAX_LABEL_BYTES or offset + length + 4 > len(payload):
-            raise ProtocolError('Invalid label length')
-        try:
-            label = payload[offset:offset + length].decode('utf-8', errors='strict')
-        except UnicodeError as exc:
-            raise ProtocolError('Invalid candidate UTF-8') from exc
-        offset += length
-        score, = struct.unpack_from('<f', payload, offset)
-        offset += 4
-        if label not in alphabet or label in seen or not math.isfinite(score):
-            raise ProtocolError('Invalid candidate')
-        seen.add(label)
-        result.append(label)  # A ranking score is deliberately not a probability.
+    lanes = []
+    for count in (raw_count, normalized_count):
+        result, seen = [], set()
+        for _ in range(count):
+            if offset >= len(payload):
+                raise ProtocolError('Truncated label')
+            length = payload[offset]
+            offset += 1
+            if not 1 <= length <= MAX_LABEL_BYTES or offset + length + 4 > len(payload):
+                raise ProtocolError('Invalid label length')
+            try:
+                label = payload[offset:offset + length].decode('utf-8', errors='strict')
+            except UnicodeError as exc:
+                raise ProtocolError('Invalid candidate UTF-8') from exc
+            offset += length
+            score, = struct.unpack_from('<f', payload, offset)
+            offset += 4
+            if label not in alphabet or label in seen or not math.isfinite(score):
+                raise ProtocolError('Invalid candidate')
+            seen.add(label)
+            result.append(label)  # Scores validate the wire; no cross-lane addition.
+        lanes.append(result)
     if offset != len(payload):
         raise ProtocolError('Trailing reply bytes')
-    return status, tuple(result)
+    return status, merge_stroke_candidates(*lanes)
+
+
+def decode_candidates(payload, alphabet):
+    """Label-only diagnostic compatibility, with the same strict v2 validation."""
+    status, records = decode_candidate_records(payload, alphabet)
+    return status, tuple(item.label for item in records)
