@@ -106,9 +106,21 @@ jobs:
         id: bundle_verify
         if: runner.os == 'Windows'
         run: python scripts/verify_candidate_bundle.py --artifact-root . --expected-commit ${{ github.sha }} --report artifacts/verified-bundle.json --inspect-payload
+      - name: Prepare verified public portable files on the Windows runner
+        id: public_release
+        if: runner.os == 'Windows'
+        run: python scripts/prepare_public_release.py --artifact-root . --output-dir ../inkpick-public-release
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success() && steps.public_release.outcome == 'success'
+        with:
+          name: inkpick-public-candidate-Windows
+          path: ../inkpick-public-release/
+          if-no-files-found: error
+          retention-days: 7
       # Raw gates, logs, JUnit and original candidate ZIP remain runner-local.
       # Export succeeds only into a fresh allowlisted directory; never upload a
-      # stale directory after exporter failure. Review CI is metadata-only.
+      # stale directory after exporter failure. Portable artifacts are separately
+      # selected and verified; private candidate reports are never uploaded.
       - name: Prepare allowlisted public review metadata
         id: public_metadata
         if: always()

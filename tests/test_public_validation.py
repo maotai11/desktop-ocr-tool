@@ -127,9 +127,19 @@ def test_workflow_uploads_only_new_safe_directory_and_keeps_raw_gates():
     workflow=yaml.load((root/'.github/workflows/validate.yml').read_text(),Loader=yaml.BaseLoader)
     steps=workflow['jobs']['validate']['steps']
     uploads=[s for s in steps if s.get('uses','').startswith('actions/upload-artifact@')]
-    assert len(uploads)==2
-    assert all(s['with']['path']=='artifacts/public-validation/' for s in uploads)
-    assert all('always()' in s['if'] and "steps.public_metadata.outcome == 'success'" in s['if'] for s in uploads)
+    assert len(uploads)==3
+    metadata = [s for s in uploads if s['with']['path']=='artifacts/public-validation/']
+    assert len(metadata)==2
+    assert all('always()' in s['if'] and "steps.public_metadata.outcome == 'success'" in s['if'] for s in metadata)
+    binaries = [s for s in uploads if s not in metadata]
+    assert len(binaries)==1
+    assert binaries[0]['with']['path']=='../inkpick-public-release/'
+    assert "success()" in binaries[0]['if'] and "steps.public_release.outcome == 'success'" in binaries[0]['if']
+    assert "always()" not in binaries[0]['if']
+    stage=next(s for s in steps if s.get('id')=='public_release')
+    assert stage['if']=="runner.os == 'Windows'"
+    assert stage['run']=='python scripts/prepare_public_release.py --artifact-root . --output-dir ../inkpick-public-release'
+    assert steps.index(stage)>next(i for i,s in enumerate(steps) if s.get('id')=='bundle_verify')
     prepare=next(s for s in steps if s.get('id')=='public_metadata')
     assert prepare['if']=='always()'
     assert '${{ toJSON(steps) }}'==prepare['env']['VALIDATION_STEP_RESULTS']

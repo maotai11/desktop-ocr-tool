@@ -377,6 +377,58 @@ def canonical_json(value: dict) -> bytes:
                        allow_nan=False) + "\n").encode("utf-8")
 
 
+def public_validation_report(name: str, raw: bytes) -> bytes:
+    """Keep raw verification local; exported reports contain fixed fields only.
+
+    This protects the metadata asset only. The portable bundle still requires
+    its own public-file review before a new publication can be enabled.
+    """
+    from scripts.prepare_public_validation import strict_json, safe_fields, junit_counts
+    require(len(raw) <= MAX_JSON_BYTES, "Oversized public validation input")
+    if name == "test-results.xml":
+        try:
+            counts = junit_counts(raw)
+        except (ValueError, TypeError) as exc:
+            raise PublicationError("Invalid public JUnit report") from exc
+        # No testcase names, hostnames, properties, stdout or failure text.
+        import xml.etree.ElementTree as ET
+        suite = ET.Element("testsuite", {key: str(counts[key])
+                           for key in ("tests", "failures", "errors", "skipped")})
+        states = (["failure"] * counts["failures"] + ["error"] * counts["errors"]
+                  + ["skipped"] * counts["skipped"])
+        for index in range(counts["tests"]):
+            case = ET.SubElement(suite, "testcase")
+            if index < len(states):
+                ET.SubElement(case, states[index])
+        return ET.tostring(suite, encoding="utf-8", xml_declaration=True)
+    try:
+        original = strict_json(raw)
+        require(isinstance(original, dict), "Invalid public validation object")
+        result = safe_fields(original)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise PublicationError("Invalid public validation report") from exc
+    result["original_report_sha256"] = hashlib.sha256(raw).hexdigest()
+    result["original_report_bytes"] = len(raw)
+    # This provenance is checked against the runner before preparation. Still
+    # validate each field here so this helper cannot publish arbitrary strings.
+    if name == "verified-bundle.json":
+        workflow = original.get("workflow")
+        require(isinstance(workflow, dict) and workflow.get("repository") == REPOSITORY,
+                "Invalid public workflow provenance")
+        require(COMMIT_RE.fullmatch(str(workflow.get("source_commit", ""))) is not None,
+                "Invalid public workflow commit")
+        for key in ("run_id", "run_attempt"):
+            value = workflow.get(key)
+            require(type(value) is str and value.isascii() and value.isdecimal()
+                    and 0 < len(value) <= 20 and int(value) > 0,
+                    "Invalid public workflow identifier")
+        result["workflow"] = {key: workflow[key] for key in
+                              ("repository", "run_id", "run_attempt", "source_commit")}
+        result["workflow_run_id"] = workflow["run_id"]
+        result["workflow_run_attempt"] = workflow["run_attempt"]
+    return canonical_json(result)
+
+
 def deterministic_metadata_zip(path: Path, files: Mapping[str, bytes]) -> None:
     require(sum(len(data) for data in files.values()) <= MAX_JSON_BYTES,
             "Validation metadata ZIP would exceed the small-evidence limit")
@@ -403,7 +455,8 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    from scripts.verify_candidate_bundle import verify_candidate
+    from scripts.verify_candidate_bundle import verify_candidate, verify_handwriting_source_distribution
+    from scripts.public_release_bundle import approved_release_files, prepare_public_bundle
 
     artifact_root = Path(artifact_root)
     verified_bundle = Path(verified_bundle)
@@ -510,16 +563,29 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         # Extract only the exact fixed EXE, never arbitrary archive members.
         with archive.open(prefix + EXE_NAME) as incoming, (output_dir / EXE_NAME).open("xb") as outgoing:
             shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
-    with bundle.open("rb") as incoming, (output_dir / ZIP_NAME).open("xb") as outgoing:
-        shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+    approved = approved_release_files(
+        executable=EXE_NAME, executable_sha256=actual["executable_sha256"],
+        identity=manifest["handwriting"], source_files=source["files"])
+    public_bundle = prepare_public_bundle(
+        bundle, output_dir / ZIP_NAME, prefix=prefix, approved=approved,
+        executable=EXE_NAME, candidate_sha256=actual["bundle_sha256"],
+        executable_sha256=actual["executable_sha256"], source_commit=context.source_commit)
+    with zipfile.ZipFile(output_dir / ZIP_NAME) as archive:
+        public_sources = verify_handwriting_source_distribution(
+            archive, prefix, manifest["handwriting"], source["files"])
+    require(public_sources == actual["handwriting_source_distribution"],
+            "Public source distribution differs from verified candidate")
     exe = Asset.from_file(output_dir / EXE_NAME, "application/octet-stream")
     portable = Asset.from_file(output_dir / ZIP_NAME, "application/zip")
     require(exe.sha256 == actual["executable_sha256"] and exe.size == actual["executable_bytes"]
-            and portable.sha256 == actual["bundle_sha256"] and portable.size == actual["bundle_bytes"],
-            "Actual copied ZIP/EXE bytes differ from verified candidate")
+            and portable.sha256 == public_bundle["public_bundle_sha256"]
+            and portable.size == public_bundle["public_bundle_bytes"],
+            "Prepared ZIP/EXE bytes differ from verified public bundle")
     require(all((root / name).read_bytes() == raw for name, raw in snapshots.items()),
             "Validation evidence changed during preparation")
-    deterministic_metadata_zip(output_dir / METADATA_NAME, metadata_files)
+    deterministic_metadata_zip(output_dir / METADATA_NAME,
+                               {name: public_validation_report(name, data)
+                                for name, data in metadata_files.items()})
     evidence = Asset.from_file(output_dir / METADATA_NAME, "application/zip")
     checksum = output_dir / CHECKSUM_NAME
     with checksum.open("x", encoding="ascii", newline="\n") as stream:

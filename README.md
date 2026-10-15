@@ -40,6 +40,8 @@ Windows 10（1809 以上）／11 x64 離線文字工具：框選 OCR、手寫選
 
 ## 開發與建置
 
+Windows 驗證通過後另製作公開候選檔案：保留 EXE、授權與必要模型原始碼，排除原始診斷報告及建置路徑。公開 ZIP 與內部候選 ZIP 分別核對，這個步驟不會自動發布 Release。
+
 只在開發／建置機安裝套件。Python 3.12；Windows 使用已安裝的 Microsoft x64 C++ 編譯器及 Release `/MT` 靜態 CRT。最低 Windows 版本依固定 [Qt 6.11 支援平台](https://doc.qt.io/qtforpython-6.11/overviews/qtdoc-windows.html) 為 Windows 10 1809。目標電腦不執行這些步驟。
 
 ```sh
