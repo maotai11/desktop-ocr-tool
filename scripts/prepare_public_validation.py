@@ -206,6 +206,18 @@ def junit_counts(raw):
     return counts
 
 
+def junit_failure_fingerprints(raw):
+    """Opaque case identifiers only; no names, parameters, paths or failure text."""
+    junit_counts(raw)  # retain all bounded XML/schema/count checks
+    result = []
+    for case in ET.fromstring(raw).iter('testcase'):
+        for state in ('failure', 'error'):
+            if case.find(state) is not None:
+                identity = (case.get('classname', '') + '\0' + case.get('name', '')).encode('utf-8')
+                result.append({'state': state, 'case_sha256': hashlib.sha256(identity).hexdigest()})
+    return result
+
+
 def observed_result(value):
     records = []
     def visit(item):
@@ -294,7 +306,9 @@ def export(root, commit, platform, step_data, job_status):
         record['step_outcome'] = report['steps'][record['source_step']]['outcome']
         if raw is not None:
             try:
-                if kind == 'xml': record['aggregate'] = junit_counts(raw)
+                if kind == 'xml':
+                    record['aggregate'] = junit_counts(raw)
+                    record['failed_case_fingerprints'] = junit_failure_fingerprints(raw)
                 else:
                     record['allowlisted'] = safe_fields(strict_json(raw))
                     record['observed_result'] = observed_result(record['allowlisted'])

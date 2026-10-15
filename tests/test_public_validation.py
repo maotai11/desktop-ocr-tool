@@ -195,3 +195,28 @@ def test_discrete_fields_cannot_use_float_to_bypass_result_checks(key):
 @pytest.mark.parametrize('key', ['timed_out','output_limit_exceeded'])
 def test_explicit_timeout_output_limit_contradicts_recorded_pass(key):
     assert public.observed_result(public.safe_fields({'passed':True,key:True}))=='INCONSISTENT_AS_RECORDED'
+
+
+def test_failure_fingerprints_preserve_failures_without_identifiers(tmp_path):
+    private = 'PRIVATE_FAILURE_DETAIL'
+    xml = ('<testsuites><testsuite tests="3" failures="1" errors="1" skipped="0">'
+           '<testcase classname="tests.example" name="test_ok"/>'
+           '<testcase classname="tests.example" name="test_bad[' + private + ']"><failure>' + private + '</failure></testcase>'
+           '<testcase classname="tests.example" name="test_error"><error message="' + private + '"/></testcase>'
+           '</testsuite></testsuites>').encode()
+    write(tmp_path, 'test-results.xml', xml)
+    report = export(tmp_path)
+    item = record(report, 'test-results.xml')
+    assert item['aggregate']['failures'] == item['aggregate']['errors'] == 1
+    assert item['failed_case_fingerprints'] == [
+        {'state': 'failure', 'case_sha256': hashlib.sha256(('tests.example\0test_bad[' + private + ']').encode()).hexdigest()},
+        {'state': 'error', 'case_sha256': hashlib.sha256(b'tests.example\0test_error').hexdigest()}]
+    encoded = json.dumps(report)
+    assert private not in encoded and 'test_bad' not in encoded and 'tests.example' not in encoded
+
+
+def test_failure_fingerprints_do_not_bypass_xml_validation():
+    with pytest.raises(ValueError):
+        public.junit_failure_fingerprints(b'<!DOCTYPE x><testsuites/>')
+    with pytest.raises(ValueError):
+        public.junit_failure_fingerprints(b'<testsuites><testsuite tests="0" failures="0" errors="0" skipped="0"><testcase><failure/></testcase></testsuite></testsuites>')
