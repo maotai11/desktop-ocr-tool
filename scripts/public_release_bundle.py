@@ -98,6 +98,10 @@ def prepare_public_bundle(candidate, output, *, prefix, approved, executable,
             require(len(infos) <= MAX_MEMBERS, 'Too many archive members')
             found, folded = {}, set()
             for info in infos:
+                # ZipInfo normalizes backslashes on Windows and truncates NUL
+                # names on every platform. Validate the original archive name
+                # before trusting the normalized view, including ignored files.
+                require(info.orig_filename == info.filename, 'Normalized archive member name')
                 safe_name(info.filename.rstrip('/'))
                 require(info.filename.startswith(prefix), 'Unexpected archive root')
                 require(not info.flag_bits & 1, 'Encrypted archive member')

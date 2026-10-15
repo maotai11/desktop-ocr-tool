@@ -20,7 +20,13 @@ def bundle(tmp_path):
                'release/candidate-validation/probe.json': b'PRIVATE_ERROR'}
     def write():
         with zipfile.ZipFile(candidate, 'w') as z:
-            for k, v in members.items(): z.writestr(k, v)
+            for k, v in members.items():
+                # Preserve intentionally hostile ZIP names on Windows too.
+                # Passing a string to writestr would sanitize the test input.
+                entry = zipfile.ZipInfo(k)
+                entry.filename = k
+                entry.orig_filename = k
+                z.writestr(entry, v)
     write()
     approved = {k.removeprefix('release/'):sha(v) for k,v in members.items()
                 if 'PRIVATE' not in v.decode()}
@@ -57,11 +63,24 @@ def test_deterministic_output(bundle,tmp_path):
 
 @pytest.mark.parametrize('path',['../evil','/root','release/../evil','release/C:evil',
                                'release/CON.txt','release/x\\y','release/trailing.',
-                               'release/InkPick.EXE'])
+                               'release/InkPick.EXE', 'release/ignored\x00suffix'])
 def test_unsafe_or_case_colliding_member_fails_without_output(bundle,tmp_path,path):
     candidate,members,write,_,run=bundle
     members[path]=b'unsafe'; write()
     with pytest.raises(public.BundleError): run()
+    assert not (tmp_path/'public.zip').exists()
+
+
+def test_normalized_archive_view_is_refused_on_every_platform(bundle, tmp_path, monkeypatch):
+    *_, run = bundle
+    original = zipfile.ZipFile.infolist
+    def windows_normalized_view(archive):
+        infos = original(archive)
+        infos[-1].orig_filename = 'release\\candidate-validation/probe.json'
+        return infos
+    monkeypatch.setattr(zipfile.ZipFile, 'infolist', windows_normalized_view)
+    with pytest.raises(public.BundleError, match='Normalized archive member'):
+        run()
     assert not (tmp_path/'public.zip').exists()
 
 
