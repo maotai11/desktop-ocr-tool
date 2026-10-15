@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 from src.core.version import APP_VERSION as VERSION
 from src.ocr.model_validator import DEFAULT_MODEL_PROFILE, MODEL_PROFILES
+from scripts.archive_paths import validate_zip_names
 
 MODEL_ROLES = {'det', 'rec', 'cls'}
 
@@ -485,6 +486,7 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
         raise ValueError('Bundle checksum mismatch')
     prefix = f'release-v{VERSION}/'
     with zipfile.ZipFile(bundle) as archive:
+        validate_zip_names(archive.infolist())
         if len(set(archive.namelist())) != len(archive.namelist()):
             raise ValueError('Duplicate bundle member')
         if any(stat.S_ISLNK(info.external_attr >> 16) for info in archive.infolist()):

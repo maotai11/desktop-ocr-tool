@@ -457,6 +457,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         sys.path.insert(0, str(project_root))
     from scripts.verify_candidate_bundle import verify_candidate, verify_handwriting_source_distribution
     from scripts.public_release_bundle import approved_release_files, prepare_public_bundle
+    from scripts.archive_paths import validate_zip_names
 
     artifact_root = Path(artifact_root)
     verified_bundle = Path(verified_bundle)
@@ -542,6 +543,10 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     for name in external_names:
         metadata_files[name] = snapshots[name]
     with zipfile.ZipFile(bundle) as archive:
+        try:
+            validate_zip_names(archive.infolist())
+        except ValueError as exc:
+            raise PublicationError('Unsafe ZIP path before output preparation') from exc
         names = archive.namelist()
         require(len(names) == len(set(names)), "Duplicate member in portable ZIP")
         require(all((info.external_attr >> 16) & 0o170000 != 0o120000
