@@ -7,19 +7,90 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QTextEdit, QScrollArea, QLabel, QMessageBox,
-    QFrame, QMenu, QApplication, QProgressBar, QComboBox
+    QFrame, QMenu, QApplication, QProgressBar, QComboBox, QGraphicsOpacityEffect, QStyle
 )
-from PySide6.QtCore import Qt, QPoint, QEvent
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import Qt, QEvent, QUrl, QPropertyAnimation, QEasingCurve, QSize
+from PySide6.QtGui import QDesktopServices, QIcon, QPixmap, QPainter, QPen, QColor, QPainterPath
 
 from .theme import (
     _BG, _BG_RAISE, _BG_HOVER, _BORDER, _BORDER_L,
     _TEXT_PRI, _TEXT_SEC, _ACCENT, _ACCENT_H, _ACCENT_T,
-    _TEAL, _TEAL_H, _SUCCESS, _ERROR,
+    _SUCCESS, _ERROR,
     _ACCENT_10, _ACCENT_18, _ACCENT_35, _ERROR_18, _ERROR_35,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _line_icon(kind: str, color: str) -> QIcon:
+    """Small native vector marks; no icon font, SVG plugin or network required."""
+    pixmap = QPixmap(40, 40)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.scale(2, 2)
+    pen = QPen(QColor(color), 1.5)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    if kind == 'capture':
+        for x, y, dx, dy in ((3, 3, 4, 4), (17, 3, -4, 4), (3, 17, 4, -4), (17, 17, -4, -4)):
+            painter.drawLine(x, y, x + dx, y)
+            painter.drawLine(x, y, x, y + dy)
+        painter.drawLine(7, 8, 13, 8)
+        painter.drawLine(7, 12, 11, 12)
+    elif kind == 'image':
+        painter.drawRoundedRect(3, 4, 14, 12, 2, 2)
+        painter.drawEllipse(6, 7, 2, 2)
+        painter.drawLine(5, 14, 10, 10)
+        painter.drawLine(10, 10, 15, 14)
+    elif kind == 'pen':
+        path = QPainterPath()
+        path.moveTo(4, 13)
+        path.lineTo(12, 5)
+        path.lineTo(15, 8)
+        path.lineTo(7, 16)
+        path.lineTo(3, 17)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.drawLine(11, 6, 14, 9)
+    elif kind == 'settings':
+        for y, knob in ((5, 7), (10, 13), (15, 8)):
+            painter.drawLine(3, y, knob - 2, y)
+            painter.drawLine(knob + 2, y, 17, y)
+            painter.drawEllipse(knob - 2, y - 2, 4, 4)
+    elif kind == 'history':
+        painter.drawArc(4, 4, 12, 12, -45 * 16, 300 * 16)
+        painter.drawLine(3, 4, 3, 8)
+        painter.drawLine(3, 8, 7, 8)
+        painter.drawLine(10, 6, 10, 10)
+        painter.drawLine(10, 10, 13, 11)
+    elif kind == 'folder':
+        path = QPainterPath()
+        path.moveTo(3, 6)
+        path.lineTo(3, 15)
+        path.quadTo(3, 16, 4, 16)
+        path.lineTo(16, 16)
+        path.quadTo(17, 16, 17, 15)
+        path.lineTo(17, 7)
+        path.lineTo(10, 7)
+        path.lineTo(8, 4)
+        path.lineTo(4, 4)
+        path.quadTo(3, 4, 3, 6)
+        painter.drawPath(path)
+    elif kind == 'play':
+        path = QPainterPath()
+        path.moveTo(7, 4)
+        path.lineTo(15, 10)
+        path.lineTo(7, 16)
+        path.closeSubpath()
+        painter.drawPath(path)
+    else:
+        painter.drawLine(7, 5, 7, 15)
+        painter.drawLine(13, 5, 13, 15)
+    painter.end()
+    pixmap.setDevicePixelRatio(2)
+    return QIcon(pixmap)
 
 
 class FloatingWidget(QWidget):
@@ -63,7 +134,7 @@ class FloatingWidget(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMinimumSize(320, 480)
-        self.resize(320, 480)
+        self.resize(348, 560)
 
         container = QWidget(self)
         self._drag_host = container
@@ -71,287 +142,230 @@ class FloatingWidget(QWidget):
         container.setObjectName("floatContainer")
         container.setStyleSheet(f"""
             QWidget#floatContainer {{
-                background: {_BG};
-                border-radius: 12px;
-                border: 1px solid {_BORDER};
+                background: {_BG}; border-radius: 16px; border: 1px solid {_BORDER_L};
             }}
+            QWidget#floatContainer QLabel {{ background: transparent; border: none; }}
+            QWidget#floatContainer QPushButton {{
+                background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid transparent;
+                border-radius: 8px; padding: 5px 10px; font-size: 12px;
+            }}
+            QWidget#floatContainer QPushButton:hover {{ background: {_BG_HOVER}; }}
+            QWidget#floatContainer QPushButton:focus {{ border: 1px solid {_ACCENT}; }}
+            QWidget#floatContainer QPushButton:pressed {{ background: {_ACCENT_18}; }}
             QWidget#floatContainer QScrollBar:vertical {{
-                background: {_BG};
-                width: 4px;
-                margin: 0;
-                border-radius: 2px;
+                background: transparent; width: 4px; margin: 0; border-radius: 2px;
             }}
             QWidget#floatContainer QScrollBar::handle:vertical {{
-                background: {_BORDER_L};
-                border-radius: 2px;
-                min-height: 24px;
+                background: {_BORDER_L}; border-radius: 2px; min-height: 24px;
             }}
             QWidget#floatContainer QScrollBar::add-line:vertical,
-            QWidget#floatContainer QScrollBar::sub-line:vertical {{
-                height: 0;
-            }}
+            QWidget#floatContainer QScrollBar::sub-line:vertical {{ height: 0; }}
             QWidget#floatContainer QScrollBar::add-page:vertical,
-            QWidget#floatContainer QScrollBar::sub-page:vertical {{
-                background: none;
+            QWidget#floatContainer QScrollBar::sub-page:vertical {{ background: none; }}
+            QWidget#floatContainer QMenu {{
+                background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid {_BORDER_L};
             }}
+            QWidget#floatContainer QMenu::item:selected {{ background: {_BG_HOVER}; }}
         """)
-
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
-
         vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(10, 10, 10, 10)
-        vbox.setSpacing(6)
+        vbox.setContentsMargins(16, 12, 16, 14)
+        vbox.setSpacing(10)
 
-        # --- Top bar ---
+        # The only draggable region is the quiet title row.
         top_bar = QHBoxLayout()
-        top_bar.setSpacing(5)
+        top_bar.setSpacing(8)
+        brand = QLabel()
+        brand.setPixmap(application_icon().pixmap(28, 28))
+        brand.setFixedSize(28, 28)
+        title = QLabel("拾字筆")
+        title.setStyleSheet(f"color: {_TEXT_PRI}; font-size: 15px; font-weight: 600;")
+        for label in (brand, title):
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        top_bar.addWidget(brand)
+        top_bar.addWidget(title)
+        top_bar.addStretch()
+        self._ocr_status_lbl = QLabel("準備中")
+        self._ocr_status_lbl.installEventFilter(self)
+        self._ocr_status_lbl.setMaximumWidth(92)
+        self._ocr_status_lbl.setStyleSheet(f"font-size: 11px; color: {_TEXT_SEC};")
+        top_bar.addWidget(self._ocr_status_lbl)
+        self._btn_settings = QPushButton()
+        self._btn_settings.setIcon(_line_icon('settings', _TEXT_SEC))
+        self._btn_settings.setFixedSize(28, 28)
+        self._btn_settings.setAccessibleName("設定")
+        self._btn_settings.setToolTip("設定")
+        self._btn_settings.setStyleSheet("padding: 4px; background: transparent;")
+        self._btn_settings.clicked.connect(self.open_settings)
+        top_bar.addWidget(self._btn_settings)
+        vbox.addLayout(top_bar)
 
-        self._btn_ocr = QPushButton("OCR 框選")
+        self._btn_ocr = QPushButton("擷取文字")
         self._btn_ocr.setEnabled(False)
-        self._btn_ocr.setToolTip("框選螢幕區域並執行 OCR (Ctrl+Shift+O)")
+        self._btn_ocr.setIcon(_line_icon('capture', _ACCENT_T))
+        self._btn_ocr.setIconSize(QSize(20, 20))
+        self._btn_ocr.setMinimumHeight(46)
+        self._btn_ocr.setToolTip("框選螢幕，辨識後選取要複製的文字 · Ctrl+Shift+O")
         self._btn_ocr.clicked.connect(self.trigger_capture_ocr)
         self._btn_ocr.setStyleSheet(f"""
             QPushButton {{
-                background: {_ACCENT}; color: {_ACCENT_T};
-                border-radius: 5px; padding: 4px 10px;
-                font-size: 12px; font-weight: 600; border: none;
+                background: {_ACCENT}; color: {_ACCENT_T}; border-radius: 10px;
+                font-size: 14px; font-weight: 600; border: 1px solid transparent;
             }}
             QPushButton:hover {{ background: {_ACCENT_H}; }}
+            QPushButton:pressed {{ background: {_ACCENT_H}; border-color: {_TEXT_PRI}; }}
             QPushButton:disabled {{ background: {_BG_RAISE}; color: {_TEXT_SEC}; }}
+            QPushButton:focus {{ border-color: {_TEXT_PRI}; }}
         """)
+        vbox.addWidget(self._btn_ocr)
 
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
         self._btn_screenshot = QPushButton("截圖")
-        self._btn_screenshot.setToolTip("框選截圖 (Ctrl+Shift+S)")
+        self._btn_screenshot.setIcon(_line_icon('image', _TEXT_SEC))
+        self._btn_screenshot.setMinimumHeight(34)
+        self._btn_screenshot.setToolTip("框選截圖 · Ctrl+Shift+S")
         self._btn_screenshot.clicked.connect(self.trigger_capture_image)
-        self._btn_screenshot.setStyleSheet(f"""
-            QPushButton {{
-                background: {_TEAL}; color: {_ACCENT_T};
-                border-radius: 5px; padding: 4px 10px;
-                font-size: 12px; font-weight: 600; border: none;
-            }}
-            QPushButton:hover {{ background: {_TEAL_H}; }}
-        """)
+        self._btn_handwriting = QPushButton("手寫")
+        self._btn_handwriting.setIcon(_line_icon('pen', _TEXT_SEC))
+        self._btn_handwriting.setMinimumHeight(34)
+        self._btn_handwriting.setToolTip("寫一個字，點選候選即可複製")
+        self._btn_handwriting.clicked.connect(self.open_handwriting)
+        actions.addWidget(self._btn_screenshot)
+        actions.addWidget(self._btn_handwriting)
+        vbox.addLayout(actions)
 
-        self._ocr_status_lbl = QLabel("OCR 載入中（約 5-10 秒）")
-        self._ocr_status_lbl.installEventFilter(self)
-        self._ocr_status_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_TEXT_SEC}; background: transparent;"
-        )
-
-        # OCR 進度條（隱藏，執行 OCR 時顯示）
         self._ocr_progress_bar = QProgressBar()
-        self._ocr_progress_bar.setFixedHeight(4)
+        self._ocr_progress_bar.setFixedHeight(3)
         self._ocr_progress_bar.setRange(0, 100)
         self._ocr_progress_bar.setValue(0)
         self._ocr_progress_bar.setTextVisible(False)
         self._ocr_progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {_BG_RAISE};
-                border: none;
-                border-radius: 2px;
-            }}
-            QProgressBar::chunk {{
-                background: {_ACCENT};
-                border-radius: 2px;
-            }}
+            QProgressBar {{ background: {_BG_RAISE}; border: none; border-radius: 1px; }}
+            QProgressBar::chunk {{ background: {_ACCENT}; border-radius: 1px; }}
         """)
         self._ocr_progress_bar.hide()
+        vbox.addWidget(self._ocr_progress_bar)
 
-        self._btn_settings = QPushButton("⚙")
-        self._btn_settings.setFixedSize(28, 28)
-        self._btn_settings.setToolTip("設定")
-        self._btn_settings.clicked.connect(self.open_settings)
-        self._btn_settings.setStyleSheet(f"""
-            QPushButton {{
-                background: {_BG_RAISE}; border-radius: 5px; border: none;
-                padding: 0; font-size: 14px; color: {_TEXT_SEC};
-            }}
-            QPushButton:hover {{ background: {_BG_HOVER}; color: {_TEXT_PRI}; }}
+        section = QHBoxLayout()
+        recent_label = QLabel("最近紀錄")
+        recent_label.setStyleSheet(f"font-size: 11px; color: {_TEXT_SEC};")
+        section.addWidget(recent_label)
+        section.addStretch()
+        self._btn_batch_select = QPushButton("多選")
+        self._btn_batch_select.setCheckable(True)
+        self._btn_batch_select.setFixedHeight(26)
+        self._btn_batch_select.setToolTip("選取多筆紀錄")
+        self._btn_batch_select.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {_TEXT_SEC}; padding: 2px 6px; }}
+            QPushButton:checked {{ background: {_ACCENT_18}; color: {_ACCENT}; }}
         """)
+        self._btn_batch_select.clicked.connect(self._toggle_batch_mode)
+        section.addWidget(self._btn_batch_select)
+        self._btn_batch_action = QPushButton("操作 (0)")
+        self._btn_batch_action.setFixedHeight(26)
+        self._btn_batch_action.hide()
+        self._btn_batch_action.setStyleSheet(f"color: {_ACCENT}; padding: 2px 6px;")
+        self._btn_batch_action.clicked.connect(self._show_batch_menu)
+        section.addWidget(self._btn_batch_action)
+        vbox.addLayout(section)
 
-        top_bar.addWidget(self._btn_ocr)
-        top_bar.addWidget(self._btn_screenshot)
-        top_bar.addStretch()
-        top_bar.addWidget(self._ocr_status_lbl)
-        top_bar.addWidget(self._ocr_progress_bar)
-        top_bar.addWidget(self._btn_settings)
-        vbox.addLayout(top_bar)
-
-        # --- Search (多行輸入 + 換行按鈕) ---
-        search_container = QWidget()
-        search_layout = QHBoxLayout(search_container)
-        search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(4)
-
-        self._search_edit = QTextEdit()
-        self._search_edit.setPlaceholderText("搜尋...（Enter 換行，Ctrl+Enter 搜尋）")
-        self._search_edit.setFixedHeight(52)
-        self._search_edit.setAcceptRichText(False)
-        self._search_edit.textChanged.connect(self._on_search_text_changed)
-        self._search_edit.setStyleSheet(f"""
-            QTextEdit {{
-                background: {_BG_RAISE};
-                border: 1px solid {_BORDER};
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-                color: {_TEXT_PRI};
-            }}
-            QTextEdit:focus {{
-                border: 1px solid {_ACCENT};
-            }}
-        """)
-        search_layout.addWidget(self._search_edit)
-
-        self._btn_newline = QPushButton("↵")
-        self._btn_newline.setFixedSize(28, 28)
-        self._btn_newline.setToolTip("插入換行")
-        self._btn_newline.clicked.connect(self._insert_newline)
-        self._btn_newline.setStyleSheet(f"""
-            QPushButton {{
-                background: {_TEAL}; color: {_ACCENT_T};
-                border-radius: 5px; border: none;
-                font-size: 14px; font-weight: 600;
-            }}
-            QPushButton:hover {{ background: {_TEAL_H}; }}
-        """)
-        search_layout.addWidget(self._btn_newline)
-        vbox.addWidget(search_container)
-
-        # --- Filter tabs ---
-        filter_bar = QHBoxLayout()
-        filter_bar.setSpacing(3)
+        # Segmented filters stay in the small window; search lives in history.
+        filter_shell = QWidget()
+        filter_shell.setObjectName("filterShell")
+        filter_shell.setStyleSheet(f"QWidget#filterShell {{ background: {_BG_RAISE}; border-radius: 9px; }}")
+        filter_bar = QHBoxLayout(filter_shell)
+        filter_bar.setContentsMargins(3, 3, 3, 3)
+        filter_bar.setSpacing(2)
         self._filter_buttons = {}
-        for label, key in [("全部", "all"), ("文字", "text"),
-                            ("圖片", "image"), ("釘選", "pinned")]:
+        for label, key in [("全部", "all"), ("文字", "text"), ("圖片", "image"), ("釘選", "pinned")]:
             btn = QPushButton(label)
             btn.setCheckable(True)
-            btn.setFixedHeight(22)
+            btn.setFixedHeight(28)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {_BG_RAISE}; border-radius: 4px;
-                    padding: 2px 8px; font-size: 11px; border: none;
-                    color: {_TEXT_SEC};
+                    background: transparent; border-radius: 6px; padding: 3px 8px;
+                    font-size: 11px; color: {_TEXT_SEC}; border: 1px solid transparent;
                 }}
-                QPushButton:checked {{
-                    background: {_ACCENT_18};
-                    color: {_ACCENT};
-                    border: 1px solid {_ACCENT_35};
-                }}
-                QPushButton:hover:!checked {{
-                    background: {_BG_HOVER}; color: {_TEXT_PRI};
-                }}
+                QPushButton:checked {{ background: {_BG_HOVER}; color: {_TEXT_PRI}; border-color: {_BORDER_L}; }}
+                QPushButton:hover:!checked {{ color: {_TEXT_PRI}; background: {_BG_HOVER}; }}
+                QPushButton:focus {{ border-color: {_ACCENT}; }}
             """)
             btn.clicked.connect(lambda _checked, k=key: self._set_filter(k))
             self._filter_buttons[key] = btn
             filter_bar.addWidget(btn)
-        filter_bar.addStretch()
-
-        # 批量選取按鈕
-        self._btn_batch_select = QPushButton("☐ 多選")
-        self._btn_batch_select.setCheckable(True)
-        self._btn_batch_select.setFixedHeight(22)
-        self._btn_batch_select.setToolTip("多選模式")
-        self._btn_batch_select.setStyleSheet(f"""
-            QPushButton {{
-                background: {_BG_RAISE}; border-radius: 4px;
-                padding: 2px 8px; font-size: 11px; border: none;
-                color: {_TEXT_SEC};
-            }}
-            QPushButton:checked {{
-                background: {_ACCENT_18};
-                color: {_ACCENT};
-                border: 1px solid {_ACCENT_35};
-            }}
-        """)
-        self._btn_batch_select.clicked.connect(self._toggle_batch_mode)
-        filter_bar.addWidget(self._btn_batch_select)
-
-        self._btn_batch_action = QPushButton("操作 (0)")
-        self._btn_batch_action.setFixedHeight(22)
-        self._btn_batch_action.hide()
-        self._btn_batch_action.setStyleSheet(f"""
-            QPushButton {{
-                background: {_TEAL}; color: {_ACCENT_T}; border-radius: 4px;
-                padding: 2px 8px; font-size: 11px; border: none;
-                font-weight: 600;
-            }}
-        """)
-        self._btn_batch_action.clicked.connect(self._show_batch_menu)
-        filter_bar.addWidget(self._btn_batch_action)
-
         self._batch_mode = False
         self._selected_items = set()
         self._filter_buttons['all'].setChecked(True)
         self._current_filter = 'all'
-        vbox.addLayout(filter_bar)
+        vbox.addWidget(filter_shell)
 
-        # --- Separator ---
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFixedHeight(1)
-        line.setStyleSheet(f"background: {_BORDER}; border: none;")
-        vbox.addWidget(line)
-
-        # --- List ---
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet(
-            "QScrollArea { border: none; background: transparent; }"
-        )
-
+        self._scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self._list_widget = QWidget()
         self._list_widget.setStyleSheet("background: transparent;")
         self._list_layout = QVBoxLayout(self._list_widget)
-        self._list_layout.setContentsMargins(0, 0, 0, 0)
-        self._list_layout.setSpacing(2)
+        self._list_layout.setContentsMargins(0, 0, 3, 0)
+        self._list_layout.setSpacing(6)
         self._list_layout.addStretch()
         self._scroll.setWidget(self._list_widget)
         vbox.addWidget(self._scroll, 1)
+        # One retained effect/animation avoids accumulating objects on refresh.
+        self._list_opacity = QGraphicsOpacityEffect(self._list_widget)
+        self._list_opacity.setOpacity(1.0)
+        self._list_widget.setGraphicsEffect(self._list_opacity)
+        self._list_reveal = QPropertyAnimation(self._list_opacity, b"opacity", self)
+        self._list_reveal.setDuration(160)
+        self._list_reveal.setStartValue(0.45)
+        self._list_reveal.setEndValue(1.0)
+        self._list_reveal.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        # --- Bottom bar ---
+        line = QFrame()
+        line.setFixedHeight(1)
+        line.setStyleSheet(f"background: {_BORDER}; border: none;")
+        vbox.addWidget(line)
         bottom_bar = QHBoxLayout()
-        bottom_bar.setSpacing(5)
-
-        self._btn_console = QPushButton("主控台")
+        bottom_bar.setSpacing(6)
+        self._btn_console = QPushButton("歷史紀錄")
+        self._btn_console.setIcon(_line_icon('history', _TEXT_SEC))
+        self._btn_console.setToolTip("查看、搜尋及匯出紀錄")
         self._btn_console.clicked.connect(self.open_console)
-        self._btn_console.setStyleSheet(f"""
-            QPushButton {{
-                background: {_BG_RAISE}; border-radius: 5px;
-                padding: 4px 10px; font-size: 12px; border: none;
-                color: {_TEXT_SEC};
-            }}
-            QPushButton:hover {{ background: {_BG_HOVER}; color: {_TEXT_PRI}; }}
-        """)
-
-        self._btn_pause = QPushButton("暫停監聽")
+        self._btn_data_dir = QPushButton("儲存位置")
+        self._btn_data_dir.setIcon(_line_icon('folder', _TEXT_SEC))
+        self._btn_data_dir.setToolTip(f"開啟截圖與紀錄的資料夾\n{os.path.abspath(self._data_dir)}")
+        self._btn_data_dir.clicked.connect(self.open_data_directory)
+        self._btn_pause = QPushButton()
         self._btn_pause.setCheckable(True)
+        self._btn_pause.setFixedSize(30, 30)
+        self._btn_pause.setIcon(_line_icon('pause', _TEXT_SEC))
+        self._btn_pause.setAccessibleName("暫停剪貼簿紀錄")
+        self._btn_pause.setToolTip("暫停剪貼簿紀錄")
         self._btn_pause.clicked.connect(self.toggle_clipboard_pause)
         self._btn_pause.setStyleSheet(f"""
-            QPushButton {{
-                background: {_BG_RAISE}; border-radius: 5px;
-                padding: 4px 10px; font-size: 12px; border: none;
-                color: {_TEXT_SEC};
-            }}
-            QPushButton:checked {{
-                background: {_ERROR_18};
-                color: {_ERROR};
-                border: 1px solid {_ERROR_35};
-            }}
-            QPushButton:hover:!checked {{ background: {_BG_HOVER}; color: {_TEXT_PRI}; }}
+            QPushButton {{ padding: 5px; background: transparent; }}
+            QPushButton:checked {{ background: {_ERROR_18}; border-color: {_ERROR_35}; }}
         """)
-
+        for button in (self._btn_console, self._btn_data_dir):
+            button.setMinimumHeight(30)
+            button.setStyleSheet(f"background: transparent; color: {_TEXT_SEC}; padding: 4px 3px; font-size: 11px;")
         bottom_bar.addWidget(self._btn_console)
-        self._btn_handwriting = QPushButton('手寫')
-        self._btn_handwriting.setToolTip('離線手寫，點選候選字即可複製')
-        self._btn_handwriting.clicked.connect(self.open_handwriting)
-        bottom_bar.addWidget(self._btn_handwriting)
+        bottom_bar.addWidget(self._btn_data_dir)
         bottom_bar.addStretch()
         bottom_bar.addWidget(self._btn_pause)
         vbox.addLayout(bottom_bar)
+
+    def open_data_directory(self):
+        """Open the active storage root, including custom and portable locations."""
+        path = os.path.abspath(self._data_dir)
+        if not os.path.isdir(path):
+            QMessageBox.information(self, "找不到儲存位置", "儲存資料夾目前不存在。請到設定確認儲存位置。")
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+            QMessageBox.information(self, "無法開啟資料夾", f"請在檔案總管開啟：\n{path}")
 
     def open_handwriting(self):
         if self._handwriting is None:
@@ -458,34 +472,20 @@ class FloatingWidget(QWidget):
         for k, btn in self._filter_buttons.items():
             btn.setChecked(k == key)
         self.refresh_list()
-
-    def _on_search_text_changed(self):
-        if hasattr(self, '_search_timer'):
-            self._search_timer.stop()
+        self._list_reveal.stop()
+        animate = self.style().styleHint(QStyle.StyleHint.SH_Widget_Animate, None, self)
+        duration = self.style().styleHint(QStyle.StyleHint.SH_Widget_Animation_Duration, None, self)
+        if self.isVisible() and animate and duration > 0:
+            self._list_reveal.setDuration(min(160, duration))
+            self._list_reveal.start()
         else:
-            from PySide6.QtCore import QTimer
-            self._search_timer = QTimer(self)
-            self._search_timer.setSingleShot(True)
-            self._search_timer.timeout.connect(self._do_search)
-        self._search_timer.start(300)
-
-    def _do_search(self):
-        text = self._search_edit.toPlainText().strip()
-        self.refresh_list(search_text=text if len(text) >= 2 else None)
-
-    def _insert_newline(self):
-        cursor = self._search_edit.textCursor()
-        cursor.insertText("\n")
-        self._search_edit.setFocus()
-
-    def _on_search(self, text: str):
-        self.refresh_list(search_text=text)
+            self._list_opacity.setOpacity(1.0)
 
     # --- Batch operations ---
     def _toggle_batch_mode(self):
         self._batch_mode = self._btn_batch_select.isChecked()
         self._selected_items.clear()
-        self._btn_batch_select.setText("☑ 多選" if self._batch_mode else "☐ 多選")
+        self._btn_batch_select.setText("完成" if self._batch_mode else "多選")
         self._btn_batch_action.setVisible(self._batch_mode)
         self._update_batch_button_text()
         self.refresh_list()
@@ -581,17 +581,17 @@ class FloatingWidget(QWidget):
     def _card_style(self, idx: int, item_id: int) -> str:
         if self._batch_mode and item_id in self._selected_items:
             return (
-                f"background: {_ACCENT_18}; border-radius: 4px;"
+                f"background: {_ACCENT_18}; border-radius: 8px;"
                 f" border: 1px solid {_ACCENT_35};"
             )
         if not self._batch_mode and self._selected_item_id == item_id:
             return (
-                f"background: {_ACCENT_10}; border-radius: 4px;"
+                f"background: {_ACCENT_10}; border-radius: 8px;"
                 f" border: 1px solid {_ACCENT_35};"
             )
         bg = _BG_RAISE if idx % 2 == 0 else _BG
         return (
-            f"background: {bg}; border-radius: 4px;"
+            f"background: {bg}; border-radius: 8px;"
             f" border: 1px solid transparent;"
         )
 
@@ -613,10 +613,8 @@ class FloatingWidget(QWidget):
         while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
-
-        if search_text is None:
-            search_text = self._search_edit.toPlainText().strip()
 
         max_items = self._cfg.get('ui', 'widget_max_items', default=20)
 
@@ -825,16 +823,19 @@ class FloatingWidget(QWidget):
 
     # --- Clipboard ---
     def focus_search(self):
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self._search_edit.setFocus()
+        self.open_console()
+        self._console._search.setFocus()
+        self._console._search.selectAll()
 
     def toggle_clipboard_pause(self):
         self._clip_paused = not self._clip_paused
         self._btn_pause.setChecked(self._clip_paused)
         if self._clip_watcher:
             self._clip_watcher.pause(self._clip_paused)
+        label = "繼續剪貼簿紀錄" if self._clip_paused else "暫停剪貼簿紀錄"
+        self._btn_pause.setAccessibleName(label)
+        self._btn_pause.setToolTip(label)
+        self._btn_pause.setIcon(_line_icon('play' if self._clip_paused else 'pause', _TEXT_SEC))
 
     def paste_last_item(self):
         items = self._item_repo.list_recent(limit=1)
@@ -848,7 +849,25 @@ class FloatingWidget(QWidget):
 
     # --- Status label (public slot used by app.py) ---
     def set_ocr_status(self, text: str):
-        self._ocr_status_lbl.setText(text)
+        # Keep detailed diagnostics available without crowding the title bar.
+        if '未加入佇列' in text:
+            label = "無法辨識"
+        elif '失敗' in text:
+            label = "請重試"
+        elif '未找到文字' in text:
+            label = "未找到文字"
+        elif '待確認' in text:
+            label = "請核對文字"
+        elif '完成' in text and '關閉' not in text:
+            label = "辨識完成"
+        elif '關閉' in text:
+            label = "正在關閉"
+        elif '辨識' in text or 'OCR' in text:
+            label = "辨識中"
+        else:
+            label = self._ocr_status_lbl.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, 90)
+        self._ocr_status_lbl.setText(label)
+        self._ocr_status_lbl.setToolTip(text)
 
     def set_ocr_progress(self, pct: int):
         """更新 OCR 進度條。"""
@@ -860,7 +879,8 @@ class FloatingWidget(QWidget):
 
     # --- OCR engine status ---
     def on_ocr_engine_progress(self, pct: int, msg: str):
-        self._ocr_status_lbl.setText(f"OCR {pct}%")
+        self._ocr_status_lbl.setText(f"準備中 {pct}%")
+        self._ocr_status_lbl.setToolTip(msg)
         # 顯示進度條
         self._ocr_progress_bar.show()
         self._ocr_progress_bar.setValue(pct)
@@ -868,9 +888,10 @@ class FloatingWidget(QWidget):
     def on_ocr_engine_ready(self):
         self._ocr_ready = True
         self._btn_ocr.setEnabled(True)
-        self._ocr_status_lbl.setText("OCR 就緒")
+        self._ocr_status_lbl.setText("可擷取文字")
+        self._ocr_status_lbl.setToolTip("離線辨識已就緒")
         self._ocr_status_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_SUCCESS}; background: transparent;"
+            f"font-size: 11px; color: {_SUCCESS}; background: transparent;"
         )
         # 隱藏進度條
         self._ocr_progress_bar.hide()
@@ -879,13 +900,13 @@ class FloatingWidget(QWidget):
     def on_ocr_engine_failed(self, error: str):
         self._ocr_ready = False
         self._btn_ocr.setEnabled(False)
-        self._ocr_status_lbl.setText("OCR 失敗")
+        self._ocr_status_lbl.setText("暫時無法辨識")
         self._ocr_status_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_ERROR}; background: transparent;"
+            f"font-size: 11px; color: {_ERROR}; background: transparent;"
         )
         # 隱藏進度條
         self._ocr_progress_bar.hide()
         QMessageBox.warning(
-            self, "OCR 引擎載入失敗",
-            f"OCR 引擎載入失敗，截圖功能仍可用。\n\n錯誤：{error}"
+            self, "暫時無法辨識文字",
+            f"請重新開啟拾字筆後再試。你仍可使用截圖與歷史紀錄。\n\n詳細資訊：{error}"
         )

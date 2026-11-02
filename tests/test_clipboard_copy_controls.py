@@ -103,14 +103,17 @@ def persist(item_repo, item_id, text, status):
 
 
 def pipeline(item_repo, cfg=None, closing=False):
-    statuses = []
-    return SimpleNamespace(repo=item_repo, cfg=cfg, closing=closing,
-                           widget=SimpleNamespace(set_ocr_status=statuses.append,
-                                                  set_ocr_progress=lambda _: None)), statuses
+    statuses, selections = [], []
+    owner = SimpleNamespace(repo=item_repo, cfg=cfg, closing=closing, selections=selections,
+                            selection_requested=SimpleNamespace(emit=lambda *args: selections.append(args)),
+                            widget=SimpleNamespace(set_ocr_status=statuses.append,
+                                                   set_ocr_progress=lambda _: None))
+    owner._selection_is_current = lambda item_id, dto: Pipeline._selection_is_current(owner, item_id, dto)
+    return owner, statuses
 
 
 @pytest.mark.parametrize('status', ['done', 'needs_review', 'confirmed'])
-def test_current_candidate_copies_without_changing_transcript_or_review_state(
+def test_current_candidate_waits_for_selection_and_copies_without_changing_saved_state(
         qapp, item_repo, make_image_dto, status):
     item_id = item_repo.insert(make_image_dto())
     original = "-1,234.50'\n567"
@@ -120,11 +123,15 @@ def test_current_candidate_copies_without_changing_transcript_or_review_state(
     owner, statuses = pipeline(item_repo, Config(copy_remove_commas=True, copy_remove_apostrophes=True))
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
+    assert qapp.clipboard().text() == 'previous'
+    assert owner.selections == [(item_id, dto)]
+    if status == 'needs_review':
+        assert '待確認' in statuses[-1] and '已複製' not in statuses[-1]
+    Pipeline.copy_ocr_selection(owner, item_id, dto, original)
     assert qapp.clipboard().text() == '-1234.50\n567'
     assert item_repo.get_by_id(item_id) == before
     assert item_repo.get_ocr_attempts(item_id) == attempts_before
-    if status == 'needs_review':
-        assert '待確認' in statuses[-1] and '已複製候選' in statuses[-1]
+    assert '已複製所選文字' in statuses[-1]
 
 
 @pytest.mark.parametrize('change', ['delete', 'delete_restore', 'edit', 'empty_edit', 'new_job', 'closing'])
@@ -143,6 +150,7 @@ def test_review_ack_guards_keep_previous_clipboard(qapp, item_repo, make_image_d
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
     assert qapp.clipboard().text() == 'previous'
+    assert owner.selections == []
 
 
 @pytest.mark.parametrize('text,status', [('failed text', 'failed'), ('', 'done'), ('  \n\t', 'needs_review')])
@@ -153,6 +161,7 @@ def test_unusable_result_never_overwrites_previous_clipboard(qapp, item_repo, ma
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
     assert qapp.clipboard().text() == 'previous'
+    assert owner.selections == []
 
 
 def test_cleaned_empty_review_candidate_does_not_claim_copied(qapp, item_repo, make_image_dto):
@@ -163,7 +172,11 @@ def test_cleaned_empty_review_candidate_does_not_claim_copied(qapp, item_repo, m
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
     assert qapp.clipboard().text() == 'previous'
+    assert owner.selections == [(item_id, dto)]
     assert '待確認' in statuses[-1] and '已複製' not in statuses[-1]
+    Pipeline.copy_ocr_selection(owner, item_id, dto, dto.text)
+    assert qapp.clipboard().text() == 'previous'
+    assert statuses[-1] == '沒有可複製的文字'
 
 
 @pytest.fixture

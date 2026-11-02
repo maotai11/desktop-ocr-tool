@@ -262,14 +262,14 @@ def test_worker_qt_persists_all_passes_and_gracefully_drains_on_close(
 
 
 @pytest.mark.parametrize('change', ['none', 'edit', 'new_job', 'review_status'])
-def test_uncertain_persisted_ack_copies_usable_current_candidate_without_confirming(
+def test_uncertain_persisted_ack_requests_selection_without_copying_or_confirming(
         qtbot, item_repo, make_image_dto, monkeypatch, change):
     from src.workers.pipeline import Pipeline
     item_id = item_repo.insert(make_image_dto())
     job, revision = item_repo.begin_ocr_attempt(item_id)
     dto = OcrResultDTO(text='uncertain', confidence=.99, status='needs_review', job_id=job, base_edit_revision=revision)
     item_repo.update_ocr_result(item_id, dto)
-    copied, status = [], []
+    copied, selections, status = [], [], []
     monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copied.append(text))
     if change == 'edit':
         item_repo.update_edited_text(item_id, 'manual')
@@ -278,9 +278,11 @@ def test_uncertain_persisted_ack_copies_usable_current_candidate_without_confirm
     elif change == 'review_status':
         dto.status = 'done'  # Re-read DB uncertainty, do not trust a stale DTO.
     pipeline = SimpleNamespace(repo=item_repo, closing=False, cfg=None,
+                               selection_requested=SimpleNamespace(emit=lambda *args: selections.append(args)),
                                widget=SimpleNamespace(set_ocr_status=status.append, set_ocr_progress=lambda _: None))
     Pipeline.persisted(pipeline, item_id, dto)
-    assert copied == (['uncertain'] if change in ('none', 'review_status') else [])
+    assert copied == []
+    assert selections == ([(item_id, dto)] if change in ('none', 'review_status') else [])
     assert not status if change == 'new_job' else '待確認' in status[-1]
     if change in ('none', 'review_status'):
         assert item_repo.get_by_id(item_id).ocr_status == 'needs_review'

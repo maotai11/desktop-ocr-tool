@@ -7,23 +7,31 @@ from src.workers.pipeline import Pipeline
 from test_data_integrity_regressions import make_pipeline, reserve
 
 
-def test_late_ocr_keeps_handwriting_and_next_intent_can_copy(qapp, item_repo, make_image_dto):
+def test_late_ocr_keeps_handwriting_and_next_intent_can_select_then_copy(qapp, item_repo, make_image_dto):
     item_id = item_repo.insert(make_image_dto())
     epoch = get_clipboard_epoch()
     result = replace(reserve(item_repo, item_id), clipboard_epoch=epoch)
     assert item_repo.update_ocr_result(item_id, result)
     copy_text('臺')
+    selections = []
     owner = SimpleNamespace(repo=item_repo, cfg=None, closing=False,
+                            selection_requested=SimpleNamespace(emit=lambda *args: selections.append(args)),
                             widget=SimpleNamespace(set_ocr_status=lambda _: None))
+    owner._selection_is_current = lambda item_id, dto: Pipeline._selection_is_current(owner, item_id, dto)
     Pipeline.persisted(owner, item_id, result)
     assert qapp.clipboard().text() == '臺'
+    assert selections == []
     next_result = replace(reserve(item_repo, item_id), text='next intentional OCR',
                           clipboard_epoch=get_clipboard_epoch())
     assert item_repo.update_ocr_result(item_id, next_result)
     current_epoch = get_clipboard_epoch()
     Pipeline.persisted(owner, item_id, next_result)
-    assert qapp.clipboard().text() == 'next intentional OCR'
+    assert selections == [(item_id, next_result)]
+    assert qapp.clipboard().text() == '臺'
     assert get_clipboard_epoch() == current_epoch
+    Pipeline.copy_ocr_selection(owner, item_id, next_result, 'intentional')
+    assert qapp.clipboard().text() == 'intentional'
+    assert get_clipboard_epoch() == current_epoch + 1
 
 
 def test_capture_saved_after_manual_copy_keeps_original_epoch(

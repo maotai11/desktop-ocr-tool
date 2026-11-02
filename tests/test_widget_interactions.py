@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from PySide6.QtCore import QPoint, QPointF, QEvent, Qt
@@ -189,3 +188,135 @@ def test_card_literal_text_and_keyboard(qtbot,tmp_path):
     selected=[];opened=[];card.clicked.connect(selected.append);card.double_clicked.connect(opened.append)
     qtbot.keyClick(card,Qt.Key.Key_Space);qtbot.keyClick(card,Qt.Key.Key_Return)
     assert selected==[1] and opened==[1]
+
+
+def test_floating_window_has_no_search_and_filters_recent_items(qtbot, tmp_path):
+    from PySide6.QtWidgets import QLineEdit, QTextEdit
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    assert not widget.findChildren(QLineEdit)
+    assert not widget.findChildren(QTextEdit)
+    widget._item_repo.reset_mock()
+
+    widget._filter_buttons['image'].click()
+
+    widget._item_repo.list_recent.assert_called_once_with(limit=20, item_type='image')
+    widget._item_repo.search_fulltext.assert_not_called()
+    assert widget._filter_buttons['image'].isChecked()
+    assert not widget._filter_buttons['all'].isChecked()
+
+
+def test_quick_search_opens_history_and_focuses_its_search(qtbot, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QWidget, QLineEdit, QVBoxLayout
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    console = QWidget()
+    qtbot.addWidget(console)
+    console._search = QLineEdit("原有查詢", console)
+    QVBoxLayout(console).addWidget(console._search)
+    widget._console = console
+    opened = []
+
+    def open_console():
+        opened.append(True)
+        console.show()
+        console.activateWindow()
+
+    monkeypatch.setattr(widget, 'open_console', open_console)
+    widget.focus_search()
+    qtbot.waitUntil(lambda: console._search.hasFocus())
+    assert opened == [True]
+    assert console._search.selectedText() == "原有查詢"
+
+
+def test_storage_button_opens_active_local_directory(qtbot, tmp_path, monkeypatch):
+    from src.ui.widget import QDesktopServices
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    custom_path = tmp_path / "自訂 儲存 & 截圖"
+    custom_path.mkdir()
+    widget._data_dir = str(custom_path)
+    urls = []
+    monkeypatch.setattr(QDesktopServices, 'openUrl', lambda url: urls.append(url) or True)
+
+    widget._btn_data_dir.click()
+
+    assert len(urls) == 1
+    assert urls[0].isLocalFile()
+    assert urls[0].toLocalFile() == str(custom_path)
+
+
+def test_storage_open_failure_shows_manual_path(qtbot, tmp_path, monkeypatch):
+    from src.ui.widget import QDesktopServices, QMessageBox
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    monkeypatch.setattr(QDesktopServices, 'openUrl', lambda _url: False)
+    notices = []
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: notices.append(args[1:]))
+
+    widget.open_data_directory()
+
+    assert notices == [("無法開啟資料夾", f"請在檔案總管開啟：\n{tmp_path}")]
+
+
+def test_ocr_status_is_brief_with_details_in_tooltip(qtbot, tmp_path):
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    detailed = "OCR #124 待確認；請核對候選與原圖"
+
+    widget.set_ocr_status(detailed)
+
+    assert widget._ocr_status_lbl.text() == "請核對文字"
+    assert widget._ocr_status_lbl.toolTip() == detailed
+
+
+def test_long_history_preview_stays_inside_card(qtbot, tmp_path):
+    from src.ui.components.item_card import ItemCard, _PreviewLabel
+    text = "這是一段很長的會議紀錄" * 20
+    card = ItemCard(_Item(1, text), str(tmp_path))
+    qtbot.addWidget(card)
+    card.resize(280, 60)
+    card.show()
+    qtbot.waitExposed(card)
+    preview = card.findChildren(_PreviewLabel)[0]
+
+    assert preview.text().endswith("…")
+    assert preview.toolTip() == text[:60]
+    assert preview.geometry().right() < card.width()
+    assert preview.geometry().left() >= 60
+
+
+def test_disabled_filter_motion_snaps_to_full_opacity(qtbot, tmp_path):
+    from PySide6.QtCore import QAbstractAnimation
+    from PySide6.QtWidgets import QProxyStyle, QStyle
+
+    class ReducedMotionStyle(QProxyStyle):
+        disabled_hint = QStyle.StyleHint.SH_Widget_Animate
+
+        def styleHint(self, hint, option=None, widget=None, return_data=None):
+            if hint == self.disabled_hint:
+                return 0
+            if hint == QStyle.StyleHint.SH_Widget_Animate:
+                return 1
+            return super().styleHint(hint, option, widget, return_data)
+
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    style = ReducedMotionStyle()
+    style.setParent(widget)
+    widget.setStyle(style)
+    widget.show()
+    for hint in (QStyle.StyleHint.SH_Widget_Animate, QStyle.StyleHint.SH_Widget_Animation_Duration):
+        style.disabled_hint = hint
+        widget._list_opacity.setOpacity(0.5)
+        widget._set_filter('image')
+        assert widget._list_reveal.state() == QAbstractAnimation.State.Stopped
+        assert widget._list_opacity.opacity() == 1.0
+
+
+def test_empty_ocr_status_keeps_short_visible_message(qtbot, tmp_path):
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    widget.set_ocr_status('未找到文字，已保留先前內容')
+    assert widget._ocr_status_lbl.text() == '未找到文字'
+    assert widget._ocr_status_lbl.toolTip() == '未找到文字，已保留先前內容'

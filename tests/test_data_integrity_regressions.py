@@ -251,10 +251,11 @@ def make_pipeline(tmp_db, item_repo, file_mgr):
 
 
 @pytest.mark.parametrize('change', ['delete', 'delete_restore', 'edit', 'rerun'])
-def test_queued_ack_rechecks_item_before_clipboard_publication(
+def test_queued_ack_rechecks_item_before_requesting_selection(
         qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch, change):
     pipeline, worker, thread, ocr, capture, widget = make_pipeline(tmp_db, item_repo, file_mgr)
-    copies = []
+    copies, selections = [], []
+    pipeline.selection_requested.connect(lambda *args: selections.append(args))
     monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     worker.ocr_persisted.disconnect(pipeline.persisted)
     worker.ocr_persisted.connect(pipeline.persisted, Qt.ConnectionType.QueuedConnection)
@@ -269,16 +270,22 @@ def test_queued_ack_rechecks_item_before_clipboard_publication(
         item_repo.begin_ocr_attempt(item_id)
     qtbot.wait(20)
     assert copies == []
+    assert selections == []
 
 
-def test_unmodified_current_ack_copies_success_and_clears_progress(
+def test_unmodified_current_ack_requests_selection_and_clears_progress(
         qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch):
     pipeline, worker, thread, ocr, capture, widget = make_pipeline(tmp_db, item_repo, file_mgr)
-    copies = []
+    copies, selections = [], []
+    pipeline.selection_requested.connect(lambda *args: selections.append(args))
     monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     item_id = item_repo.insert(make_image_dto())
-    worker.update_ocr(item_id, reserve(item_repo, item_id))
-    assert copies == ['new OCR'] and widget.progress[-1] == 0
+    dto = reserve(item_repo, item_id)
+    worker.update_ocr(item_id, dto)
+    assert copies == [] and widget.progress[-1] == 0
+    assert selections == [(item_id, dto)]
+    pipeline.copy_ocr_selection(item_id, dto, 'OCR')
+    assert copies == ['OCR']
 
 
 def test_queue_database_failure_is_rejected_without_start_or_lost_text(

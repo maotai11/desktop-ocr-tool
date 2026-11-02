@@ -240,6 +240,7 @@ def main(smoke_report=None) -> int:
                             db, item_repo, file_mgr, widget, cfg,
                             hotkey_listener, clip_watcher)
         pipeline.hotkey_actions = hotkey_actions
+        pipeline.selection_requested.connect(pipeline.select_ocr_text)
         hotkey_listener.start()
         tray.set_quit_callback(pipeline.shutdown)
         pipeline.shutdown_finished.connect(app.quit)
