@@ -66,6 +66,6 @@
 
 ## 分支驗證
 
-本機 Linux／Qt offscreen 完整回歸：**1,177 passed、13 skipped**。另以合成的兩頁 PDF 實際呼叫內含 OCR 模型，確認繁中文字與金額能填入模板；以色塊測資驗證第一頁位置繼承、逐頁覆寫及結果不會混頁。一般 PDF 表單另有已填／空白欄位對照，確認填寫內容可顯示，且原檔未變更。這些測資不代表任意文件的辨識準確率。
+本機 Linux／Qt offscreen 完整回歸：**1,202 passed、13 skipped**。另以合成的兩頁 PDF 實際呼叫內含 OCR 模型，確認繁中文字與金額能填入模板；以色塊測資驗證第一頁位置繼承、逐頁覆寫及結果不會混頁。一般 PDF 表單另有已填／空白欄位對照，確認填寫內容可顯示，且原檔未變更。這些測資不代表任意文件的辨識準確率。
 
-新增 `--self-test-documents` 檢查 PDFium／圖片渲染、位置與模板規則，使用純合成頁面，不讀使用者資料。Windows CI 會在 EXE 被阻擋對外連線時再跑一次，驗證 PDFium 已隨成品封裝。實際 Windows 結果以此分支 Actions 為準。
+新增 `--self-test-documents` 檢查 PDFium／圖片渲染、位置與模板規則，使用純合成頁面，不讀使用者資料。Windows CI 會在 EXE 被阻擋對外連線時重跑，並將單一 EXE 放入空白設定、清空 Python／Qt 環境變數、只保留 Windows 系統 PATH 的環境再驗證，確認 PDFium 隨成品封裝。報告會核對同一份 EXE 的雜湊；這仍不是獨立乾淨電腦的實機驗收，實際 Windows 結果以此分支 Actions 為準。

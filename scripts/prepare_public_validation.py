@@ -69,7 +69,7 @@ CONTAINERS = {'checks', 'phases', 'collection', 'execution', 'model_profiles', '
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
     'frozen-handwriting-image.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'probes', 'candidate_probes',
+    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'probes', 'candidate_probes',
     'threads_stopped', 'dependency_inventory', 'job_before_cleanup', 'job_after_cleanup'}
 STATUSES = {'PASSED', 'FAILED', 'NOT_RUN'}
 
@@ -281,7 +281,7 @@ def sources():
     for name in ('candidate-gate.json', 'handwriting-firewall-gate.json', 'frozen-runtime-stress.json'):
         result.append((f'artifacts/firewall-validation/{name}', 'json', True))
     for name in ('isolated-profile-gate.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-                 'isolated-handwriting.json', 'isolated-handwriting-image.json'):
+                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json'):
         result.append((f'artifacts/portable-validation/{name}', 'json', True))
     result.extend([
         (f'artifacts/release-v{VERSION}/BUILD_MANIFEST.json', 'json', True),

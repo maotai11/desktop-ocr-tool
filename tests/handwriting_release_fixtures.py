@@ -45,6 +45,17 @@ def image_probe(version, executable_hash, models, frozen=True):
         model_sha256=rec['sha256'],character_sha256=rec['character_sha256'])
 
 
+def document_probe(version, executable_hash, frozen=True):
+    return dict(schema=1, probe='document_template_lifecycle', version=version,
+        platform='win32', frozen=frozen, passed=True,
+        executable_sha256=executable_hash if frozen else None, clean_machine_verified=False,
+        fixture_kind='SYNTHETIC_SOLID_RECTANGLES', ocr_accuracy_tested=False,
+        model_inference_tested=False,
+        checks=dict(pdf_rendering=True, image_rendering=True, region_inheritance=True,
+                    page_override=True, template_merge=True, source_unchanged=True,
+                    temporary_files_cleaned=True))
+
+
 def extra_evidence(root, manifest):
     firewall = root / 'artifacts/firewall-validation'
     report = probe(manifest['version'], manifest['executable_sha256'])
@@ -91,6 +102,11 @@ def extra_evidence(root, manifest):
                 raw = archive.read(f"release-v{manifest['version']}/candidate-validation/{original}")
         (portable / renamed).write_bytes(raw)
         probes[renamed] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
+    # Keep the optional feature probe outside the original four candidate probe
+    # contract, while still binding the new portable-runtime proof to this EXE.
+    raw = json.dumps(document_probe(manifest['version'], manifest['executable_sha256'])).encode()
+    (portable / 'isolated-documents.json').write_bytes(raw)
+    probes['isolated-documents.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
     summary = dict(schema=1, probe='isolated_profile', passed=True,
         version=manifest['version'], executable_sha256=manifest['executable_sha256'],
         clean_machine_verified=False, profile_empty=True, copied_executable_only=True,

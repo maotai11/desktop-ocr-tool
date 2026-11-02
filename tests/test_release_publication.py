@@ -701,3 +701,95 @@ def test_portable_profile_evidence_is_mandatory_and_bound_to_candidate(
     with pytest.raises(publisher.PublicationError):
         publisher.prepare_release(root, report_path, output, CONTEXT)
     assert not output.exists()
+
+
+@pytest.mark.parametrize('defect', [
+    'missing_report', 'changed_bytes', 'missing_gate_entry', 'wrong_executable',
+    'wrong_probe', 'wrong_version', 'not_frozen', 'wrong_platform',
+    'missing_check', 'extra_check', 'false_pdf_rendering', 'false_image_rendering',
+    'false_region_inheritance', 'false_page_override', 'false_template_merge',
+    'false_source_unchanged', 'false_temporary_files_cleaned',
+    'string_check', 'schema_bool', 'claims_ocr_accuracy', 'claims_model_inference',
+    'claims_clean_machine', 'failure_diagnostic',
+])
+def test_portable_document_lifecycle_requires_current_complete_hash_bound_evidence(
+        candidate, tmp_path, defect):
+    root, report_path, _, _, _ = candidate
+    directory = root / 'artifacts/portable-validation'
+    document_path = directory / 'isolated-documents.json'
+    gate_path = directory / 'isolated-profile-gate.json'
+    report = json.loads(document_path.read_bytes())
+    gate = json.loads(gate_path.read_bytes())
+    assert 'qt_platform' not in report  # PDFium lifecycle does not create a Qt GUI.
+    if defect == 'missing_report':
+        document_path.unlink()
+    elif defect == 'changed_bytes':
+        document_path.write_bytes(document_path.read_bytes() + b' ')
+    elif defect == 'missing_gate_entry':
+        gate['probes'].pop('isolated-documents.json')
+    else:
+        if defect == 'wrong_executable':
+            report['executable_sha256'] = '0' * 64
+        elif defect == 'wrong_probe':
+            report['probe'] = 'ocr_database'
+        elif defect == 'wrong_version':
+            report['version'] = '1.0.0'
+        elif defect == 'not_frozen':
+            report['frozen'] = False
+        elif defect == 'wrong_platform':
+            report['platform'] = 'linux'
+        elif defect == 'missing_check':
+            report['checks'].pop('template_merge')
+        elif defect == 'extra_check':
+            report['checks']['unknown_lifecycle_claim'] = True
+        elif defect.startswith('false_'):
+            report['checks'][defect.removeprefix('false_')] = False
+        elif defect == 'string_check':
+            report['checks']['pdf_rendering'] = 'true'
+        elif defect == 'schema_bool':
+            report['schema'] = True
+        elif defect == 'claims_ocr_accuracy':
+            report['ocr_accuracy_tested'] = True
+        elif defect == 'claims_model_inference':
+            report['model_inference_tested'] = True
+        elif defect == 'claims_clean_machine':
+            report['clean_machine_verified'] = True
+        elif defect == 'failure_diagnostic':
+            report['error_code'] = 'DOCUMENT_PROBE_CHECK_FAILED'
+        document_path.write_text(json.dumps(report), encoding='utf-8')
+        # A matching digest must not turn a false/partial/wrong-EXE claim into
+        # success. The independent lifecycle contract is checked as well.
+        gate['probes'][document_path.name]['sha256'] = publisher.sha256_file(document_path)
+    gate_path.write_text(json.dumps(gate), encoding='utf-8')
+    output = tmp_path / 'document-portability-refused'
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, report_path, output, CONTEXT)
+    assert not output.exists()
+
+
+def test_portable_document_lifecycle_and_digest_reach_metadata_without_document_content(candidate, tmp_path):
+    root, report_path, _, _, _ = candidate
+    document_path = root / 'artifacts/portable-validation/isolated-documents.json'
+    gate_path = root / 'artifacts/portable-validation/isolated-profile-gate.json'
+    document = json.loads(document_path.read_bytes())
+    document.update(input_path='PRIVATE_DOCUMENT_PATH_SENTINEL',
+                    template='PRIVATE_DOCUMENT_TEMPLATE_SENTINEL',
+                    text='PRIVATE_DOCUMENT_TEXT_SENTINEL')
+    document_path.write_text(json.dumps(document), encoding='utf-8')
+    gate = json.loads(gate_path.read_bytes())
+    gate['probes'][document_path.name]['sha256'] = publisher.sha256_file(document_path)
+    gate_path.write_text(json.dumps(gate), encoding='utf-8')
+    prepared = publisher.prepare_release(root, report_path, tmp_path / 'document-public', CONTEXT)
+    metadata = next(asset for asset in prepared.assets if asset.name == publisher.METADATA_NAME)
+    with zipfile.ZipFile(metadata.path) as archive:
+        raw = archive.read('artifacts/portable-validation/isolated-documents.json')
+        public = json.loads(raw)
+        assert b'PRIVATE_DOCUMENT' not in raw
+        assert public['probe'] == 'document_template_lifecycle'
+        assert public['original_report_sha256'] == publisher.sha256_file(document_path)
+        assert public['checks']['pdf_rendering'] is True
+        assert public['checks']['temporary_files_cleaned'] is True
+        assert public['ocr_accuracy_tested'] is False
+        assert public['model_inference_tested'] is False
+        public_gate = json.loads(archive.read('artifacts/portable-validation/isolated-profile-gate.json'))
+        assert public_gate['probes']['isolated-documents.json']['sha256'] == publisher.sha256_file(document_path)

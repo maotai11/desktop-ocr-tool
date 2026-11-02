@@ -95,5 +95,6 @@ def test_portable_single_executable_gate_precedes_publication_and_is_fail_closed
     assert 'New-NetFirewallRule -Name $ruleName' in script
     assert 'Remove-NetFirewallRule -Name $ruleName' in script
     assert 'clean_machine_verified = $false' in script
-    for mode in ('--self-test', '--smoke-app', '--self-test-handwriting', '--self-test-handwriting-image'):
+    for mode in ('--self-test', '--smoke-app', '--self-test-handwriting', '--self-test-handwriting-image',
+                 '--self-test-documents'):
         assert f"mode = '{mode}'" in script

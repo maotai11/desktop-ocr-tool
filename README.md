@@ -128,6 +128,7 @@ python src/main.py --self-test source-selftest.json
 python src/main.py --smoke-app source-app-smoke.json
 python src/main.py --self-test-handwriting source-handwriting.json
 python src/main.py --self-test-handwriting-image source-handwriting-image.json
+python src/main.py --self-test-documents source-documents.json
 # Windows only:
 python scripts/build.py
 ```

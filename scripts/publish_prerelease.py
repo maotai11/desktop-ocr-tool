@@ -447,6 +447,28 @@ def deterministic_metadata_zip(path: Path, files: Mapping[str, bytes]) -> None:
             archive.writestr(info, files[name])
 
 
+def _check_document_probe(report: dict, manifest: dict, frozen: bool) -> None:
+    """Require the fixed non-GUI PDFium/region/template lifecycle contract."""
+    expected = {
+        'schema': 1, 'probe': 'document_template_lifecycle', 'passed': True,
+        'version': manifest['version'], 'frozen': frozen, 'platform': 'win32',
+        'executable_sha256': manifest['executable_sha256'] if frozen else None,
+        'clean_machine_verified': False, 'fixture_kind': 'SYNTHETIC_SOLID_RECTANGLES',
+        'ocr_accuracy_tested': False, 'model_inference_tested': False,
+    }
+    require(type(report) is dict and all(type(report.get(key)) is type(value)
+            and report.get(key) == value for key, value in expected.items()),
+            'Incomplete document lifecycle identity')
+    checks = report.get('checks')
+    required = {'pdf_rendering', 'image_rendering', 'region_inheritance',
+                'page_override', 'template_merge', 'source_unchanged', 'temporary_files_cleaned'}
+    require(type(checks) is dict and set(checks) == required
+            and all(value is True for value in checks.values()),
+            'Incomplete document lifecycle checks')
+    require(not any(key in report for key in ('error', 'error_code', 'traceback')),
+            'Document lifecycle includes a failure diagnostic')
+
+
 def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> None:
     """Bind standalone/empty-profile probes to the exact candidate EXE."""
     from scripts.prepare_public_validation import strict_json
@@ -472,6 +494,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
             ('isolated-app-smoke.json', _check_probe),
             ('isolated-handwriting.json', check_handwriting_probe),
             ('isolated-handwriting-image.json', check_handwriting_image_probe),
+            ('isolated-documents.json', _check_document_probe),
         ):
             raw = snapshots[prefix + name]
             report = strict_json(raw)
@@ -521,7 +544,8 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/portable-validation/isolated-selftest.json",
                       "artifacts/portable-validation/isolated-app-smoke.json",
                       "artifacts/portable-validation/isolated-handwriting.json",
-                      "artifacts/portable-validation/isolated-handwriting-image.json"]
+                      "artifacts/portable-validation/isolated-handwriting-image.json",
+                      "artifacts/portable-validation/isolated-documents.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",

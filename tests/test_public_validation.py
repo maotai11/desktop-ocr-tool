@@ -46,6 +46,33 @@ def test_portable_profile_export_keeps_only_fixed_flags_and_fingerprints(tmp_pat
     assert b'PRIVATE' not in json.dumps(report).encode()
 
 
+def test_isolated_document_probe_keeps_fixed_checks_and_rejects_false_success_in_public_summary(tmp_path):
+    relative = 'artifacts/portable-validation/isolated-documents.json'
+    value = {
+        'schema': 1, 'probe': 'document_template_lifecycle', 'passed': True,
+        'version': public.VERSION, 'frozen': True, 'platform': 'win32',
+        'executable_sha256': 'a' * 64, 'clean_machine_verified': False,
+        'fixture_kind': 'SYNTHETIC_SOLID_RECTANGLES',
+        'ocr_accuracy_tested': False, 'model_inference_tested': False,
+        'checks': {'pdf_rendering': False, 'image_rendering': True,
+                   'region_inheritance': True, 'page_override': True,
+                   'template_merge': True, 'source_unchanged': True,
+                   'temporary_files_cleaned': True},
+        'input_path': 'PRIVATE_DOCUMENT_PATH', 'template': 'PRIVATE_DOCUMENT_TEMPLATE',
+        'text': 'PRIVATE_DOCUMENT_TEXT',
+    }
+    raw = json.dumps(value).encode()
+    write(tmp_path, relative, raw)
+    result = record(export(tmp_path, steps={'portable_profile': {
+        'outcome': 'failure', 'conclusion': 'failure'}}), relative)
+    assert result['expected_on_platform'] is True
+    assert result['source_step'] == 'portable_profile'
+    assert result['sha256'] == hashlib.sha256(raw).hexdigest()
+    assert result['allowlisted']['checks']['pdf_rendering'] is False
+    assert result['observed_result'] == 'INCONSISTENT_AS_RECORDED'
+    assert 'PRIVATE_DOCUMENT' not in json.dumps(result)
+
+
 def test_export_never_copies_paths_errors_names_or_raw_bytes(tmp_path):
     secret = 'PRIVATE_MACHINE_SENTINEL'
     raw = json.dumps({'schema':2, 'passed':False, 'version':public.VERSION,
