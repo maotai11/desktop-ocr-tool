@@ -10,8 +10,9 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。框�
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.3.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3.zip) | 建議使用。包含 EXE、操作說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.3.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3.zip) | 建議使用。包含 EXE、授權與手寫模型來源；操作說明另列於下方 |
 | [InkPick-v1.8.0-rc.3.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3.exe) | 同版單一執行檔；模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.3-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3-README.txt) | 離線操作說明，請與 ZIP 一起帶到使用電腦 |
 | InkPick-v1.8.0-rc.3-SHA256SUMS.txt | 核對 EXE 與 ZIP 的 SHA256 |
 | InkPick-v1.8.0-rc.3-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 

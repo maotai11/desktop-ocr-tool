@@ -360,7 +360,7 @@ Ctrl+Shift+Q      搜尋歷史
 先關閉舊程式並備份原本的 config/data/logs。將新版 EXE 放回同一個可寫入資料夾，保留原有資料；不要用新版 ZIP 覆蓋自己的資料。若換資料夾，請一併移轉原有 config/data，並更新捷徑與自動啟動路徑。
 
 驗證、授權與限制
-這是候選測試版。公開檔案包含本說明、README.md、授權與手寫模型來源；執行前可從同版 Release 的 SHA256SUMS 核對 EXE/ZIP。該版 validation-metadata.zip 記錄同一次 Windows 建置與離線探針結果，不代表已在你的乾淨電腦、觸控或混合 DPI 環境實測。
+這是候選測試版。公開 ZIP 包含 EXE、授權與手寫模型來源；請另外保存同版 Release 的離線 README.txt，完整圖文說明在儲存庫 README.md。執行前可從同版 SHA256SUMS 核對 EXE/ZIP。validation-metadata.zip 記錄同一次 Windows 建置與離線探針結果，不代表已在你的乾淨電腦、觸控或混合 DPI 環境實測。
 手寫字表含 11,853 字，不含「尞、𠮷、𠀋」；模型筆跡測試不是真人手寫準確率。姓名、金額、日期及帳號請自行核對。
 程式本身不傳送 OCR 圖片或手寫筆跡；若開啟 Windows／第三方雲端剪貼簿，複製內容可能由該服務傳送。
 本版下載與檔案雜湊： https://github.com/maotai11/desktop-ocr-tool/releases/tag/v{APP_VERSION}

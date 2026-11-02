@@ -42,3 +42,9 @@
 ## 範圍限制
 
 未涵蓋不可達 Git 物件、GitHub 端全部 cache／fork、全部舊 Actions console，或所有既有 EXE 與封存檔的二進位內容。格式掃描可能漏掉未知、編碼或拆分的憑證；若日後確認有真實金鑰，應先撤銷／輪替，再處理 Git 歷史與既有附件。
+
+## rc.3 發布後複查
+
+已下載來源 `6a95bd4` 的實際公開附件：metadata ZIP 共 24 個成員，未命中 hostname、個人路徑、憑證或私人內容欄位；公開可攜 ZIP 共 25 個成員，未含執行資料庫、設定、截圖、附件、Log 或原始 BUILD／SOURCE 報告。四個原始發布附件的實際大小及 SHA256 均與 GitHub digest／SHA256SUMS 一致，ZIP 內 EXE 與單獨 EXE 也相同。操作說明另附於 Release 的 README.txt，不在這份公開 ZIP 裡。
+
+另檢查 63 次可達提交的作者／提交者 Email，3 個地址均為 GitHub noreply 地址，未發現私人聯絡信箱。上述結果不消除舊 Git 歷史與舊 Release 的殘留資料。

@@ -44,3 +44,5 @@
 預設保持 OCR 後全文自動複製；選取模式可即時切換。測試涵蓋兩種模式、剪貼簿時序保護、選取視窗中的人工修改／刪除／重辨識、檔案位置的自訂資料路徑及缺少資料夾。新隔離測試會重跑同版 EXE 的四種 probes，並將結果與實際 EXE 雜湊綁定；它檢查可攜性，不將 CI 主機宣稱為沒有預裝軟體的實體乾淨電腦。
 
 2026-11-02 本機 Linux／Qt offscreen，使用固定依賴、重新建置 protocol 2 helper：完整 bounded suite **1,035 passed、13 skipped**，OCR／SQLite、啟閉、筆畫手寫及影像補辨來源 probes 皆通過。這是來源檢查，Windows 成品另由同次 CI 與 Release 摘要綁定，不沿用本機結果替代。
+
+[rc.3 同次 Actions 41378428937](https://github.com/maotai11/desktop-ocr-tool/actions/runs/41378428937) 已完成：Windows／Linux 各 **1,045 passed、3 skipped**，Windows EXE、四種 frozen probes、主程式與 helper 網路阻斷、雙模型各 500 次推論、單 EXE 隔離環境及成品資源檢查全數通過，Release 已發布。EXE SHA256 為 `d9684633e55ad6aef80ae399c25a3efd395237620a404f2bc2837119045a6b4e`；`clean_machine_verified` 仍為 `false`，不將隔離測試宣稱為實體乾淨機驗收。
