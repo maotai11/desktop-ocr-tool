@@ -119,7 +119,7 @@ def test_real_pdf_pages_use_the_bundled_ocr_and_merge_template(
     engine.set_progress_callback(shell._ocr_worker.ocr_progress.emit)
     shell._ocr_worker._engine = engine
     fixture_root = model_root() / 'models/validation'
-    cases = json.loads((fixture_root / 'fixtures.json').read_text())['cases'][:2]
+    cases = json.loads((fixture_root / 'fixtures.json').read_text(encoding='utf-8'))['cases'][:2]
     images = []
     try:
         for case in cases:

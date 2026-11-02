@@ -186,6 +186,18 @@ def _pdf_document(stream):
         # Reject even owner-password PDFs whose blank user password opens them.
         if pdfium_raw.FPDF_GetSecurityHandlerRevision(document.raw) != -1:
             raise DocumentLoadError('這份 PDF 已加密，請先另存為未加密的 PDF。', 'encrypted_pdf')
+        if document.get_formtype() in (pdfium_raw.FORMTYPE_XFA_FULL, pdfium_raw.FORMTYPE_XFA_FOREGROUND):
+            raise DocumentLoadError(
+                '目前不支援 XFA 動態表單，請先列印或另存為一般 PDF 再匯入。', 'unsupported_xfa')
+        # PDFium does not draw filled AcroForm values until a form environment
+        # exists. Initialize before any page/length access, with XFA disabled
+        # and no JavaScript platform, action or external-resource callbacks.
+        try:
+            config = pdfium_raw.FPDF_FORMFILLINFO(version=2, xfa_disabled=True)
+            document.init_forms(config=config)
+        except (RuntimeError, ValueError, TypeError):
+            raise DocumentLoadError(
+                '無法顯示 PDF 表單內容，請先列印或另存為一般 PDF 再匯入。', 'form_render_failed') from None
     except Exception:
         document.close()
         raise

@@ -9,7 +9,7 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
 from src.documents import loader
 from src.documents.loader import (
@@ -207,6 +207,128 @@ def test_encrypted_pdf_has_actionable_password_error(tmp_path):
         load_sources([_encrypted_pdf(tmp_path / 'locked.pdf')])
     assert caught.value.code == 'encrypted_pdf'
     assert '密碼' in str(caught.value) or '加密' in str(caught.value)
+
+
+def _form_pdf(path, *, value='Entered Value', xfa=None):
+    """A real widget value without an appearance stream, entirely synthetic."""
+    xfa_entry = b'' if xfa is None else b'/XFA 7 0 R '
+    rendering = b'' if xfa is None else b'/NeedsRendering ' + (b'true ' if xfa == 'full' else b'false ')
+    objects = [
+        b'<< /Type /Catalog /Pages 2 0 R ' + rendering
+        + b'/AcroForm << /Fields [5 0 R] /DR << /Font << /Helv 6 0 R >> >> '
+        + b'/DA (/Helv 18 Tf 0 g) /NeedAppearances true ' + xfa_entry + b'>> >>',
+        b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        (b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 150] '
+         b'/Resources << /Font << /Helv 6 0 R >> >> /Annots [5 0 R] /Contents 4 0 R >>'),
+        b'<< /Length 0 >>\nstream\nendstream',
+        b'<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (' + value.encode('ascii')
+        + b') /Rect [10 60 190 110] /DA (/Helv 18 Tf 0 g) /F 4 /P 3 0 R >>',
+        b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ]
+    if xfa is not None:
+        xml = (b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">'
+               b'<template xmlns="http://www.xfa.org/schema/xfa-template/2.8/">'
+               b'<subform name="form1"/></template></xdp:xdp>')
+        objects.append(f'<< /Length {len(xml)} >>\nstream\n'.encode() + xml + b'\nendstream')
+    data = bytearray(b'%PDF-1.4\n')
+    offsets = []
+    for index, obj in enumerate(objects, 1):
+        offsets.append(len(data))
+        data += f'{index} 0 obj\n'.encode() + obj + b'\nendobj\n'
+    start = len(data)
+    data += f'xref\n0 {len(objects) + 1}\n0000000000 65535 f \n'.encode()
+    for offset in offsets:
+        data += f'{offset:010d} 00000 n \n'.encode()
+    data += (f'trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n'
+             f'startxref\n{start}\n%%EOF\n').encode()
+    path.write_bytes(data)
+    return path
+
+
+def test_filled_acroform_value_renders_without_appearance_stream_and_preserves_sources(tmp_path):
+    filled = _form_pdf(tmp_path / 'filled.pdf')
+    empty = _form_pdf(tmp_path / 'empty.pdf', value='')
+    original = {path: path.read_bytes() for path in (filled, empty)}
+    filled_page, empty_page = enumerate_pages(load_sources([filled, empty]))
+    with (render_page(filled_page, dpi=72) as filled_image,
+          render_page(empty_page, dpi=72) as empty_image,
+          ImageChops.difference(filled_image, empty_image) as difference):
+        bounds = difference.getbbox()
+        assert bounds is not None  # The actual entered value, not a blank widget.
+        assert 10 <= bounds[0] < bounds[2] <= 190
+        assert 40 <= bounds[1] < bounds[3] <= 90
+    assert all(path.read_bytes() == before for path, before in original.items())
+
+
+def test_form_environment_precedes_page_access_without_javascript_or_external_callbacks(tmp_path, monkeypatch):
+    import pypdfium2 as pdfium
+    import pypdfium2_raw as raw
+    original_init = pdfium.PdfDocument.init_forms
+    original_length = pdfium.PdfDocument.__len__
+    original_page = pdfium.PdfDocument.get_page
+    initialized = set()
+    configs = []
+    def init(self, config=None):
+        assert config.version == 2 and config.xfa_disabled
+        assert not config.m_pJsPlatform
+        # A fresh ctypes structure leaves action/external-resource callbacks NULL.
+        assert not config.FFI_GetCurrentPage and not config.FFI_SetTimer
+        configs.append(config)
+        result = original_init(self, config=config)
+        initialized.add(id(self))
+        return result
+    def length(self):
+        assert id(self) in initialized
+        return original_length(self)
+    def get_page(self, index):
+        assert id(self) in initialized
+        return original_page(self, index)
+    monkeypatch.setattr(pdfium.PdfDocument, 'init_forms', init)
+    monkeypatch.setattr(pdfium.PdfDocument, '__len__', length)
+    monkeypatch.setattr(pdfium.PdfDocument, 'get_page', get_page)
+    for name in ('FORM_DoDocumentJSAction', 'FORM_DoDocumentOpenAction', 'FORM_DoDocumentAAction', 'FORM_DoPageAAction'):
+        monkeypatch.setattr(raw, name, lambda *args: pytest.fail('Do not invoke PDF actions'))
+    page, = enumerate_pages(load_sources([_form_pdf(tmp_path / 'form.pdf')]))
+    with render_page(page, dpi=72) as image:
+        assert image.getextrema()[0] == (0, 255)
+    assert len(configs) == 2  # Inspection and rendering each own a form environment.
+
+
+@pytest.mark.parametrize('xfa', ['full', 'foreground'])
+def test_xfa_is_rejected_for_import_and_render_before_form_initialization(tmp_path, monkeypatch, xfa):
+    import pypdfium2 as pdfium
+    source, = load_sources([_pdf(tmp_path / 'ordinary.pdf', sizes=((200, 150),))])
+    path = _form_pdf(tmp_path / 'unsupported.pdf', xfa=xfa)
+    original = path.read_bytes()
+    monkeypatch.setattr(pdfium.PdfDocument, 'init_forms', lambda *args, **kwargs: pytest.fail('Do not initialize XFA'))
+    with pytest.raises(DocumentLoadError) as caught:
+        load_sources([path])
+    assert caught.value.code == 'unsupported_xfa' and '一般 PDF' in str(caught.value)
+    # Even a saved descriptor from another application version must fail before
+    # showing/recognizing a misleading blank or incomplete XFA page.
+    identity = loader.FileIdentity.from_stat(path.stat())
+    descriptor = loader.DocumentSource(path, source.kind, 1, identity, source.page_sizes)
+    with pytest.raises(DocumentLoadError) as caught:
+        render_page(DocumentPage(descriptor, 0))
+    assert caught.value.code == 'unsupported_xfa'
+    assert path.read_bytes() == original
+    path.rename(tmp_path / 'closed-xfa.pdf')
+
+
+def test_form_initialization_failure_closes_native_document_and_reports_clear_error(tmp_path, monkeypatch):
+    import pypdfium2 as pdfium
+    path = _form_pdf(tmp_path / 'form.pdf')
+    closed = []
+    close = pdfium.PdfDocument.close
+    def closing(self, *args, **kwargs):
+        closed.append(True)
+        return close(self, *args, **kwargs)
+    monkeypatch.setattr(pdfium.PdfDocument, 'close', closing)
+    monkeypatch.setattr(pdfium.PdfDocument, 'init_forms', lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('fixture')))
+    with pytest.raises(DocumentLoadError) as caught:
+        load_sources([path])
+    assert caught.value.code == 'form_render_failed' and closed
+    path.rename(tmp_path / 'closed-form.pdf')
 
 
 def test_changed_replaced_or_missing_source_refuses_old_field_positions(tmp_path):
