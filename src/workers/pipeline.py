@@ -1,7 +1,7 @@
 """Qt owner-thread dispatch and ordered, draining shutdown."""
 import logging
-from PySide6.QtCore import QObject, Signal, Slot, Qt, QEventLoop, QTimer
-from ..data.models import OcrResultDTO
+
+from PySide6.QtCore import QEventLoop, QObject, Qt, QTimer, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +12,7 @@ class Pipeline(QObject):
     barrier_requested = Signal(str)
     shutdown_finished = Signal()
     shutdown_stalled = Signal(str)
+    selection_requested = Signal(int, object)
 
     def __init__(self, capture, ocr, db_worker, db_thread, database,
                  repo, files, widget, cfg, hotkeys=None, clipboard=None):
@@ -23,6 +24,7 @@ class Pipeline(QObject):
         ocr.set_repository(repo, files)
         self.closing = self.closed = False
         self._database_closed = False
+        self._ocr_selections = {}
         self._tools_poll = QTimer(self)
         self._tools_poll.setInterval(25)
         self._tools_poll.timeout.connect(self._finish_shutdown)
@@ -109,32 +111,96 @@ class Pipeline(QObject):
         if hasattr(self.widget, 'set_ocr_progress'):
             self.widget.set_ocr_progress(0)
         if result.status == 'failed' or not result.text or not result.text.strip():
-            self.widget.set_ocr_status(f'OCR #{item_id} 失敗；已保留先前文字')
+            self.widget.set_ocr_status('未找到文字，已保留先前內容')
             return
         needs_review = result.status == 'needs_review' or item.ocr_status == 'needs_review'
         if needs_review:
-            self.widget.set_ocr_status(f'OCR #{item_id} 待確認；請核對候選與原圖')
+            self.widget.set_ocr_status('有些文字待確認，請對照原圖')
         else:
-            self.widget.set_ocr_status(f'OCR #{item_id} 完成')
+            self.widget.set_ocr_status('辨識完成')
         if (not self.closing and item.edited_text is None and
                 item.edit_revision == result.base_edit_revision and
                 result.status in ('done', 'needs_review', 'confirmed') and
                 item.ocr_status in ('done', 'needs_review', 'confirmed')):
-            # A usable candidate may be pasted without asserting it was reviewed.
-            # Keep every stale/deleted/manual-edit guard at publication time.
+            # A late background result must not interrupt newer manual intent,
+            # whichever copy mode is currently selected.
             from ..clipboard.writer import copy_text, get_clipboard_epoch
             if (result.clipboard_epoch is not None and
                     result.clipboard_epoch != get_clipboard_epoch()):
                 return
-            copied = copy_text(item.get_effective_text(), self.cfg, automatic=True)
-            if copied and needs_review:
-                self.widget.set_ocr_status(f'OCR #{item_id} 待確認；已複製候選，請核對原圖')
+            copy_mode = self.cfg.get('clipboard', 'ocr_copy_mode', default='all') if self.cfg else 'all'
+            if copy_mode == 'select':
+                self.widget.set_ocr_status('有些文字待確認，選取後再複製' if needs_review
+                                           else '辨識完成，選取要複製的文字')
+                self.selection_requested.emit(item_id, result)
+            elif copy_text(item.get_effective_text(), self.cfg, automatic=True):
+                self.widget.set_ocr_status('有些文字待確認；已複製全部文字，請對照原圖' if needs_review
+                                           else '已複製全部文字')
+
+    def _selection_is_current(self, item_id, result):
+        item = self.repo.get_by_id(item_id)
+        return (not self.closing and item is not None and not item.is_deleted and
+                item.ocr_job_id == result.job_id and item.edited_text is None and
+                item.edit_revision == result.base_edit_revision and
+                result.status in ('done', 'needs_review', 'confirmed') and
+                item.ocr_status in ('done', 'needs_review', 'confirmed'))
+
+    @Slot(int, object)
+    def select_ocr_text(self, item_id, result):
+        """Present the saved result without blocking capture or worker draining."""
+        if not self._selection_is_current(item_id, result):
+            return
+        from PySide6.QtWidgets import QWidget
+
+        from ..ui.ocr_result_dialog import OcrResultDialog
+        item = self.repo.get_by_id(item_id)
+        image_path = None
+        if item.raw_image_path:
+            try:
+                image_path = self.files.get_abs_path(item.raw_image_path)
+            except ValueError:
+                logger.warning('Ignoring invalid stored image path for item %s', item_id)
+        existing = self._ocr_selections.get(item_id)
+        if existing is not None:
+            existing.reject()
+        dialog = OcrResultDialog(
+            item.get_effective_text(), item.ocr_detail_json, image_path,
+            needs_review=item.ocr_status == 'needs_review',
+            parent=self.widget if isinstance(self.widget, QWidget) else None)
+        self._ocr_selections[item_id] = dialog
+        dialog.copy_requested.connect(
+            lambda text: self.copy_ocr_selection(item_id, result, text))
+
+        def finished(_):
+            if self._ocr_selections.get(item_id) is dialog:
+                self._ocr_selections.pop(item_id, None)
+            dialog.deleteLater()
+
+        dialog.finished.connect(finished)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def copy_ocr_selection(self, item_id, result, text):
+        # The user may edit, delete or rerun the item while this modeless dialog
+        # is open. Validate again at the actual write boundary.
+        if not self._selection_is_current(item_id, result):
+            if not self.closing:
+                self.widget.set_ocr_status('內容已更新，請從歷史紀錄重新開啟')
+            return
+        from ..clipboard.writer import copy_text
+        if copy_text(text, self.cfg):
+            self.widget.set_ocr_status('已複製所選文字')
+        else:
+            self.widget.set_ocr_status('沒有可複製的文字')
 
     @Slot()
     def shutdown(self):
         if self.closing:
             return
         self.closing = True
+        for dialog in list(self._ocr_selections.values()):
+            dialog.reject()
         self._shutdown_timer.start()
         self.widget.setEnabled(False)
         if hasattr(self.widget, 'shutdown_handwriting'):

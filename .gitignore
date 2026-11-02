@@ -67,6 +67,7 @@ data/thumbnails/
 
 # Local app state and test output
 config/settings.json
+config/settings.json.tmp
 data/
 artifacts/
 models/paddleocr/
@@ -112,3 +113,10 @@ models/rec/pp-ocrv6_rec_medium.onnx
 native/handwriting/runtime/
 models/handwriting/*.model
 models/handwriting/source/*.xml
+
+# Raw local validation may contain hostnames, paths and exception details.
+/test-results.xml
+/source-selftest.json
+/source-app-smoke.json
+/source-handwriting.json
+/source-handwriting-image.json

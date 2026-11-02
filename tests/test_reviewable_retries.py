@@ -261,15 +261,16 @@ def test_worker_qt_persists_all_passes_and_gracefully_drains_on_close(
     assert item_repo.get_by_id(item_id).ocr_status == 'needs_review'
 
 
+@pytest.mark.parametrize('copy_mode', ['all', 'select'])
 @pytest.mark.parametrize('change', ['none', 'edit', 'new_job', 'review_status'])
-def test_uncertain_persisted_ack_copies_usable_current_candidate_without_confirming(
-        qtbot, item_repo, make_image_dto, monkeypatch, change):
+def test_uncertain_persisted_ack_respects_copy_mode_without_confirming(
+        qtbot, item_repo, make_image_dto, monkeypatch, change, copy_mode):
     from src.workers.pipeline import Pipeline
     item_id = item_repo.insert(make_image_dto())
     job, revision = item_repo.begin_ocr_attempt(item_id)
     dto = OcrResultDTO(text='uncertain', confidence=.99, status='needs_review', job_id=job, base_edit_revision=revision)
     item_repo.update_ocr_result(item_id, dto)
-    copied, status = [], []
+    copied, selections, status = [], [], []
     monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copied.append(text))
     if change == 'edit':
         item_repo.update_edited_text(item_id, 'manual')
@@ -277,10 +278,15 @@ def test_uncertain_persisted_ack_copies_usable_current_candidate_without_confirm
         item_repo.begin_ocr_attempt(item_id)
     elif change == 'review_status':
         dto.status = 'done'  # Re-read DB uncertainty, do not trust a stale DTO.
-    pipeline = SimpleNamespace(repo=item_repo, closing=False, cfg=None,
+    cfg = SimpleNamespace(get=lambda *keys, default=None: (
+        copy_mode if keys == ('clipboard', 'ocr_copy_mode') else default))
+    pipeline = SimpleNamespace(repo=item_repo, closing=False, cfg=cfg,
+                               selection_requested=SimpleNamespace(emit=lambda *args: selections.append(args)),
                                widget=SimpleNamespace(set_ocr_status=status.append, set_ocr_progress=lambda _: None))
     Pipeline.persisted(pipeline, item_id, dto)
-    assert copied == (['uncertain'] if change in ('none', 'review_status') else [])
+    current = change in ('none', 'review_status')
+    assert copied == (['uncertain'] if current and copy_mode == 'all' else [])
+    assert selections == ([(item_id, dto)] if current and copy_mode == 'select' else [])
     assert not status if change == 'new_job' else '待確認' in status[-1]
     if change in ('none', 'review_status'):
         assert item_repo.get_by_id(item_id).ocr_status == 'needs_review'

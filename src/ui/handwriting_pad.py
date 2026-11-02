@@ -17,14 +17,14 @@ class HandwritingPad(QWidget):
         self.buffer = StrokeBuffer()
         self._mouse_active = False
         self._touch_id = None
-        self.setMinimumSize(280, 280)
+        self.setMinimumSize(220, 220)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName('手寫區')
         self.setToolTip('在方框內寫一個字，點選候選字即可複製')
 
     def canvas_rect(self):
-        size = max(1, min(self.width(), self.height()) - 16)
+        size = max(1, min(self.width(), self.height()) - 8)
         return QRectF((self.width() - size) / 2, (self.height() - size) / 2, size, size)
 
     def _point(self, position):

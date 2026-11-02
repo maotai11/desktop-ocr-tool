@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -179,9 +180,21 @@ def test_windows_profile_validator_helpers(tmp_path, defect):
     harness.write_text("$ErrorActionPreference = 'Stop'\nSet-StrictMode -Version Latest\n# Both offline profiles" + helpers + "\n"
                        "$manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json\n"
                        "$report = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'report.json') -Raw -Encoding UTF8 | ConvertFrom-Json\n"
+                       "Write-Output 'INKPICK_PROFILE_GATE_ENTERED'\n"
                        "Assert-ProfileManifests $manifest\nAssert-ModelProfileProbes $report $manifest\n", encoding='utf-8')
+    # The parent's 4 GiB address-space cap remains enforced. Bound .NET's GC
+    # reservation as well; otherwise startup may exhaust virtual memory before
+    # any validator runs after Qt/ONNX have been loaded by earlier tests.
+    # https://learn.microsoft.com/dotnet/core/runtime-config/garbage-collector
+    env = dict(os.environ, DOTNET_GCHeapHardLimit='0x10000000')
+    for key in ('XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'):
+        directory = tmp_path / key.lower()
+        directory.mkdir()
+        env[key] = str(directory)
     process = subprocess.run([powershell, '-NoProfile', '-NonInteractive', '-File', str(harness)],
-                             capture_output=True, text=True, timeout=30, check=False)
+                             capture_output=True, text=True, timeout=30, check=False, env=env)
+    # A runtime startup failure cannot masquerade as correct rejection of bad data.
+    assert 'INKPICK_PROFILE_GATE_ENTERED' in process.stdout.splitlines(), process.stdout + process.stderr
     assert (process.returncode == 0) is (defect == 'none'), process.stdout + process.stderr
 
 

@@ -107,7 +107,7 @@ def build(root=ROOT):
         raise RuntimeError('Native compilation deadline exceeded')
     if code:
         raise RuntimeError('Native compilation failed')
-    lock = {'schema': 1, 'protocol': 1, 'platform': sys.platform, 'name': name,
+    lock = {'schema': 1, 'protocol': 2, 'platform': sys.platform, 'name': name,
             'size_bytes': executable.stat().st_size,
             'sha256': hashlib.sha256(executable.read_bytes()).hexdigest(), 'source': identity}
     if sys.platform == 'win32':

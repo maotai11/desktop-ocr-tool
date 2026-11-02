@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.1. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.3. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -23,8 +23,8 @@ import zipfile
 
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
-BRANCH_REF = "refs/heads/fix/inkpick-handwriting"
-TAG = "v1.8.0-rc.1"
+BRANCH_REF = "refs/heads/fix/ocr-selection-ui-20261102"
+TAG = "v1.8.0-rc.3"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -131,13 +131,16 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-新增單字手寫板：寫下不認識的字，再點選繁體中文候選字複製。
-沿用原本的截圖辨識、歷史、搜尋與設定，並換上「拾字筆」名稱及圖示。
+浮動窗精簡為擷取文字、截圖、手寫及最近紀錄；搜尋移到歷史視窗，Ctrl+Shift+Q 可直接搜尋。
+框選螢幕後才進行辨識，預設維持辨識完成後自動複製全文；可在設定改成「選取後複製」，再於原圖框選、勾選段落或反白預覽中的文字。
+新增檔案位置入口，查看實際截圖、附件、匯出、設定、Log 與執行暫存所在位置。
+保留 rc.2 的雙路手寫候選及手動「影像補辨」，公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 
 ### 下載與使用
 - 適用 Windows 64 位元。建議下載可攜版 ZIP、解壓後執行；也可直接使用本頁的 EXE。
 - 已內附執行環境、兩組 OCR 模型與手寫引擎，不會在首次啟動下載模型，也不需安裝 Windows 手寫語言套件。
 - ZIP 另含第三方授權說明與手寫模型來源；使用單獨 EXE 時，也請保留同版 ZIP 的說明。執行前可用 SHA256SUMS 核對下載檔案。
+- 使用選取模式時，辨識完成不會先動剪貼簿；按「複製」才寫入所選內容，取消不改剪貼簿，完整辨識結果仍保存在歷史。
 - 手寫候選字只有點選後才會複製，不會自動輸入其他程式；較早開始的 OCR 不會蓋掉之後在拾字筆選字或手動複製的文字。
 - 原有三項複製清理選項預設皆關閉，只影響複製內容。移除換行會把同一筆紀錄的多行文字接在一起，請按需要開啟。
 
@@ -151,6 +154,7 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 發布檢查綁定下列同一組檔案雜湊與來源版本：Windows 原生測試、EXE 內的 OCR／資料庫／手寫／啟閉測試，以及主程式和同次解壓的手寫引擎都被阻擋對外連線時的測試。
 兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
 GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立手寫程序有逾時終止與父程序退出檢查；既有 QThread 內的 OCR 卡住限制仍在。完整第三方授權審查尚未完成。
+另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉及兩種手寫探針；這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
 
 來源版本：`{context.source_commit}`
 同次建置的測試報告與檔案對應，請見 validation metadata ZIP。
@@ -191,7 +195,7 @@ class GitHubClient:
         self.validate_url(url, upload=asset is not None)
         require(method in {"GET", "POST", "PATCH"}, "Unsupported publication method")
         headers = {"Accept": "application/vnd.github+json", "Authorization": "Bearer " + self._token,
-                   "X-GitHub-Api-Version": API_VERSION, "User-Agent": "inkpick-rc1-publisher"}
+                   "X-GitHub-Api-Version": API_VERSION, "User-Agent": "inkpick-candidate-publisher"}
         stream = None
         data = None
         if asset is not None:
@@ -377,6 +381,58 @@ def canonical_json(value: dict) -> bytes:
                        allow_nan=False) + "\n").encode("utf-8")
 
 
+def public_validation_report(name: str, raw: bytes) -> bytes:
+    """Keep raw verification local; exported reports contain fixed fields only.
+
+    This protects the metadata asset only. The portable bundle still requires
+    its own public-file review before a new publication can be enabled.
+    """
+    from scripts.prepare_public_validation import strict_json, safe_fields, junit_counts
+    require(len(raw) <= MAX_JSON_BYTES, "Oversized public validation input")
+    if name == "test-results.xml":
+        try:
+            counts = junit_counts(raw)
+        except (ValueError, TypeError) as exc:
+            raise PublicationError("Invalid public JUnit report") from exc
+        # No testcase names, hostnames, properties, stdout or failure text.
+        import xml.etree.ElementTree as ET
+        suite = ET.Element("testsuite", {key: str(counts[key])
+                           for key in ("tests", "failures", "errors", "skipped")})
+        states = (["failure"] * counts["failures"] + ["error"] * counts["errors"]
+                  + ["skipped"] * counts["skipped"])
+        for index in range(counts["tests"]):
+            case = ET.SubElement(suite, "testcase")
+            if index < len(states):
+                ET.SubElement(case, states[index])
+        return ET.tostring(suite, encoding="utf-8", xml_declaration=True)
+    try:
+        original = strict_json(raw)
+        require(isinstance(original, dict), "Invalid public validation object")
+        result = safe_fields(original)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise PublicationError("Invalid public validation report") from exc
+    result["original_report_sha256"] = hashlib.sha256(raw).hexdigest()
+    result["original_report_bytes"] = len(raw)
+    # This provenance is checked against the runner before preparation. Still
+    # validate each field here so this helper cannot publish arbitrary strings.
+    if name == "verified-bundle.json":
+        workflow = original.get("workflow")
+        require(isinstance(workflow, dict) and workflow.get("repository") == REPOSITORY,
+                "Invalid public workflow provenance")
+        require(COMMIT_RE.fullmatch(str(workflow.get("source_commit", ""))) is not None,
+                "Invalid public workflow commit")
+        for key in ("run_id", "run_attempt"):
+            value = workflow.get(key)
+            require(type(value) is str and value.isascii() and value.isdecimal()
+                    and 0 < len(value) <= 20 and int(value) > 0,
+                    "Invalid public workflow identifier")
+        result["workflow"] = {key: workflow[key] for key in
+                              ("repository", "run_id", "run_attempt", "source_commit")}
+        result["workflow_run_id"] = workflow["run_id"]
+        result["workflow_run_attempt"] = workflow["run_attempt"]
+    return canonical_json(result)
+
+
 def deterministic_metadata_zip(path: Path, files: Mapping[str, bytes]) -> None:
     require(sum(len(data) for data in files.values()) <= MAX_JSON_BYTES,
             "Validation metadata ZIP would exceed the small-evidence limit")
@@ -391,6 +447,41 @@ def deterministic_metadata_zip(path: Path, files: Mapping[str, bytes]) -> None:
             archive.writestr(info, files[name])
 
 
+def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> None:
+    """Bind standalone/empty-profile probes to the exact candidate EXE."""
+    from scripts.prepare_public_validation import strict_json
+    from scripts.verify_candidate_bundle import (
+        _check_probe, check_handwriting_image_probe, check_handwriting_probe,
+    )
+    prefix = 'artifacts/portable-validation/'
+    try:
+        gate = strict_json(snapshots[prefix + 'isolated-profile-gate.json'])
+        require(type(gate) is dict and gate.get('schema') == 1
+                and gate.get('probe') == 'isolated_profile' and gate.get('passed') is True
+                and gate.get('clean_machine_verified') is False
+                and gate.get('version') == VERSION
+                and gate.get('executable_sha256') == manifest['executable_sha256'],
+                'Incomplete portable-profile gate identity')
+        require(all(gate.get(key) is True for key in (
+            'profile_empty', 'copied_executable_only', 'path_isolated',
+            'python_env_cleared', 'qt_env_cleared', 'outer_network_blocked')),
+            'Incomplete portable-profile isolation')
+        expected = {}
+        for name, check in (
+            ('isolated-selftest.json', _check_probe),
+            ('isolated-app-smoke.json', _check_probe),
+            ('isolated-handwriting.json', check_handwriting_probe),
+            ('isolated-handwriting-image.json', check_handwriting_image_probe),
+        ):
+            raw = snapshots[prefix + name]
+            report = strict_json(raw)
+            check(report, manifest, True)
+            expected[name] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
+        require(gate.get('probes') == expected, 'Portable-profile report hashes differ')
+    except (ValueError, KeyError, TypeError, RecursionError) as exc:
+        raise PublicationError('Invalid portable-profile evidence') from exc
+
+
 def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path,
                     context: RunnerContext) -> PreparedRelease:
     """Reverify downloaded bytes, then prepare four immutable local upload files.
@@ -403,7 +494,9 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    from scripts.verify_candidate_bundle import verify_candidate
+    from scripts.verify_candidate_bundle import verify_candidate, verify_handwriting_source_distribution
+    from scripts.public_release_bundle import approved_release_files, prepare_public_bundle
+    from scripts.archive_paths import validate_zip_names
 
     artifact_root = Path(artifact_root)
     verified_bundle = Path(verified_bundle)
@@ -416,17 +509,24 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "test-results.xml",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
                       "artifacts/firewall-validation/frozen-app-smoke.json",
                       "artifacts/firewall-validation/frozen-handwriting.json",
+                      "artifacts/firewall-validation/frozen-handwriting-image.json",
                       "artifacts/firewall-validation/handwriting-firewall-gate.json",
-                      "artifacts/firewall-validation/frozen-runtime-stress.json"]
+                      "artifacts/firewall-validation/frozen-runtime-stress.json",
+                      "artifacts/portable-validation/isolated-profile-gate.json",
+                      "artifacts/portable-validation/isolated-selftest.json",
+                      "artifacts/portable-validation/isolated-app-smoke.json",
+                      "artifacts/portable-validation/isolated-handwriting.json",
+                      "artifacts/portable-validation/isolated-handwriting-image.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
                       "artifacts/candidate-validation/frozen-handwriting.json",
+                      "artifacts/candidate-validation/frozen-handwriting-image.json",
                       "artifacts/" + ZIP_NAME + ".sha256"]
     snapshots = {}
     for name in snapshot_names:
@@ -469,6 +569,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Unexpected release asset names")
     source = actual.get("source_manifest", {})
     manifest = actual.get("build_manifest", {})
+    check_portable_profile(snapshots, manifest)
     require(source.get("dirty") is False
             and COMMIT_RE.fullmatch(source.get("head_tree", "")) is not None
             and SHA256_RE.fullmatch(source.get("working_tree_sha256", "")) is not None,
@@ -487,13 +588,17 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     for name in external_names:
         metadata_files[name] = snapshots[name]
     with zipfile.ZipFile(bundle) as archive:
+        try:
+            validate_zip_names(archive.infolist())
+        except ValueError as exc:
+            raise PublicationError('Unsafe ZIP path before output preparation') from exc
         names = archive.namelist()
         require(len(names) == len(set(names)), "Duplicate member in portable ZIP")
         require(all((info.external_attr >> 16) & 0o170000 != 0o120000
                     for info in archive.infolist()), "Symlink member in portable ZIP")
         for name in ["BUILD_MANIFEST.json", "SOURCE_MANIFEST.json",
                      "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json",
-                     "candidate-validation/frozen-handwriting.json"]:
+                     "candidate-validation/frozen-handwriting.json", "candidate-validation/frozen-handwriting-image.json"]:
             require(archive.getinfo(prefix + name).file_size <= MAX_JSON_BYTES,
                     "Oversized embedded validation metadata")
             metadata_files[name] = archive.read(prefix + name)
@@ -508,16 +613,29 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         # Extract only the exact fixed EXE, never arbitrary archive members.
         with archive.open(prefix + EXE_NAME) as incoming, (output_dir / EXE_NAME).open("xb") as outgoing:
             shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
-    with bundle.open("rb") as incoming, (output_dir / ZIP_NAME).open("xb") as outgoing:
-        shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+    approved = approved_release_files(
+        executable=EXE_NAME, executable_sha256=actual["executable_sha256"],
+        identity=manifest["handwriting"], source_files=source["files"])
+    public_bundle = prepare_public_bundle(
+        bundle, output_dir / ZIP_NAME, prefix=prefix, approved=approved,
+        executable=EXE_NAME, candidate_sha256=actual["bundle_sha256"],
+        executable_sha256=actual["executable_sha256"], source_commit=context.source_commit)
+    with zipfile.ZipFile(output_dir / ZIP_NAME) as archive:
+        public_sources = verify_handwriting_source_distribution(
+            archive, prefix, manifest["handwriting"], source["files"])
+    require(public_sources == actual["handwriting_source_distribution"],
+            "Public source distribution differs from verified candidate")
     exe = Asset.from_file(output_dir / EXE_NAME, "application/octet-stream")
     portable = Asset.from_file(output_dir / ZIP_NAME, "application/zip")
     require(exe.sha256 == actual["executable_sha256"] and exe.size == actual["executable_bytes"]
-            and portable.sha256 == actual["bundle_sha256"] and portable.size == actual["bundle_bytes"],
-            "Actual copied ZIP/EXE bytes differ from verified candidate")
+            and portable.sha256 == public_bundle["public_bundle_sha256"]
+            and portable.size == public_bundle["public_bundle_bytes"],
+            "Prepared ZIP/EXE bytes differ from verified public bundle")
     require(all((root / name).read_bytes() == raw for name, raw in snapshots.items()),
             "Validation evidence changed during preparation")
-    deterministic_metadata_zip(output_dir / METADATA_NAME, metadata_files)
+    deterministic_metadata_zip(output_dir / METADATA_NAME,
+                               {name: public_validation_report(name, data)
+                                for name, data in metadata_files.items()})
     evidence = Asset.from_file(output_dir / METADATA_NAME, "application/zip")
     checksum = output_dir / CHECKSUM_NAME
     with checksum.open("x", encoding="ascii", newline="\n") as stream:
@@ -529,14 +647,30 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-root", required=True, type=Path)
-    parser.add_argument("--verified-bundle", required=True, type=Path)
+    parser.add_argument("--artifact-root", type=Path)
+    parser.add_argument("--public-input", type=Path)
+    parser.add_argument("--verified-bundle", type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--prepare-only", action="store_true", help="Verify/prepare without reading GH_TOKEN or using network")
     args = parser.parse_args(argv)
     try:
         context = validate_runner_context(os.environ)
-        prepared = prepare_release(args.artifact_root, args.verified_bundle, args.output_dir, context)
+        if args.public_input is not None:
+            require(args.artifact_root is None and args.verified_bundle is None,
+                    "Conflicting public/private artifact inputs")
+            project_root = str(Path(__file__).resolve().parents[1])
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from scripts.public_release_receipt import load_prepared
+            prepared = load_prepared(args.public_input, context)
+            require(not args.output_dir.exists() and not args.output_dir.is_symlink()
+                    and not any(x.is_symlink() for x in args.output_dir.parents),
+                    "Publication evidence output must be fresh")
+            args.output_dir.mkdir(parents=True, exist_ok=False)
+        else:
+            require(args.artifact_root is not None and args.verified_bundle is not None,
+                    "Missing private candidate inputs")
+            prepared = prepare_release(args.artifact_root, args.verified_bundle, args.output_dir, context)
         if args.prepare_only:
             print("Four candidate assets prepared; no network or token access")
             return 0

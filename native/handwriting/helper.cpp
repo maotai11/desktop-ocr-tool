@@ -1,5 +1,6 @@
 // Persistent, bounded helper. stdout is protocol only; no native pointers cross it.
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -59,7 +60,7 @@ bool read_frame(Frame& frame) {
   std::cin.read(header.data(), header.size());
   if (std::cin.gcount() == 0 && std::cin.eof()) return false;
   if (std::cin.gcount() != HEADER_BYTES) fail("PROTOCOL_TRUNCATED");
-  if (std::memcmp(header.data(), "ZHW1", 4) || header[4] != 1 ||
+  if (std::memcmp(header.data(), "ZHW1", 4) || header[4] != 2 ||
       unsigned_le(header.data() + 6, 2)) fail("PROTOCOL_HEADER");
   frame.kind = static_cast<uint8_t>(header[5]);
   frame.generation = unsigned_le(header.data() + 8, 8);
@@ -71,8 +72,8 @@ bool read_frame(Frame& frame) {
   return true;
 }
 void reply(uint8_t kind, uint64_t generation, const std::vector<char>& payload) {
-  if (payload.size() > 204) fail("PROTOCOL_OUTPUT");
-  std::vector<char> header{'Z','H','W','1',1,static_cast<char>(kind),0,0};
+  if (payload.size() > 4 + 2 * NBEST * 20) fail("PROTOCOL_OUTPUT");
+  std::vector<char> header{'Z','H','W','1',2,static_cast<char>(kind),0,0};
   append_le(header, generation, 8);
   append_le(header, payload.size(), 4);
   std::cout.write(header.data(), header.size());
@@ -85,7 +86,29 @@ void error_reply(uint8_t kind, uint64_t generation, uint16_t status) {
   append_le(payload, status, 2); append_le(payload, 0, 2);
   reply(kind, generation, payload);
 }
-std::vector<char> recognize(zinnia::Recognizer& recognizer, const Strokes& strokes) {
+Strokes normalized_strokes(const Strokes& strokes) {
+  uint16_t left = CANVAS_SIZE, top = CANVAS_SIZE, right = 0, bottom = 0;
+  for (const auto& stroke : strokes) for (const auto& p : stroke) {
+    left = std::min(left, p.x); right = std::max(right, p.x);
+    top = std::min(top, p.y); bottom = std::max(bottom, p.y);
+  }
+  const double span = std::max(right-left, bottom-top);
+  if (!span) {
+    Strokes dot = strokes;
+    for (auto& stroke : dot) for (auto& p : stroke) p = {500, 500};
+    return dot;
+  }
+  const double scale = 800.0 / span;
+  const double cx = (left+right)/2.0, cy = (top+bottom)/2.0;
+  Strokes output = strokes;
+  for (auto& stroke : output) for (auto& p : stroke) {
+    p.x = static_cast<uint16_t>(std::nearbyint(500.0+(p.x-cx)*scale));
+    p.y = static_cast<uint16_t>(std::nearbyint(500.0+(p.y-cy)*scale));
+  }
+  return output;
+}
+void append_candidates(std::vector<char>& payload, zinnia::Recognizer& recognizer,
+                       const Strokes& strokes, size_t count_offset) {
   std::unique_ptr<zinnia::Character> character(zinnia::Character::create());
   if (!character) fail("ENGINE_CHARACTER");
   character->set_width(CANVAS_SIZE); character->set_height(CANVAS_SIZE);
@@ -94,8 +117,7 @@ std::vector<char> recognize(zinnia::Recognizer& recognizer, const Strokes& strok
       if (!character->add(sid, point.x, point.y)) fail("ENGINE_POINT");
   std::unique_ptr<zinnia::Result> result(recognizer.classify(*character, NBEST));
   if (!result || !result->size() || result->size() > NBEST) fail("ENGINE_RESULT");
-  std::vector<char> payload;
-  append_le(payload, 0, 2); append_le(payload, result->size(), 2);
+  payload[count_offset] = static_cast<char>(result->size());
   for (size_t i = 0; i < result->size(); ++i) {
     const char* label = result->value(i);
     if (!label) fail("ENGINE_LABEL");
@@ -103,11 +125,17 @@ std::vector<char> recognize(zinnia::Recognizer& recognizer, const Strokes& strok
     if (!end || end == label || !std::isfinite(result->score(i))) fail("ENGINE_OUTPUT");
     const size_t length = static_cast<size_t>(end - label);
     payload.push_back(static_cast<char>(length));
-    payload.insert(payload.end(), label, end);  // copy borrowed labels before RAII teardown
+    payload.insert(payload.end(), label, end);
     const float score = result->score(i);
     uint32_t bits; std::memcpy(&bits, &score, sizeof(bits));
     append_le(payload, bits, 4);
   }
+}
+std::vector<char> recognize(zinnia::Recognizer& recognizer, const Strokes& strokes) {
+  // Each lane is separately ranked. Owned bytes outlive each Result RAII scope.
+  std::vector<char> payload(4, 0);  // uint16 status, uint8 raw, uint8 normalized
+  append_candidates(payload, recognizer, strokes, 2);
+  append_candidates(payload, recognizer, normalized_strokes(strokes), 3);
   return payload;
 }
 int run(const std::filesystem::path& model_path) {

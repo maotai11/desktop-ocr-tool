@@ -243,18 +243,23 @@ class Engine:
                     hypotheses={'first_pass': [['raw']]})
 
 
-def make_pipeline(tmp_db, item_repo, file_mgr):
+def make_pipeline(tmp_db, item_repo, file_mgr, *, copy_mode=None):
     worker, thread, ocr, widget = DbWorker(item_repo, file_mgr), QThread(), OcrWorker(Engine()), Widget()
     capture = Capture()
-    pipeline = Pipeline(capture, ocr, worker, thread, tmp_db, item_repo, file_mgr, widget, None)
+    cfg = None if copy_mode is None else SimpleNamespace(
+        get=lambda *keys, default=None: copy_mode if keys == ('clipboard', 'ocr_copy_mode') else default)
+    pipeline = Pipeline(capture, ocr, worker, thread, tmp_db, item_repo, file_mgr, widget, cfg)
     return pipeline, worker, thread, ocr, capture, widget
 
 
+@pytest.mark.parametrize('copy_mode', ['all', 'select'])
 @pytest.mark.parametrize('change', ['delete', 'delete_restore', 'edit', 'rerun'])
-def test_queued_ack_rechecks_item_before_clipboard_publication(
-        qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch, change):
-    pipeline, worker, thread, ocr, capture, widget = make_pipeline(tmp_db, item_repo, file_mgr)
-    copies = []
+def test_queued_ack_rechecks_item_before_copy_or_selection(
+        qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch, change, copy_mode):
+    pipeline, worker, thread, ocr, capture, widget = make_pipeline(
+        tmp_db, item_repo, file_mgr, copy_mode=copy_mode)
+    copies, selections = [], []
+    pipeline.selection_requested.connect(lambda *args: selections.append(args))
     monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     worker.ocr_persisted.disconnect(pipeline.persisted)
     worker.ocr_persisted.connect(pipeline.persisted, Qt.ConnectionType.QueuedConnection)
@@ -269,16 +274,26 @@ def test_queued_ack_rechecks_item_before_clipboard_publication(
         item_repo.begin_ocr_attempt(item_id)
     qtbot.wait(20)
     assert copies == []
+    assert selections == []
 
 
-def test_unmodified_current_ack_copies_success_and_clears_progress(
-        qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch):
-    pipeline, worker, thread, ocr, capture, widget = make_pipeline(tmp_db, item_repo, file_mgr)
-    copies = []
+@pytest.mark.parametrize('copy_mode', ['all', 'select'])
+def test_unmodified_current_ack_uses_copy_mode_and_clears_progress(
+        qtbot, tmp_db, item_repo, file_mgr, make_image_dto, monkeypatch, copy_mode):
+    pipeline, worker, thread, ocr, capture, widget = make_pipeline(
+        tmp_db, item_repo, file_mgr, copy_mode=copy_mode)
+    copies, selections = [], []
+    pipeline.selection_requested.connect(lambda *args: selections.append(args))
     monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text, **_: copies.append(text))
     item_id = item_repo.insert(make_image_dto())
-    worker.update_ocr(item_id, reserve(item_repo, item_id))
-    assert copies == ['new OCR'] and widget.progress[-1] == 0
+    dto = reserve(item_repo, item_id)
+    worker.update_ocr(item_id, dto)
+    assert widget.progress[-1] == 0
+    assert copies == ([dto.text] if copy_mode == 'all' else [])
+    assert selections == ([(item_id, dto)] if copy_mode == 'select' else [])
+    if copy_mode == 'select':
+        pipeline.copy_ocr_selection(item_id, dto, 'OCR')
+        assert copies == ['OCR']
 
 
 def test_queue_database_failure_is_rejected_without_start_or_lost_text(

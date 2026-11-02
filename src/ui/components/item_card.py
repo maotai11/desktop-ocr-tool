@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
+from datetime import datetime
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QCursor
 
@@ -9,6 +10,32 @@ from ..theme import (
     _ACCENT, _TEAL, _SUCCESS, _ERROR, _WARNING, _INFO,
     _ACCENT_12, _ACCENT_25, _TEAL_12, _TEAL_25,
 )
+
+
+class _PreviewLabel(QLabel):
+    """Keep previews on one line, with the full literal text in a tooltip."""
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setToolTip(text)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.setText(self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.contentsRect().width()
+        ))
+
+
+def _display_time(value) -> str:
+    raw = str(value or '')
+    try:
+        stamp = datetime.fromisoformat(raw)
+    except ValueError:
+        return raw
+    return stamp.strftime('%H:%M' if stamp.date() == datetime.now().date() else '%m/%d %H:%M')
 
 
 class ItemCard(QWidget):
@@ -47,14 +74,14 @@ class ItemCard(QWidget):
                     f"background: {_BG_THUMB}; border-radius: 4px;"
                 )
             else:
-                thumb_lbl.setText("IMG")
+                thumb_lbl.setText("圖")
                 thumb_lbl.setStyleSheet(
                     f"background: {_TEAL_12}; border-radius: 4px;"
                     f" font-size: 10px; font-weight: 600; color: {_TEAL};"
                     f" border: 1px solid {_TEAL_25};"
                 )
         else:
-            thumb_lbl.setText("T")
+            thumb_lbl.setText("文")
             thumb_lbl.setStyleSheet(
                 f"background: {_ACCENT_12}; border-radius: 4px;"
                 f" font-size: 16px; font-weight: 700; color: {_ACCENT};"
@@ -69,7 +96,7 @@ class ItemCard(QWidget):
 
         text = self._item.get_effective_text() or "(無文字)"
         preview = text[:60].replace('\n', ' ')
-        text_lbl = QLabel(preview)
+        text_lbl = _PreviewLabel(preview)
         text_lbl.setTextFormat(Qt.TextFormat.PlainText)
         text_lbl.setStyleSheet(
             f"font-size: 12px; color: {_TEXT_PRI}; background: transparent;"
@@ -77,12 +104,13 @@ class ItemCard(QWidget):
         right.addWidget(text_lbl)
 
         source_names = {
-            'region_ocr': 'OCR框選', 'region_image': '框選截圖',
+            'region_ocr': '擷取文字', 'region_image': '截圖',
             'fullscreen': '全螢幕', 'clipboard_text': '剪貼簿',
-            'clipboard_image': '剪貼板圖', 'import': '匯入'
+            'clipboard_image': '剪貼簿圖片', 'import': '匯入'
         }
-        src = source_names.get(self._item.source_mode, self._item.source_mode)
-        meta_lbl = QLabel(f"{self._item.created_at or ''} · {src}")
+        src = source_names.get(self._item.source_mode, "本機紀錄")
+        meta_lbl = _PreviewLabel(f"{_display_time(self._item.created_at)} · {src}")
+        meta_lbl.setToolTip(f"{self._item.created_at or ''} · {src}")
         meta_lbl.setTextFormat(Qt.TextFormat.PlainText)
         meta_lbl.setStyleSheet(
             f"font-size: 10px; color: {_TEXT_SEC}; background: transparent;"
@@ -109,8 +137,7 @@ class ItemCard(QWidget):
             badge.setFixedHeight(16)
             right.addWidget(badge)
 
-        layout.addLayout(right)
-        layout.addStretch()
+        layout.addLayout(right, 1)
 
         if self._item.is_pinned:
             pin = QLabel("●")

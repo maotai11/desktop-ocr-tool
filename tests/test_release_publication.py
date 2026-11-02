@@ -10,7 +10,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts import publish_prerelease as publisher
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe
 from scripts.verify_candidate_bundle import verify_candidate
 
 COMMIT = "a" * 40
@@ -345,6 +345,29 @@ def candidate(tmp_path, monkeypatch):
     source = {"commit": COMMIT, "head_tree": "b" * 40, "working_tree_sha256": "c" * 64,
               "dirty": False, "files": {"src/main.py": {"sha256": "d" * 64}}}
     encoded = lambda data: json.dumps(data, sort_keys=True).encode()
+    # Small synthetic source bytes for publication integration. Real pinned
+    # model/native sources are covered by the separate source-distribution gate.
+    from scripts import handwriting_bundle
+    public_sources = {
+        'THIRD_PARTY_NOTICES.md': b'synthetic notices',
+        'LICENSE-APACHE-2.0.txt': b'synthetic Apache license',
+        'handwriting-source/MODEL_MANIFEST.json': b'{}',
+        'handwriting-source/zinnia/UPSTREAM_MANIFEST.json': b'{}',
+        'handwriting-source/zinnia/patches/0001-bound-vertex-tree.patch': b'patch',
+        'handwriting-source/tegaki-zh_TW/handwriting-zh_TW.xml': b'synthetic XML',
+        'handwriting-source/tegaki-zh_TW/COPYING-LGPL-2.1.txt': b'synthetic LGPL',
+    }
+    monkeypatch.setattr(handwriting_bundle, 'SOURCE_SHA256', hashlib.sha256(b'synthetic XML').hexdigest())
+    monkeypatch.setattr(handwriting_bundle, 'LICENSE_SHA256', hashlib.sha256(b'synthetic LGPL').hexdigest())
+    native_files = {name: hashlib.sha256(name.encode()).hexdigest() for name in
+                    ('helper.cpp', 'model_and_strokes.h', 'CMakeLists.txt', 'vendor/zinnia/COPYING')}
+    public_sources.update({'handwriting-source/zinnia/' + n: n.encode() for n in native_files})
+    origins = {'handwriting-source/MODEL_MANIFEST.json': 'models/handwriting/manifest.json'}
+    for name, raw in public_sources.items():
+        if '/tegaki-zh_TW/' in name:
+            continue
+        origin = origins.get(name, name.replace('handwriting-source/zinnia/', 'native/handwriting/'))
+        source['files'][origin] = {'sha256': hashlib.sha256(raw).hexdigest()}
     source_bytes = encoded(source)
     exe = b"same-exe-fixture"
     profiles, _ = fixture_profiles()
@@ -358,6 +381,7 @@ def candidate(tmp_path, monkeypatch):
                                           engine_ready=True, shutdown_clean=True,
                                           threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True})}
     probes["frozen-handwriting.json"] = handwriting_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
+    probes["frozen-handwriting-image.json"] = image_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest(), profiles)
     manifest = {"handwriting": handwriting_identity(), "schema": 2, "platform": "win32", "version": publisher.VERSION,
                 "executable_name": publisher.EXE_NAME, "executable_sha256": hashlib.sha256(exe).hexdigest(),
                 "models": models, "model_profiles": profiles, "default_model_profile": "v6-small",
@@ -366,7 +390,8 @@ def candidate(tmp_path, monkeypatch):
                 "clean_machine_gate": "NOT_RUN", "mixed_dpi_gate": "NOT_RUN",
                 "candidate_probes": {name: {"status": "PASSED", "sha256": hashlib.sha256(encoded(probe)).hexdigest()}
                                      for name, probe in probes.items()}}
-    contents = {"BUILD_MANIFEST.json": encoded(manifest), "SOURCE_MANIFEST.json": source_bytes,
+    manifest["handwriting"]["helper"]["source"]["files"] = native_files
+    contents = {**public_sources, "BUILD_MANIFEST.json": encoded(manifest), "SOURCE_MANIFEST.json": source_bytes,
                 publisher.EXE_NAME: exe, **{"candidate-validation/" + name: encoded(probe) for name, probe in probes.items()}}
     bundle = artifacts / publisher.ZIP_NAME
     def write_bundle():
@@ -377,14 +402,14 @@ def candidate(tmp_path, monkeypatch):
     for name, probe in probes.items():
         (frozen / name).write_bytes(encoded(probe))
         (firewall / name).write_bytes(encoded(probe))
-        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json"}[name]
+        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json", "frozen-handwriting-image.json": "source-handwriting-image.json"}[name]
         (root / source_name).write_bytes(encoded(dict(probe, frozen=False, executable_sha256=None)))
     gate = {"schema": 1, "passed": True, "version": publisher.VERSION,
             "executable_sha256": manifest["executable_sha256"], "clean_machine_verified": False,
             "probes": {name: {"status": "PASSED", "sha256": publisher.sha256_file(firewall / name)} for name in probes}}
     (firewall / "candidate-gate.json").write_bytes(encoded(gate))
     extra_evidence(root, manifest)
-    (root / "test-results.xml").write_text('<testsuites><testsuite failures="0" errors="0"><testcase name="one"/></testsuite></testsuites>')
+    (root / "test-results.xml").write_text('<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0"><testcase name="one"/></testsuite></testsuites>')
     report_path = artifacts / "verified-bundle.json"
     def save_report():
         report = verify_candidate(root, COMMIT)
@@ -404,6 +429,14 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     assert {asset.name for asset in prepared.assets} == {
         publisher.EXE_NAME, publisher.ZIP_NAME, publisher.CHECKSUM_NAME, publisher.METADATA_NAME}
     assert (tmp_path / "upload" / publisher.EXE_NAME).read_bytes() == b"same-exe-fixture"
+    with zipfile.ZipFile(tmp_path / "upload" / publisher.ZIP_NAME) as archive:
+        prefix = 'release-' + publisher.TAG + '/'
+        assert archive.read(prefix + publisher.EXE_NAME) == b'same-exe-fixture'
+        assert prefix + 'BUILD_MANIFEST.json' not in archive.namelist()
+        assert not any('/candidate-validation/' in n for n in archive.namelist())
+        public_manifest = json.loads(archive.read(prefix + 'PUBLIC_MANIFEST.json'))
+        assert public_manifest['original_candidate_sha256'] == publisher.sha256_file(root / 'artifacts' / publisher.ZIP_NAME)
+        assert publisher.sha256_file(tmp_path / 'upload' / publisher.ZIP_NAME) != public_manifest['original_candidate_sha256']
     sums = (tmp_path / "upload" / publisher.CHECKSUM_NAME).read_text()
     for asset in prepared.assets:
         if asset.name != publisher.CHECKSUM_NAME: assert f"{asset.sha256}  {asset.name}\n" in sums
@@ -551,11 +584,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.4'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.1'
+    assert publisher.VERSION == '1.8.0-rc.3'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -563,7 +596,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.4'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
@@ -586,3 +619,85 @@ def test_public_metadata_never_sweeps_arbitrary_logs_or_private_notes(candidate,
         assert 'source-handwriting.json' in archive.namelist()
         assert 'artifacts/firewall-validation/handwriting-firewall-gate.json' in archive.namelist()
         assert 'artifacts/firewall-validation/frozen-runtime-stress.json' in archive.namelist()
+
+
+@pytest.mark.parametrize("name", ["source-selftest.json", "BUILD_MANIFEST.json",
+                                  "SOURCE_MANIFEST.json"])
+def test_public_report_excludes_private_values_inside_allowed_files(name):
+    secret = "PRIVATE_REPORT_SENTINEL"
+    raw = json.dumps({"passed": True, "version": publisher.VERSION,
+                      "error": secret, "absolute_path": secret,
+                      "source": {"commit": COMMIT, "path": secret},
+                      "cases": [{"name": secret, "passed": True}]}).encode()
+    out = publisher.public_validation_report(name, raw)
+    assert secret.encode() not in out
+    value = json.loads(out)
+    assert value["passed"] is True and value["nonpublic_error_present"] is True
+    assert value["original_report_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert value["cases_count"] == 1
+
+
+def test_public_junit_excludes_names_properties_and_output():
+    raw = b'<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0"><properties><property name="PRIVATE" value="PRIVATE"/></properties><testcase name="PRIVATE"><system-out>PRIVATE</system-out></testcase></testsuite></testsuites>'
+    out = publisher.public_validation_report("test-results.xml", raw)
+    assert b"PRIVATE" not in out and b'tests="1"' in out
+
+
+@pytest.mark.parametrize("raw", [b'{"passed":true,"passed":false}', b'{"passed":NaN}', b'[]'])
+def test_public_report_rejects_ambiguous_or_nonfinite_json(raw):
+    with pytest.raises(publisher.PublicationError):
+        publisher.public_validation_report("source-selftest.json", raw)
+
+
+def test_public_junit_retains_valid_outcome_counts():
+    from scripts.prepare_public_validation import junit_counts
+    raw = b'<testsuite tests="4" failures="1" errors="1" skipped="1"><testcase/><testcase><failure>PRIVATE</failure></testcase><testcase><error>PRIVATE</error></testcase><testcase><skipped/></testcase></testsuite>'
+    out = publisher.public_validation_report("test-results.xml", raw)
+    assert junit_counts(out) == junit_counts(raw)
+    assert b"PRIVATE" not in out
+
+
+def test_public_staging_cli_never_constructs_network_client(candidate, tmp_path, monkeypatch):
+    from scripts import prepare_public_release as staging
+    root, _, _, _, _ = candidate
+    monkeypatch.setenv('GITHUB_SHA', COMMIT)
+    monkeypatch.setattr(publisher.request, 'build_opener', lambda *a: pytest.fail('No network during staging'))
+    assert staging.main(['--artifact-root', str(root), '--output-dir', str(tmp_path/'cli-public')]) == 0
+    assert (tmp_path/'cli-public'/publisher.ZIP_NAME).is_file()
+
+
+@pytest.mark.parametrize('defect', ['missing', 'path_isolated', 'profile_empty',
+    'copied_executable_only', 'python_env_cleared', 'qt_env_cleared',
+    'outer_network_blocked', 'clean_machine_verified', 'stale_executable',
+    'changed_report', 'failed_ocr', 'partial_probes'])
+def test_portable_profile_evidence_is_mandatory_and_bound_to_candidate(
+        candidate, tmp_path, defect):
+    root, report_path, _, _, _ = candidate
+    directory = root / 'artifacts/portable-validation'
+    gate_path = directory / 'isolated-profile-gate.json'
+    gate = json.loads(gate_path.read_bytes())
+    if defect == 'missing':
+        gate_path.unlink()
+    else:
+        if defect == 'clean_machine_verified':
+            gate[defect] = True  # this gate must never claim physical clean-host proof
+        elif defect == 'stale_executable':
+            gate['executable_sha256'] = '0' * 64
+        elif defect == 'partial_probes':
+            gate['probes'].pop('isolated-handwriting-image.json')
+        elif defect == 'changed_report':
+            path = directory / 'isolated-selftest.json'
+            path.write_bytes(path.read_bytes() + b' ')
+        elif defect == 'failed_ocr':
+            path = directory / 'isolated-selftest.json'
+            value = json.loads(path.read_bytes())
+            value['checks']['ocr'] = False
+            path.write_text(json.dumps(value))
+            gate['probes'][path.name]['sha256'] = publisher.sha256_file(path)
+        else:
+            gate[defect] = False
+        gate_path.write_text(json.dumps(gate))
+    output = tmp_path / 'portable-refused'
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, report_path, output, CONTEXT)
+    assert not output.exists()

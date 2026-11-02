@@ -2,28 +2,44 @@
 from dataclasses import replace
 from types import SimpleNamespace
 
-from src.clipboard.writer import copy_text, get_clipboard_epoch, write_text_to_clipboard
-from src.workers.pipeline import Pipeline
+import pytest
 from test_data_integrity_regressions import make_pipeline, reserve
 
+from src.clipboard.writer import copy_text, get_clipboard_epoch, write_text_to_clipboard
+from src.workers.pipeline import Pipeline
 
-def test_late_ocr_keeps_handwriting_and_next_intent_can_copy(qapp, item_repo, make_image_dto):
+
+@pytest.mark.parametrize('mode', ['all', 'select'])
+def test_late_ocr_keeps_handwriting_and_next_intent_uses_copy_mode(qapp, item_repo, make_image_dto, mode):
     item_id = item_repo.insert(make_image_dto())
     epoch = get_clipboard_epoch()
     result = replace(reserve(item_repo, item_id), clipboard_epoch=epoch)
     assert item_repo.update_ocr_result(item_id, result)
     copy_text('臺')
-    owner = SimpleNamespace(repo=item_repo, cfg=None, closing=False,
+    selections = []
+    cfg = SimpleNamespace(get=lambda *keys, default=None: mode if keys == ('clipboard', 'ocr_copy_mode') else default)
+    owner = SimpleNamespace(repo=item_repo, cfg=cfg, closing=False,
+                            selection_requested=SimpleNamespace(emit=lambda *args: selections.append(args)),
                             widget=SimpleNamespace(set_ocr_status=lambda _: None))
+    owner._selection_is_current = lambda item_id, dto: Pipeline._selection_is_current(owner, item_id, dto)
     Pipeline.persisted(owner, item_id, result)
     assert qapp.clipboard().text() == '臺'
+    assert selections == []
     next_result = replace(reserve(item_repo, item_id), text='next intentional OCR',
                           clipboard_epoch=get_clipboard_epoch())
     assert item_repo.update_ocr_result(item_id, next_result)
     current_epoch = get_clipboard_epoch()
     Pipeline.persisted(owner, item_id, next_result)
-    assert qapp.clipboard().text() == 'next intentional OCR'
     assert get_clipboard_epoch() == current_epoch
+    if mode == 'all':
+        assert selections == []
+        assert qapp.clipboard().text() == 'next intentional OCR'
+    else:
+        assert selections == [(item_id, next_result)]
+        assert qapp.clipboard().text() == '臺'
+        Pipeline.copy_ocr_selection(owner, item_id, next_result, 'intentional')
+        assert qapp.clipboard().text() == 'intentional'
+        assert get_clipboard_epoch() == current_epoch + 1
 
 
 def test_capture_saved_after_manual_copy_keeps_original_epoch(
@@ -66,6 +82,7 @@ def test_automatic_write_signal_reentrancy_does_not_hide_manual_copy(qapp, qtbot
 
 def test_synchronous_write_callback_keeps_manual_epoch(qapp, monkeypatch):
     from types import SimpleNamespace
+
     from src.clipboard import writer
 
     class SynchronousClipboard:

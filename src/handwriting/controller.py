@@ -3,19 +3,26 @@ from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
 from .assets import verified_assets
 from .protocol import (READY, RECOGNIZE, RESULT, START, STOP, HEADER, MAX_REPLY_BYTES,
-                       ProtocolError, ReplyDecoder, decode_candidates, encode_strokes, frame)
+                       ProtocolError, ReplyDecoder, decode_candidate_records, encode_strokes, frame)
 from .windows_job import WindowsJob
 
 
 class HandwritingController(QObject):
     candidates = Signal(int, object)
     failed = Signal(str)
+    # Request-local errors retain their generation. Fatal helper errors are
+    # attributed to the newest pending request, since that request also fails.
+    request_failed = Signal(int, str)
     stopped = Signal()
     busy_changed = Signal(bool)
 
-    def __init__(self, parent=None, *, assets=None, load_timeout_ms=10000, request_timeout_ms=3000):
+    def __init__(self, parent=None, *, assets=None, load_timeout_ms=10000, request_timeout_ms=3000,
+                 result_decoder=decode_candidate_records, memory_mib=256, ready_validator=None):
         super().__init__(parent)
         self._assets = assets
+        self._result_decoder = result_decoder
+        self._memory_mib = memory_mib
+        self._ready_validator = ready_validator
         self._process = None
         self._job = None
         self._decoder = ReplyDecoder()
@@ -39,21 +46,30 @@ class HandwritingController(QObject):
     def submit(self, strokes):
         if self._closing:
             return None
+        self._generation += 1
+        generation = self._generation
         try:
             payload = encode_strokes(strokes)
             if self._assets is None:
                 self._assets = verified_assets()
         except (ValueError, OSError, UnicodeError):
-            self.failed.emit('手寫引擎或模型尚未備妥')
+            self._emit_error(generation, '手寫引擎或模型缺漏／版本不符，請使用完整免安裝資料夾')
             return None
-        self._generation += 1
-        self._pending = self._generation, payload
+        self._pending = generation, payload
         self.busy_changed.emit(True)
         if self._process is None:
             self._start()
         elif self._ready and self._active is None:
             self._dispatch()
-        return self._generation
+        return generation
+
+    def _emit_error(self, generation, message):
+        self.request_failed.emit(generation, message)
+        self.failed.emit(message)  # Compatibility for diagnostics/probes.
+
+    def _latest_request_generation(self):
+        request = self._pending or self._active
+        return request[0] if request else self._generation
 
     def _start(self):
         self._decoder = ReplyDecoder()
@@ -77,7 +93,7 @@ class HandwritingController(QObject):
             self._kill()
             return
         try:
-            self._job = WindowsJob()
+            self._job = WindowsJob(self._memory_mib)
             self._job.assign(self._process.processId())
         except OSError:
             self._fail('無法安全啟動手寫引擎')
@@ -111,14 +127,19 @@ class HandwritingController(QObject):
                 reply = self._decoder.feed(data)
                 if reply is None:
                     continue
-                status, values = decode_candidates(reply.payload, self._assets.alphabet)
                 if not self._ready:
+                    if self._ready_validator is not None:
+                        self._ready_validator(reply.payload, process.processId())
+                        status, values = 0, ()
+                    else:
+                        status, values = self._result_decoder(reply.payload, self._assets.alphabet)
                     if reply.kind != READY or reply.generation != 0 or status or values:
                         raise ProtocolError('Invalid readiness handshake')
                     self._ready = True
                     self._deadline.stop()
                     self._dispatch()
                 else:
+                    status, values = self._result_decoder(reply.payload, self._assets.alphabet)
                     if (reply.kind != RESULT or self._active is None
                             or reply.generation != self._active[0]):
                         raise ProtocolError('Unexpected result generation')
@@ -126,14 +147,14 @@ class HandwritingController(QObject):
                     self._active = None
                     self._deadline.stop()
                     if status:
-                        self.failed.emit('手寫辨識失敗，請重試')
+                        self._emit_error(generation, '手寫辨識失敗，請重試')
                     elif not self._pending:
                         self.candidates.emit(generation, values)
                     self._dispatch()
                     if self._active is None:
                         self.busy_changed.emit(False)
             except ProtocolError:
-                self._fail('手寫引擎回傳格式錯誤')
+                self._fail('手寫引擎版本或回傳格式不符，請更新完整免安裝資料夾')
                 return
 
     def _read_stderr(self):
@@ -162,10 +183,11 @@ class HandwritingController(QObject):
 
     def _fail(self, message):
         self._deadline.stop()
+        generation = self._latest_request_generation()
         self._pending = self._active = None
         self._ready = False
         if not self._closing:
-            self.failed.emit(message)
+            self._emit_error(generation, message)
         self.busy_changed.emit(False)
         self._kill()
 
@@ -196,6 +218,7 @@ class HandwritingController(QObject):
         self._deadline.stop()
         self._stop_timer.stop()
         was_busy = self._active is not None or self._pending is not None
+        generation = self._latest_request_generation()
         self._pending = self._active = None
         self._ready = False
         if self._job:
@@ -205,5 +228,5 @@ class HandwritingController(QObject):
             process.deleteLater()
         self.busy_changed.emit(False)
         if was_busy and not self._closing:
-            self.failed.emit('手寫引擎已停止，請重試')
+            self._emit_error(generation, '手寫引擎已停止，請重試')
         self.stopped.emit()

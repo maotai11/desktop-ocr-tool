@@ -107,7 +107,7 @@ def valid_reports(paths):
 @pytest.mark.parametrize('defect', ['none', 'wrong_hash', 'not_frozen', 'wrong_version',
                                   'offscreen', 'model_hash', 'thread_running', 'claimed_clean'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
-    from handwriting_release_fixtures import identity, probe
+    from handwriting_release_fixtures import identity, probe, image_probe
     from scripts import handwriting_bundle
     monkeypatch.setattr(handwriting_bundle, 'identity', lambda _: identity())
     paths = build.resolve_release_paths(tmp_path)
@@ -115,6 +115,7 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     paths['out_exe'].write_bytes(b'candidate-executable')
     reports = valid_reports(paths)
     reports['--self-test-handwriting'] = probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
+    reports['--self-test-handwriting-image'] = image_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']), build.bundled_model_profiles(build.ROOT))
     if defect == 'wrong_hash': reports['--self-test']['executable_sha256'] = '0' * 64
     if defect == 'not_frozen': reports['--self-test']['frozen'] = False
     if defect == 'wrong_version': reports['--self-test']['version'] = '0.0.0'
@@ -127,7 +128,7 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
         return reports[mode]
     monkeypatch.setattr(build, '_run_probe', run)
     if defect == 'none':
-        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json'}
+        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json'}
     else:
         with pytest.raises(RuntimeError):
             build.validate_candidate(paths)
@@ -177,6 +178,8 @@ def test_package_contains_provenance_and_explicit_remaining_gates(tmp_path, monk
     with zipfile.ZipFile(paths['zip_path']) as archive:
         names = archive.namelist()
         assert any(name.endswith('/Validate-Candidate.ps1') for name in names)
+        assert any(name.endswith('/docs/HANDWRITING_IMPROVEMENT_20261015.md') for name in names)
+        assert any(name.endswith('/docs/handwriting-evidence/20261015-summary.json') for name in names)
         assert any(name.endswith('/SOURCE_MANIFEST.json') for name in names)
 
 
