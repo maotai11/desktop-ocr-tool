@@ -205,6 +205,8 @@ class Pipeline(QObject):
         self.widget.setEnabled(False)
         if hasattr(self.widget, 'shutdown_handwriting'):
             self.widget.shutdown_handwriting()
+        if hasattr(self.widget, 'shutdown_documents'):
+            self.widget.shutdown_documents()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
             self.clipboard.pause(True)
@@ -221,7 +223,7 @@ class Pipeline(QObject):
         # Native in-process inference cannot safely be killed. Surface the
         # delay without reporting success, terminating a QThread, or closing
         # SQLite underneath a live writer. Process isolation is a separate gate.
-        message = ('關閉仍在等待手寫引擎；資料庫已關閉' if self._database_closed else
+        message = ('關閉仍在等待背景工具；資料庫已關閉' if self._database_closed else
                    '關閉仍在等待背景工作；資料庫尚未關閉，請勿強制結束程式')
         logger.error(message)
         self.widget.set_ocr_status(message)
@@ -265,6 +267,10 @@ class Pipeline(QObject):
         if (hasattr(self.widget, 'handwriting_is_stopped') and
                 not self.widget.handwriting_is_stopped()):
             # QProcess remains owned until finished, never a GUI-thread wait.
+            self._tools_poll.start()
+            return
+        if (hasattr(self.widget, 'documents_is_stopped') and
+                not self.widget.documents_is_stopped()):
             self._tools_poll.start()
             return
         self._tools_poll.stop()

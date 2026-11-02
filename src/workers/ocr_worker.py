@@ -1,13 +1,27 @@
-# -*- coding: utf-8 -*-
 import json
 import logging
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
+from threading import Event, Lock
+
+import numpy as np
 from PySide6.QtCore import Signal
-from .queue_worker import QueueWorker
+
 from ..data.models import OcrResultDTO
+from .queue_worker import QueueWorker
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class DocumentOcrTask:
+    """Transient, worker-owned raster; it never creates a history record."""
+    token: str
+    page_index: int
+    field_name: str
+    image: np.ndarray | None
+    cancel_event: Event
 
 
 class OcrWorker(QueueWorker):
@@ -19,12 +33,15 @@ class OcrWorker(QueueWorker):
     ocr_failed = Signal(int, str)
     ocr_progress = Signal(int, str)
     submission_rejected = Signal(int, str)
+    document_ocr_done = Signal(str, int, str, object)
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
         self._engine = engine
         self._repo = None
         self._files = None
+        self._document_lock = Lock()
+        self._document_pending = False
         self._engine.set_progress_callback(self.ocr_progress.emit)
 
     def start_loading(self):
@@ -59,6 +76,64 @@ class OcrWorker(QueueWorker):
             self.ocr_failed.emit(item_id, str(exc))  # compatibility notification
             return False
 
+    @property
+    def accepts_document_work(self):
+        with self._submission_lock:
+            return self._accepting
+
+    def queue_document_ocr(self, token, page_index, field_name, image, cancel_event=None):
+        """Transfer a single bounded BGR crop to the same serialized engine."""
+        try:
+            if (not isinstance(token, str) or not token or
+                    not isinstance(field_name, str) or not field_name or
+                    isinstance(page_index, bool) or not isinstance(page_index, int) or page_index < 0 or
+                    not isinstance(image, np.ndarray) or image.dtype != np.uint8 or
+                    image.ndim != 3 or image.shape[2] != 3 or
+                    not image.shape[0] or not image.shape[1] or
+                    image.shape[0] * image.shape[1] > 16_000_000):
+                return False
+            cancel_event = cancel_event if cancel_event is not None else Event()
+            if not isinstance(cancel_event, Event):
+                return False
+            # This is a global raster slot, across document controllers and
+            # cancelled generations. Repeated cancel/restart while a screen OCR
+            # runs must not accumulate a full-size crop per accepted token.
+            with self._document_lock:
+                if self._document_pending:
+                    return False
+                self._document_pending = True
+            try:
+                self.submit(DocumentOcrTask(token, page_index, field_name, image, cancel_event))
+            except Exception:
+                with self._document_lock:
+                    self._document_pending = False
+                raise
+            return True
+        except (RuntimeError, ValueError):
+            return False
+
+    def _recognize_document(self, task):
+        result = {'text': '', 'status': 'cancelled'}
+        try:
+            if not task.cancel_event.is_set():
+                if not self._engine.is_ready():
+                    raise RuntimeError('辨識引擎尚未就緒，請稍後重試。')
+                result = dict(self._engine.run_ocr(task.image, 'screen'))
+                if task.cancel_event.is_set():
+                    result = {'text': '', 'status': 'cancelled'}
+        except Exception as exc:  # noqa: BLE001 - native inference errors become controlled transient results
+            # No source paths or recognized text are written to the log here.
+            logger.warning('文件欄位辨識未完成 (%s)', type(exc).__name__)
+            result = {'text': '', 'status': 'failed', 'error': '此欄位未能辨識，請重新辨識或手動修正。'}
+        finally:
+            # QueueWorker's generator retains the last task while idle. Release
+            # the only transferred crop explicitly instead of retaining its pixels.
+            task.image = None
+            with self._document_lock:
+                self._document_pending = False
+        self.document_ocr_done.emit(task.token, task.page_index, task.field_name, result)
+        self.ocr_progress.emit(100, '文件欄位辨識完成')
+
     def run(self):
         self.engine_loading.emit()
         try:
@@ -68,7 +143,11 @@ class OcrWorker(QueueWorker):
         except Exception as exc:
             logger.exception('OCR 引擎載入失敗')
             self.engine_failed.emit(str(exc))
-        for item_id, image_path, mode, clipboard_epoch, job_id, revision in self.tasks():
+        for task in self.tasks():
+            if isinstance(task, DocumentOcrTask):
+                self._recognize_document(task)
+                continue
+            item_id, image_path, mode, clipboard_epoch, job_id, revision = task
             try:
                 if not self._engine.is_ready():
                     raise RuntimeError('OCR 引擎未就緒')

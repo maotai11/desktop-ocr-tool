@@ -201,6 +201,8 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
            '--runtime-hook', str(paths['version_hook']),
            '--copy-metadata', 'rapidocr-onnxruntime',
            '--copy-metadata', 'onnxruntime', '--collect-binaries', 'onnxruntime',
+           '--copy-metadata', 'pypdfium2', '--collect-binaries', 'pypdfium2_raw',
+           '--collect-data', 'pypdfium2_raw', '--hidden-import', 'pypdfium2',
            '--collect-all', 'zhconv', '--collect-all', 'cv2',
            '--hidden-import', 'PySide6.QtCore', '--hidden-import', 'PySide6.QtGui',
            '--hidden-import', 'PySide6.QtWidgets', '--hidden-import', 'mss.windows',

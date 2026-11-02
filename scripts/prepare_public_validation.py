@@ -23,7 +23,7 @@ MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'build', 'firewall', 'portable_profile', 'bundle_verify')
+    'source_handwriting', 'source_image', 'source_documents', 'build', 'firewall', 'portable_profile', 'bundle_verify')
 WINDOWS_ONLY = {'build', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
@@ -33,7 +33,9 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'executable_outbound_blocked firewall_service_running firewall_profiles_enabled started '
     'timed_out output_limit_exceeded direct_child_reaped owned_tree_exited '
     'implicit_pytest_addopts_cleared qt models ocr database dirty verified phase_a engine_ready shutdown_clean capture hotkeys '
-    'profile_empty copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked').split())
+    'profile_empty copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
+    'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
+    'temporary_files_cleaned ocr_accuracy_tested model_inference_tested').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
     'wall_seconds timeout_seconds memory_limit_mib peak_sampled_direct_child_rss_kib '
@@ -46,7 +48,9 @@ COMMITS = {'commit', 'source_commit', 'head_tree', 'source_tree', 'upstream_comm
 ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
-              'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile'},
+              'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
+              'document_template_lifecycle'},
+    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES'},
     'phase': {'completed', 'waiting_firewall', 'starting', 'shutdown'},
     'status': {'PASSED', 'FAILED', 'NOT_RUN', 'RECORDED_NOT_A_TRUSTED_LOCK'},
     'source_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
@@ -247,7 +251,9 @@ def observed_result(value):
     if any(r.get('invalid_allowlisted_fields') for r in records): return 'INVALID_FIELDS'
     failed = any(r.get('passed') is False or any(r.get(k) is True for k in ('timed_out','output_limit_exceeded','nonpublic_error_present')) or (type(r.get('exit_code')) is int and r['exit_code'] != 0) or any(r.get(k, 0) > 0 for k in
         ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count')) or
-        (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in ('qt','models','ocr','database')))
+        (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
+            ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
+             'page_override','template_merge','source_unchanged','temporary_files_cleaned')))
         for r in records)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'
@@ -259,6 +265,8 @@ def sources():
     result = [('test-results.xml', 'xml', False),
         ('source-selftest.json', 'json', False), ('source-app-smoke.json', 'json', False),
         ('source-handwriting.json', 'json', False), ('source-handwriting-image.json', 'json', False),
+        ('artifacts/source-documents.json', 'json', False),
+        ('artifacts/document-validation/frozen-documents.json', 'json', True),
         ('artifacts/pytest-bounds.json', 'json', False),
         ('artifacts/pytest-collection.stdout.log', 'hash', False),
         ('artifacts/pytest-collection.stderr.log', 'hash', False),
@@ -289,6 +297,8 @@ def source_step(relative):
     fixed = {'test-results.xml':'tests', 'source-selftest.json':'source_selftest',
         'source-app-smoke.json':'source_app', 'source-handwriting.json':'source_handwriting',
         'source-handwriting-image.json':'source_image',
+        'artifacts/source-documents.json':'source_documents',
+        'artifacts/document-validation/frozen-documents.json':'firewall',
         'artifacts/dependency-inventory.json':'installed_inventory',
         'artifacts/handwriting-native-probe.json':'helper_probe',
         'artifacts/verified-bundle.json':'bundle_verify'}

@@ -22,6 +22,7 @@ def run(argv=None):
     mode.add_argument("--stress-ocr", metavar="REPORT", help="repeated real-model payload probe")
     mode.add_argument("--self-test-handwriting-image", metavar="REPORT", help="bundled manual raster helper lifecycle probe")
     mode.add_argument("--self-test-handwriting", metavar="REPORT", help="bundled handwriting lifecycle probe")
+    mode.add_argument("--self-test-documents", metavar="REPORT", help="offline PDF/image and template payload probe")
     parser.add_argument('--wait-for-firewall', action='store_true', help='handwriting probe runner handshake only')
     parser.add_argument("--stress-iterations", type=int, default=500)
     args = parser.parse_args(argv)
@@ -34,6 +35,9 @@ def run(argv=None):
     if args.self_test_handwriting is not None:
         from src.handwriting_probe import run_handwriting_probe
         return run_handwriting_probe(os.path.abspath(args.self_test_handwriting), args.wait_for_firewall)
+    if args.self_test_documents is not None:
+        from src.document_probe import run_document_probe
+        return run_document_probe(os.path.abspath(args.self_test_documents))
     if args.self_test is not None:
         from src.self_test import run_self_test
         return run_self_test(os.path.abspath(args.self_test))

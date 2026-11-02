@@ -70,6 +70,8 @@ jobs:
         run: python src/main.py --self-test-handwriting source-handwriting.json
       - id: source_image
         run: python src/main.py --self-test-handwriting-image source-handwriting-image.json
+      - id: source_documents
+        run: python src/main.py --self-test-documents artifacts/source-documents.json
       - if: runner.os == 'Windows'
         id: build
         run: python scripts/build.py
@@ -87,6 +89,24 @@ jobs:
           try {
             & ./scripts/validate_windows_bundle.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
             if ($LASTEXITCODE -ne 0) { throw 'Outbound-blocked frozen candidate gate failed' }
+            $docDirectory = New-Item -ItemType Directory -Force -Path artifacts/document-validation
+            $docReport = Join-Path $docDirectory.FullName 'frozen-documents.json'
+            if (Test-Path -LiteralPath $docReport) { Remove-Item -LiteralPath $docReport }
+            $docProcess = Start-Process -FilePath $exe -ArgumentList @('--self-test-documents', "`"$docReport`"") -PassThru
+            try {
+              if (-not $docProcess.WaitForExit(180000)) {
+                $docProcess.Kill($true)
+                throw 'Frozen PDF/image template probe timed out'
+              }
+              if ($docProcess.ExitCode -ne 0) { throw 'Frozen PDF/image template probe failed' }
+              $doc = Get-Content -LiteralPath $docReport -Raw -Encoding UTF8 | ConvertFrom-Json
+              if (-not $doc.passed -or -not $doc.frozen -or $doc.probe -cne 'document_template_lifecycle' -or
+                  $doc.version -cne $manifest.version -or $doc.executable_sha256 -cne $manifest.executable_sha256) {
+                throw 'Frozen PDF/image template probe identity differs from candidate'
+              }
+            } finally {
+              $docProcess.Dispose()
+            }
             & ./scripts/validate_handwriting_firewall.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
             if ($LASTEXITCODE -ne 0) { throw 'Outer/helper outbound-blocked handwriting gate failed' }
             $stressReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-runtime-stress.json'
