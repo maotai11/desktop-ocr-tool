@@ -2,6 +2,8 @@
 import logging
 import hashlib
 import time
+from ..runtime_policy import configure_runtime
+configure_runtime()
 import cv2
 import numpy as np
 from .postprocessor import sort_boxes_and_merge
@@ -82,7 +84,9 @@ class OcrEngine:
         from importlib.metadata import version
         manifest = verified_model_manifest(profile=self.model_profile)
         from rapidocr_onnxruntime import RapidOCR
-        engine = RapidOCR(**{f'{key}_model_path': info['absolute_path']
+        from .session_options import non_spinning_sessions
+        with non_spinning_sessions():
+            engine = RapidOCR(**{f'{key}_model_path': info['absolute_path']
                                   for key, info in manifest.items()},
                                 intra_op_num_threads=2, inter_op_num_threads=1,
                                 rec_batch_num=1, rec_img_shape=[3, 48, 320])

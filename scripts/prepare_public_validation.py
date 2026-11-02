@@ -20,12 +20,12 @@ OUTPUT = 'artifacts/public-validation'
 VERSION = '1.8.0-rc.5'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
-STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'wheels', 'wheel_inventory',
+STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
-    'helper_build', 'helper_probe', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'source_documents', 'build', 'firewall', 'portable_profile', 'bundle_verify')
+    'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
+    'source_handwriting', 'source_image', 'source_documents', 'network_audit', 'build', 'firewall', 'portable_profile', 'bundle_verify')
 WINDOWS_ONLY = {'build', 'firewall', 'portable_profile', 'bundle_verify'}
-LINUX_ONLY = {'linux_dependencies'}
+LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
 BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed worker_pid_verified '
     'job_assigned cancelled_and_reaped children_reaped queue_latest_only clipboard_roundtrip '
@@ -35,21 +35,24 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'implicit_pytest_addopts_cleared qt models ocr database dirty verified phase_a engine_ready shutdown_clean capture hotkeys '
     'profile_empty copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
     'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
-    'temporary_files_cleaned ocr_accuracy_tested model_inference_tested').split())
+    'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
     'wall_seconds timeout_seconds memory_limit_mib peak_sampled_direct_child_rss_kib '
     'rss_sampling_ms unexpected_children_at_test_exit collected executable_bytes bundle_bytes '
-    'size_bytes label_count model_size_bytes source_size_bytes stdout_bytes character_count output_classes').split())
+    'size_bytes label_count model_size_bytes source_size_bytes stdout_bytes character_count output_classes packages_count vulnerabilities_count internet_family_calls cases_completed cases_passed').split())
 HASHES = frozenset(('sha256 executable_sha256 bundle_sha256 model_sha256 character_sha256 '
     'helper_sha256 helper_source_sha256 alphabet_sha256 validation_sha256 '
-    'source_manifest_sha256 report_sha256 working_tree_sha256 decoder_sha256').split())
+    'source_manifest_sha256 report_sha256 working_tree_sha256 decoder_sha256 dependency_inventory_sha256').split())
 COMMITS = {'commit', 'source_commit', 'head_tree', 'source_tree', 'upstream_commit'}
 ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle'},
+              'document_template_lifecycle', 'dependency_vulnerabilities', 'runtime_network'},
+    'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
+    'scanner': {'pip-audit'},
+    'scanner_version': {'2.10.1'},
     'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES'},
     'phase': {'completed', 'waiting_firewall', 'starting', 'shutdown'},
     'status': {'PASSED', 'FAILED', 'NOT_RUN', 'RECORDED_NOT_A_TRUSTED_LOCK'},
@@ -250,7 +253,7 @@ def observed_result(value):
     visit(value)
     if any(r.get('invalid_allowlisted_fields') for r in records): return 'INVALID_FIELDS'
     failed = any(r.get('passed') is False or any(r.get(k) is True for k in ('timed_out','output_limit_exceeded','nonpublic_error_present')) or (type(r.get('exit_code')) is int and r['exit_code'] != 0) or any(r.get(k, 0) > 0 for k in
-        ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count')) or
+        ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls')) or
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
              'page_override','template_merge','source_unchanged','temporary_files_cleaned')))
@@ -266,6 +269,8 @@ def sources():
         ('source-selftest.json', 'json', False), ('source-app-smoke.json', 'json', False),
         ('source-handwriting.json', 'json', False), ('source-handwriting-image.json', 'json', False),
         ('artifacts/source-documents.json', 'json', False),
+        ('artifacts/security-audit.json', 'json', False),
+        ('artifacts/runtime-network-audit.json', 'json', False),
         ('artifacts/document-validation/frozen-documents.json', 'json', True),
         ('artifacts/pytest-bounds.json', 'json', False),
         ('artifacts/pytest-collection.stdout.log', 'hash', False),
@@ -298,6 +303,8 @@ def source_step(relative):
         'source-app-smoke.json':'source_app', 'source-handwriting.json':'source_handwriting',
         'source-handwriting-image.json':'source_image',
         'artifacts/source-documents.json':'source_documents',
+        'artifacts/security-audit.json':'security_audit',
+        'artifacts/runtime-network-audit.json':'network_audit',
         'artifacts/document-validation/frozen-documents.json':'firewall',
         'artifacts/dependency-inventory.json':'installed_inventory',
         'artifacts/handwriting-native-probe.json':'helper_probe',
@@ -334,6 +341,8 @@ def export(root, commit, platform, step_data, job_status):
         record, raw = fingerprint(root, relative, maximum, read=kind in ('xml', 'json'))
         record['expected_on_platform'] = not windows or platform == 'Windows'
         record['source_step'] = source_step(relative)
+        if platform == 'Windows' and record['source_step'] in LINUX_ONLY:
+            record['expected_on_platform'] = False
         record['step_outcome'] = report['steps'][record['source_step']]['outcome']
         if raw is not None:
             try:

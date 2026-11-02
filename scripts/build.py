@@ -33,6 +33,7 @@ RELEASE_DOCUMENTATION = {
     "OFFLINE_README.txt": "docs/OFFLINE_README.txt",
     "README.txt": "docs/OFFLINE_README.txt",
     "docs/DOCUMENT_TEMPLATE.md": "docs/DOCUMENT_TEMPLATE.md",
+    "docs/SECURITY_REVIEW.md": "docs/SECURITY_REVIEW.md",
     "docs/ui/floating-window.png": "docs/ui/floating-window.png",
     "docs/ui/ocr-selection.png": "docs/ui/ocr-selection.png",
     "docs/ui/copy-settings.png": "docs/ui/copy-settings.png",
@@ -218,7 +219,8 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
            '--copy-metadata', 'onnxruntime', '--collect-binaries', 'onnxruntime',
            '--copy-metadata', 'pypdfium2', '--collect-binaries', 'pypdfium2_raw',
            '--collect-data', 'pypdfium2_raw', '--hidden-import', 'pypdfium2',
-           '--collect-all', 'zhconv', '--collect-all', 'cv2',
+           '--collect-all', 'zhconv', '--copy-metadata', 'opencv-python', '--copy-metadata', 'pillow',
+           '--additional-hooks-dir', str(root/'scripts/pyinstaller_hooks'),
            '--hidden-import', 'PySide6.QtCore', '--hidden-import', 'PySide6.QtGui',
            '--hidden-import', 'PySide6.QtWidgets', '--hidden-import', 'mss.windows',
            '--distpath', str(paths['dist_dir']), '--workpath', str(paths['build_dir']),
@@ -230,7 +232,7 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
         cmd += ['--add-data', f'{source}{os.pathsep}{destination}']
     cmd += ['--add-binary', f'{root / HELPER_PATH}{os.pathsep}{Path(HELPER_PATH).parent}']
     for name in ('paddle', 'paddleocr', 'paddlex', 'torch', 'torchvision', 'cnocr',
-                 'cnstd', 'pytest', 'IPython', 'matplotlib', 'tkinter'):
+                 'cnstd', 'pytest', 'IPython', 'matplotlib', 'tkinter', 'pip'):
         cmd += ['--exclude-module', name]
     cmd.append(str(root/'src/main.py'))
     return cmd

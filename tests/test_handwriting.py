@@ -137,6 +137,43 @@ def test_controller_one_active_one_replaceable_pending(qtbot, fake_controller):
     assert first < second < third
     assert results[0][0] == third
     assert tuple(item.label for item in results[0][1]) == ('臺',)
+    qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)
+
+
+def test_cancel_current_reaps_old_work_and_accepts_immediate_new_request(qtbot, fake_controller):
+    controller = fake_controller()
+    results, failures = [], []
+    controller.candidates.connect(lambda *args: results.append(args))
+    controller.failed.connect(failures.append)
+    first = controller.submit((((1, 1),),))
+    qtbot.waitUntil(lambda: controller._active is not None)
+    controller.cancel_current()
+    latest = controller.submit((((2, 2),),))
+    qtbot.waitUntil(lambda: bool(results), timeout=3000)
+    qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)
+    assert latest > first and [row[0] for row in results] == [latest]
+    assert not failures
+    assert controller._active is None and controller._pending is None
+    assert not controller._deadline.isActive() and not controller._stop_timer.isActive()
+
+
+def test_reentrant_result_request_and_close_reopen_leave_no_idle_helper(qtbot, fake_controller):
+    controller = fake_controller()
+    results, failures = [], []
+    controller.failed.connect(failures.append)
+    def receive(generation, values):
+        results.append((generation, values))
+        if len(results) == 1:
+            controller.submit((((2, 2),),))
+    controller.candidates.connect(receive)
+    controller.submit((((1, 1),),))
+    qtbot.waitUntil(lambda: len(results) == 2 and controller.is_stopped, timeout=4000)
+    controller.submit((((3, 3),),))
+    controller.stop()
+    controller.resume()
+    newest = controller.submit((((4, 4),),))
+    qtbot.waitUntil(lambda: len(results) == 3 and controller.is_stopped, timeout=4000)
+    assert results[-1][0] == newest and not failures
 
 
 def test_failed_start_during_immediate_shutdown_releases_owner(qtbot, tmp_path):

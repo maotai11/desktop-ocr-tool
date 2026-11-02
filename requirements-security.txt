@@ -1,0 +1,3 @@
+# Build-only isolated scanner; not installed into the application environment.
+pip==26.2.2
+pip-audit==2.10.1

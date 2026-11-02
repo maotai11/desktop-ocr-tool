@@ -57,6 +57,14 @@ def document_probe(version, executable_hash, frozen=True):
 
 
 def extra_evidence(root, manifest):
+    inventory = json.dumps({'installed': {'pillow': '13.0.0', 'pip': '26.2.2'}}).encode()
+    (root / 'artifacts/dependency-inventory.json').write_bytes(inventory)
+    audit = dict(schema=1, probe='dependency_vulnerabilities', passed=True,
+        source_commit=manifest['source']['commit'], scope='PYTHON_INSTALLED_DISTRIBUTIONS',
+        scanner='pip-audit', scanner_version='2.10.1', packages_count=2,
+        vulnerabilities_count=0, findings=[],
+        dependency_inventory_sha256=hashlib.sha256(inventory).hexdigest())
+    (root / 'artifacts/security-audit.json').write_text(json.dumps(audit), encoding='utf-8')
     firewall = root / 'artifacts/firewall-validation'
     report = probe(manifest['version'], manifest['executable_sha256'])
     source = probe(manifest['version'], manifest['executable_sha256'], frozen=False)

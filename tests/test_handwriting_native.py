@@ -14,22 +14,27 @@ def test_real_helper_candidates_latest_queue_and_normal_stop(qtbot):
     assets = verified_assets()
     fixtures = json.loads((resource_root() / 'models/handwriting/validation.json').read_text(encoding='utf-8'))['cases']
     controller = HandwritingController(assets=assets)
-    results, failures = [], []
-    controller.candidates.connect(lambda *args: results.append(args))
+    results, failures, owned_results = [], [], []
+    def receive(*args):
+        owned_results.append(sys.platform != 'win32' or bool(controller._job and controller._job.handle))
+        results.append(args)
+    controller.candidates.connect(receive)
     controller.failed.connect(failures.append)
     try:
         first = controller.submit(fixtures[9]['strokes'])
         qtbot.waitUntil(lambda: bool(results) or bool(failures), timeout=12000)
         assert not failures
         assert results[0][0] == first and results[0][1][0].label == fixtures[9]['label']
-        if sys.platform == 'win32':
-            assert controller._job.handle is not None
+        assert owned_results[0]
+        qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)
         controller.submit(fixtures[0]['strokes'])
         controller.submit(fixtures[1]['strokes'])
         latest = controller.submit(fixtures[9]['strokes'])
         qtbot.waitUntil(lambda: len(results) == 2 or bool(failures), timeout=5000)
         assert not failures
         assert results[-1][0] == latest and results[-1][1][0].label == fixtures[9]['label']
+        assert all(owned_results)
+        qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)
     finally:
         controller.stop()
         qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)

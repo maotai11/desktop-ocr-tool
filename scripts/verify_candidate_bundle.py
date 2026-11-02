@@ -338,6 +338,9 @@ def inspect_frozen_payload(path, model_profiles, source_files=None, validation_f
     if 'rapidocr_onnxruntime/config.yaml' not in names:
         raise ValueError('Frozen RapidOCR runtime config absent')
     lower = [name.lower() for name in names]
+    unused_media = ('ffmpeg', 'avcodec', 'avformat', 'avutil', 'swscale', 'swresample', 'openexr', 'ilmimf')
+    if any(value.endswith(('.dll', '.pyd')) and any(word in value for word in unused_media) for value in lower):
+        raise ValueError('Unneeded video or legacy OpenEXR library in offline OCR payload')
     required = ('python312.dll', 'qwindows.dll', 'onnxruntime_pybind11_state.pyd')
     for name in required:
         if not any(value.endswith('/' + name) or value == name for value in lower):

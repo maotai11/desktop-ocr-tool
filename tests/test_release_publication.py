@@ -684,6 +684,29 @@ def test_public_staging_cli_never_constructs_network_client(candidate, tmp_path,
     assert (tmp_path/'cli-public'/publisher.ZIP_NAME).is_file()
 
 
+@pytest.mark.parametrize('defect', ['missing', 'failed', 'wrong_source', 'inventory_hash',
+    'vulnerable', 'findings', 'wrong_count', 'schema_bool', 'scanner', 'error'])
+def test_security_audit_must_be_complete_clean_and_match_candidate(candidate, tmp_path, defect):
+    root, report_path, _, _, _ = candidate
+    path = root / 'artifacts/security-audit.json'
+    value = json.loads(path.read_bytes())
+    if defect == 'missing':
+        path.unlink()
+    else:
+        if defect == 'failed': value['passed'] = False
+        elif defect == 'wrong_source': value['source_commit'] = '0' * 40
+        elif defect == 'inventory_hash': value['dependency_inventory_sha256'] = '0' * 64
+        elif defect == 'vulnerable': value['vulnerabilities_count'] = 1
+        elif defect == 'findings': value['findings'] = [{'id': 'CVE-TEST'}]
+        elif defect == 'wrong_count': value['packages_count'] += 1
+        elif defect == 'schema_bool': value['schema'] = True
+        elif defect == 'scanner': value['scanner_version'] = 'old'
+        elif defect == 'error': value['error_code'] = 'INCOMPLETE'
+        path.write_text(json.dumps(value))
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, report_path, tmp_path / 'rejected-security', CONTEXT)
+
+
 @pytest.mark.parametrize('defect', ['missing', 'path_isolated', 'profile_empty',
     'copied_executable_only', 'python_env_cleared', 'qt_env_cleared',
     'outer_network_blocked', 'clean_machine_verified', 'stale_executable',

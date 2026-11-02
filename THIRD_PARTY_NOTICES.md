@@ -1,5 +1,11 @@
 # Third-party model notices
 
+## Image processing runtime
+
+- Pillow 13.0.0: HPND / Pillow license; https://github.com/python-pillow/Pillow . Its upstream license metadata is included with the frozen application.
+- opencv-python 5.0.0.93: OpenCV (Apache-2.0) plus wheel packaging/dependency notices; https://github.com/opencv/opencv-python . The build copies its distribution license metadata. This release uses a wheel with OpenEXR disabled and excludes optional FFmpeg video DLLs; still-image OCR does not require them.
+- These concrete notices and the Python vulnerability scan do not constitute a complete third-party license or native-library CVE audit. See docs/SECURITY_REVIEW.md for the tested scope.
+
 ## Offline PDF rendering
 
 - Document-template OCR uses pypdfium2 5.14.0 and its bundled PDFium library; no external PDF reader, Poppler installation or runtime download is used.
