@@ -1,30 +1,49 @@
 # InkPick 拾字筆
 
-> 開發分支 `feat/document-template-ocr` 新增「文件套版」：匯入 PDF／圖片，框選命名欄位後套用文字模板，複製或輸出 TXT。操作方式見 [文件套版說明](docs/DOCUMENT_TEMPLATE.md)。此功能尚未合併或發布；下方 rc.3 下載不包含這項新功能。
+Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可框選螢幕辨識文字、手寫單字找候選，也能匯入 PDF／圖片，把固定位置的欄位逐頁填入文字模板，最後複製或匯出 TXT。
 
-Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。框選圖片文字後即可複製，也能手寫單字找候選、保留本機歷史及匯出紀錄。
-
-本版為 **1.8.0-rc.3 候選版**，延續 rc.2 的手寫與封裝修正，新增精簡浮動窗、可設定的 OCR 選取複製及檔案位置選單。EXE 包含 Python、Qt、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、Windows 手寫語言套件，也不需連線下載模型。
+本版為 **1.8.0-rc.4 候選版**，新增「文件套版」，保留 rc.3 的螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
 
 ## 下載與第一次執行
 
-從 [v1.8.0-rc.3 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.3) 下載：
+從 [v1.8.0-rc.4 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.4) 下載：
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.3.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3.zip) | 建議使用。包含 EXE、授權與手寫模型來源；操作說明另列於下方 |
-| [InkPick-v1.8.0-rc.3.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3.exe) | 同版單一執行檔；模型與執行環境已包在裡面 |
-| [InkPick-v1.8.0-rc.3-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.3/InkPick-v1.8.0-rc.3-README.txt) | 離線操作說明，請與 ZIP 一起帶到使用電腦 |
-| InkPick-v1.8.0-rc.3-SHA256SUMS.txt | 核對 EXE 與 ZIP 的 SHA256 |
-| InkPick-v1.8.0-rc.3-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
+| [InkPick-v1.8.0-rc.4.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.4/InkPick-v1.8.0-rc.4.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.4.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.4/InkPick-v1.8.0-rc.4.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.4-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.4/InkPick-v1.8.0-rc.4-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
+| InkPick-v1.8.0-rc.4-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
+| InkPick-v1.8.0-rc.4-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 
 1. 在可上網的電腦下載 ZIP，再用隨身碟帶到離線電腦。
 2. 解壓到自己有寫入權限的資料夾，例如 `D:\Tools\InkPick`。不要直接從 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 `InkPick-v1.8.0-rc.3.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
+3. 執行 `InkPick-v1.8.0-rc.4.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
 4. 首次開啟會解開內含資源並載入模型。浮動窗顯示「可擷取文字」後，即可使用。
 5. 結束程式請用系統匣的結束選項，讓尚未完成的辨識與儲存先結束。
 
-核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.3.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。
+核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.4.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+
+## 文件套版：PDF／圖片逐頁填入文字
+
+適合同一版型的通知單、表格或掃描圖片。例如每頁都要取出姓名與金額，組成固定文字：
+
+1. 點浮動窗「文件套版」，或從系統匣選「文件套版（PDF／圖片）」。
+2. 點「匯入 PDF／圖片」。預設**每個檔案上限 100 MB**，可在視窗調整為 1–1024 MB；可一次選多個檔案。
+3. 在第一頁的「框選欄位」分頁選「辨識1」，拖曳框出第一段文字；按「新增欄位」建立「辨識2」，再框第二段。
+4. 切到「文字模板」，輸入 `文字｛辨識1}文字測試{辨識2}`。也可把欄位改名為「姓名」「金額」，按「重新命名」後使用 `{姓名}`、`{金額}`；模板中的舊名稱會同步更新。
+5. 按「開始辨識」。在「逐頁核對」檢查結果；雙擊欄位或按 F2 可修改文字，包含多行內容。
+6. 檢查「TXT 預覽」，按「複製結果」或「匯出 TXT」。每頁各產生一份文字，頁與頁額外用空行分隔；TXT 使用 UTF-8（含 BOM），可用 Windows 記事本開啟。
+
+若某頁的「辨識1」「辨識2」分別是「王小明」「1,234」，上述模板會輸出 `文字王小明文字測試1,234`。模板的固定文字、標點、空格與換行會保留，不套用螢幕 OCR 的逗號／換行清理。
+
+**後面沒重選，就沿用第一頁。** 第二頁位置不同時，切到第二頁，在「只改這一頁」範圍重新框選需要調整的欄位；第三頁未調整時仍用第一頁的位置。按「此頁套用第一頁」可清除當前頁面的所有例外位置。不同圖片尺寸依頁面比例套用，但不會自動追蹤版面移動的欄位。
+
+支援 PDF、PNG、JPEG、BMP、TIFF、WebP，每批最多 500 頁、32 個命名欄位。一般已填 PDF 表單可顯示內容；加密 PDF 請先解除密碼，XFA 動態表單請先列印或另存為一般 PDF。原始檔只讀，不會自動加入截圖歷史或另存副本。欄位、模板與結果只保留在本次程式執行中，需要留檔請先匯出 TXT。
+
+失敗或尚未完成的欄位會阻止匯出，請先重辨或修正；匯入、辨識、停止與關閉視窗都不會自動複製。更多位置調整、錯誤處理與操作圖見 [文件套版說明](docs/DOCUMENT_TEMPLATE.md)。
+
+![文件套版的文字模板與 TXT 預覽](docs/ui/document-template.png)
 
 ## 從螢幕擷取文字
 
@@ -103,7 +122,7 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。框�
 - 歷史、截圖、附件、匯出與 Log 都是未加密的本機檔案。不要把整份 `data`、`config` 或 `logs` 當成公開錯誤回報附件。
 - OCR 與手寫不需上傳圖片或筆跡。若啟用 Windows／第三方剪貼簿同步，複製內容可能被該服務同步。
 - 逗號、撇號、換行清理預設關閉，只影響複製輸出，不改歷史原文，也不作用於手寫候選原字。例如移除換行後，`甲\n乙` 會複製為 `甲乙`。
-- 新版公開 ZIP 排除原始 JUnit、錯誤堆疊與絕對建置路徑；公開驗證摘要不帶使用者資料夾。Repo 歷史與較早 Release 的檢查結果見 [隱私檢查](docs/PRIVACY_AUDIT.md)。
+- 新版公開 ZIP 排除原始 JUnit、錯誤堆疊與絕對建置路徑；公開驗證摘要不帶使用者資料夾。Repo 歷史與較早 Release 的檢查結果見 [隱私檢查](https://github.com/maotai11/desktop-ocr-tool/blob/master/docs/PRIVACY_AUDIT.md)。
 
 ## 辨識限制與離線驗證範圍
 
@@ -111,7 +130,7 @@ OCR 有 PP-OCRv6 Small／Medium 辨字模型可選，兩者都已內含；Medium
 
 筆畫字庫共 11,853 字，含「龘」，不含「尞、𠮷、𠀋」，也缺少「內、吳、戶、辦、嚐」等常用字。影像補辨使用另一套 OCR 字庫。候選排序與分數不是正確率，不會自動把缺字猜成其他字。
 
-發布檢查對同次 Windows 建置的 EXE 執行 OCR、資料庫、手寫、啟閉與防火牆阻擋對外連線測試，並核對模型、內嵌資源與成品雜湊。獨立資料夾、空白使用者資料與縮減 PATH 的測試用於檢查開發機依賴；仍不等於真實乾淨 Windows 10／11 的現場驗收。真人筆跡、觸控、混合 DPI 與多螢幕仍須實機核對，見 [驗證狀態](docs/VALIDATION_STATUS.md)。
+發布檢查對同次 Windows 建置的 EXE 執行 OCR、資料庫、手寫、PDF／圖片文件、啟閉與防火牆阻擋對外連線測試，並核對模型、PDFium、內嵌資源與成品雜湊。獨立資料夾、空白使用者資料與縮減 PATH 的測試用於檢查開發機依賴；仍不等於真實乾淨 Windows 10／11 的現場驗收。真人筆跡、觸控、混合 DPI 與多螢幕仍須實機核對，見 [驗證狀態](https://github.com/maotai11/desktop-ocr-tool/blob/master/docs/VALIDATION_STATUS.md)。
 
 ## 原始碼開發與建置
 
@@ -135,4 +154,4 @@ python scripts/build.py
 
 模型只在建置時從固定來源下載並核對 SHA256；應用程式不會在首次執行補下載。Linux 無桌面測試可設 `QT_QPA_PLATFORM=offscreen`。
 
-技術文件：[封裝與驗證](PACKAGING_NOTES.md)、[公開驗證摘要](docs/PUBLIC_VALIDATION_METADATA.md)、[第三方授權](THIRD_PARTY_NOTICES.md)、[CHANGELOG](CHANGELOG.md)。
+技術文件：[封裝與驗證](https://github.com/maotai11/desktop-ocr-tool/blob/master/PACKAGING_NOTES.md)、[公開驗證摘要](https://github.com/maotai11/desktop-ocr-tool/blob/master/docs/PUBLIC_VALIDATION_METADATA.md)、[第三方授權](THIRD_PARTY_NOTICES.md)、[CHANGELOG](https://github.com/maotai11/desktop-ocr-tool/blob/master/CHANGELOG.md)。

@@ -26,6 +26,21 @@ from src.core.version import (
     versioned_exe_name,
 )
 
+# Explicit source/destination paths keep the user guide and its relative image
+# links usable offline without promoting unrelated audit material into releases.
+RELEASE_DOCUMENTATION = {
+    "README.md": "README.md",
+    "OFFLINE_README.txt": "docs/OFFLINE_README.txt",
+    "README.txt": "docs/OFFLINE_README.txt",
+    "docs/DOCUMENT_TEMPLATE.md": "docs/DOCUMENT_TEMPLATE.md",
+    "docs/ui/floating-window.png": "docs/ui/floating-window.png",
+    "docs/ui/ocr-selection.png": "docs/ui/ocr-selection.png",
+    "docs/ui/copy-settings.png": "docs/ui/copy-settings.png",
+    "docs/ui/file-locations.png": "docs/ui/file-locations.png",
+    "docs/ui/document-template.png": "docs/ui/document-template.png",
+    "docs/ui/document-fields.png": "docs/ui/document-fields.png",
+}
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -210,7 +225,7 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
            '--specpath', str(paths['artifacts_dir'])]
     for source, destination in bundled_data_files(root):
         cmd += ['--add-data', f'{source}{os.pathsep}{destination}']
-    from scripts.handwriting_bundle import data_files, HELPER_PATH
+    from scripts.handwriting_bundle import HELPER_PATH, data_files
     for source, destination in data_files(root):
         cmd += ['--add-data', f'{source}{os.pathsep}{destination}']
     cmd += ['--add-binary', f'{root / HELPER_PATH}{os.pathsep}{Path(HELPER_PATH).parent}']
@@ -319,55 +334,19 @@ def validate_candidate(paths):
     return reports
 
 
-def write_release_readme(path: Path) -> None:
-    path.write_text(f"""{APP_DISPLAY_NAME} v{APP_VERSION}
-========================================
+def copy_release_documentation(root: Path, release_dir: Path) -> None:
+    """Ship the committed guide byte-for-byte with all six local screenshots.
 
-啟動
-1. Windows 10 1809 以上／Windows 11，64 位元。
-2. 將整份 ZIP 解壓到可寫入的資料夾，再雙擊 {versioned_exe_name()}。
-3. 已內附 Python 執行環境、Qt、兩組 OCR 模型及手寫引擎；目標電腦不需安裝 Python、pip 或語言套件，首次啟動也不下載模型，可斷網使用。
-
-擷取文字與複製模式
-1. 點「擷取文字」或按 Ctrl+Shift+O，再拖曳框選螢幕區域。
-2. 程式只辨識框選內容；預設在辨識完成後自動複製全部文字，直接 Ctrl+V 貼上。
-3. 若只想複製其中一部分，開啟「設定 → 剪貼簿 → 辨識完成後」，改為「先選文字再複製」並儲存，立即生效。
-4. 選字模式的順序是：框選螢幕 → OCR 辨識 → 選擇要複製的文字 → 按「複製」。
-5. 可以在原圖框選／點選文字框、勾選段落，或在預覽反白一小段。按住 Ctrl 拖曳可加選；「全選」可複製整份結果。
-6. 選字模式不會預先改動剪貼簿，取消或關閉選取視窗也不複製；完整結果仍留在歷史。若未保留原圖，仍可勾選文字。
-
-截圖、手寫與歷史
-- 「截圖」會儲存框選圖片；是否同時辨識依設定中的截圖選項。
-- 「手寫」一次寫一個字，再點選候選字複製；可展開更多候選或手動啟動影像補辨，不會直接向其他程式輸入。
-- 點「歷史紀錄」可搜尋、編輯、釘選、刪除及匯出；浮動窗沒有搜尋框，Ctrl+Shift+Q 會直接開啟歷史搜尋。
-- 逗號、撇號與換行的複製清理預設關閉，只改貼上的內容，不改歷史原文。移除換行會接起同一筆的各行。
-
-查看實際留檔與暫存
-浮動窗底部「檔案位置」會顯示目前真正使用的路徑，包含：
-- 截圖：data/captures；標註附件：data/annotations；縮圖：data/thumbnails。
-- 匯出檔案：data/exports；歷史資料：data/app.db 及資料庫暫存檔。
-- 設定檔案：config；執行記錄 (Log)：logs。
-- 程式暫存：這次單檔 EXE 解壓的 _MEI 資源資料夾，正常結束後由執行器清理，執行中請勿刪除。
-一般可攜版的 config/data/logs 在 EXE 旁；使用自訂資料位置或 DESKTOP_OCR_HOME 時，以「檔案位置」顯示為準。歷史與附件不自動到期，Log 每日輪替並最多保留 30 份備份。它們是本機明文檔案。
-
-快捷鍵
-Ctrl+Shift+O      框選文字辨識
-Ctrl+Shift+S      框選截圖
-Ctrl+Shift+F      全螢幕擷取
-Ctrl+Shift+Space  顯示／隱藏浮動窗
-Ctrl+Shift+M      開啟歷史視窗
-Ctrl+Shift+Q      搜尋歷史
-
-從舊版升級
-先關閉舊程式並備份原本的 config/data/logs。將新版 EXE 放回同一個可寫入資料夾，保留原有資料；不要用新版 ZIP 覆蓋自己的資料。若換資料夾，請一併移轉原有 config/data，並更新捷徑與自動啟動路徑。
-
-驗證、授權與限制
-這是候選測試版。公開 ZIP 包含 EXE、授權與手寫模型來源；請另外保存同版 Release 的離線 README.txt，完整圖文說明在儲存庫 README.md。執行前可從同版 SHA256SUMS 核對 EXE/ZIP。validation-metadata.zip 記錄同一次 Windows 建置與離線探針結果，不代表已在你的乾淨電腦、觸控或混合 DPI 環境實測。
-手寫字表含 11,853 字，不含「尞、𠮷、𠀋」；模型筆跡測試不是真人手寫準確率。姓名、金額、日期及帳號請自行核對。
-程式本身不傳送 OCR 圖片或手寫筆跡；若開啟 Windows／第三方雲端剪貼簿，複製內容可能由該服務傳送。
-本版下載與檔案雜湊： https://github.com/maotai11/desktop-ocr-tool/releases/tag/v{APP_VERSION}
-原始碼與最新說明： https://github.com/maotai11/desktop-ocr-tool
-""", encoding="utf-8")
+    The plain text guide is also the source for the standalone Release asset;
+    keeping it committed avoids instructions drifting from the verified build.
+    """
+    for destination, origin in RELEASE_DOCUMENTATION.items():
+        source = root / origin
+        if not source.is_file() or source.is_symlink():
+            raise RuntimeError(f"Missing or redirected release documentation: {origin}")
+        target = release_dir / destination
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def package_release(paths: dict[str, Path], validation_reports=None, source=None) -> None:
@@ -376,7 +355,7 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
     from scripts.handwriting_bundle import identity
     handwriting = identity(ROOT)
     shutil.copy2(paths["out_exe"], paths["release_exe"])
-    write_release_readme(paths["release_dir"] / "README.txt")
+    copy_release_documentation(ROOT, paths["release_dir"])
     from importlib import metadata
     source = source or source_manifest(ROOT)
     source_path = paths['release_dir'] / 'SOURCE_MANIFEST.json'
@@ -404,7 +383,7 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
         manifest['dependency_inventory'] = {'status': 'RECORDED_NOT_A_TRUSTED_LOCK',
                                             'sha256': sha256_file(inventory)}
     (paths['release_dir']/'BUILD_MANIFEST.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
-    for name in ('README.md', 'PACKAGING_NOTES.md', 'SMOKE_TEST_CHECKLIST.md',
+    for name in ('PACKAGING_NOTES.md', 'SMOKE_TEST_CHECKLIST.md',
                  'THIRD_PARTY_NOTICES.md', 'LICENSE-APACHE-2.0.txt'):
         shutil.copy2(ROOT/name, paths['release_dir']/name)
     if (ROOT/'docs/VALIDATION_STATUS.md').exists():

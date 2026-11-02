@@ -107,7 +107,8 @@ def valid_reports(paths):
 @pytest.mark.parametrize('defect', ['none', 'wrong_hash', 'not_frozen', 'wrong_version',
                                   'offscreen', 'model_hash', 'thread_running', 'claimed_clean'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
-    from handwriting_release_fixtures import identity, probe, image_probe
+    from handwriting_release_fixtures import identity, image_probe, probe
+
     from scripts import handwriting_bundle
     monkeypatch.setattr(handwriting_bundle, 'identity', lambda _: identity())
     paths = build.resolve_release_paths(tmp_path)
@@ -181,6 +182,18 @@ def test_package_contains_provenance_and_explicit_remaining_gates(tmp_path, monk
         assert any(name.endswith('/docs/HANDWRITING_IMPROVEMENT_20261015.md') for name in names)
         assert any(name.endswith('/docs/handwriting-evidence/20261015-summary.json') for name in names)
         assert any(name.endswith('/SOURCE_MANIFEST.json') for name in names)
+        prefix = paths['release_dir'].name + '/'
+        offline_guide = (build.ROOT / 'docs/OFFLINE_README.txt').read_bytes()
+        assert archive.read(prefix + 'README.txt') == offline_guide
+        assert archive.read(prefix + 'OFFLINE_README.txt') == offline_guide
+        # Test the finished archive, including Markdown's local screenshot
+        # paths, rather than just the list passed to a copy helper.
+        documentation = ['README.md', 'docs/DOCUMENT_TEMPLATE.md', *(
+            'docs/ui/' + name + '.png' for name in (
+                'floating-window', 'ocr-selection', 'copy-settings',
+                'file-locations', 'document-template', 'document-fields'))]
+        for name in documentation:
+            assert archive.read(prefix + name) == (build.ROOT / name).read_bytes()
 
 
 def test_atomic_report_does_not_replace_previous_report_on_invalid_values(tmp_path):

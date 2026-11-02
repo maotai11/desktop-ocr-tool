@@ -1,4 +1,4 @@
-"""Same-run transfer of four already verified public assets between CI jobs.
+"""Same-run transfer of five already verified public assets between CI jobs.
 
 Trust boundary: only Actions' same-run artifact download is accepted by the
 workflow. This receipt binds bytes and provenance; it is not a signature and
@@ -15,7 +15,8 @@ TYPES = {'exe': 'application/octet-stream', 'zip': 'application/zip', 'txt': 'te
 
 def expected_assets():
     return {p.EXE_NAME: TYPES['exe'], p.ZIP_NAME: TYPES['zip'],
-            p.CHECKSUM_NAME: TYPES['txt'], p.METADATA_NAME: TYPES['zip']}
+            p.CHECKSUM_NAME: TYPES['txt'], p.METADATA_NAME: TYPES['zip'],
+            p.README_NAME: TYPES['txt']}
 
 
 def write_receipt(prepared):
@@ -56,7 +57,8 @@ def load_prepared(root, context):
     assets = []
     for name, kind in expected.items():
         record = records[name]
-        maximum = 4096 if name == p.CHECKSUM_NAME else (p.MAX_JSON_BYTES if name == p.METADATA_NAME else 800*1024*1024)
+        maximum = (4096 if name == p.CHECKSUM_NAME else p.MAX_GUIDE_BYTES if name == p.README_NAME
+                   else p.MAX_JSON_BYTES if name == p.METADATA_NAME else 800*1024*1024)
         p.require(isinstance(record, dict) and set(record) == {'bytes','sha256'}
                   and type(record['bytes']) is int and 0 < record['bytes'] <= maximum
                   and isinstance(record['sha256'], str) and p.SHA256_RE.fullmatch(record['sha256']) is not None,
@@ -67,6 +69,7 @@ def load_prepared(root, context):
         p.require(asset.sha256 == record['sha256'], 'Changed public asset hash')
         assets.append(asset)
     by_name = {a.name:a for a in assets}
-    expected_sums = ''.join(f'{by_name[name].sha256}  {name}\n' for name in (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME))
+    expected_sums = ''.join(f'{by_name[name].sha256}  {name}\n' for name in
+                            (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME,p.README_NAME))
     p.require((root / p.CHECKSUM_NAME).read_bytes() == expected_sums.encode('ascii'), 'Public checksum mismatch')
     return p.PreparedRelease(context, tuple(assets), p.release_notes(context, tuple(assets)))

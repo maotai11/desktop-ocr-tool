@@ -38,7 +38,7 @@ def test_exact_marked_push_is_the_only_runtime_entry(runner):
 @pytest.mark.parametrize("field,value", [
     ("GITHUB_ACTIONS", "false"), ("GITHUB_EVENT_NAME", "pull_request"),
     ("GITHUB_EVENT_NAME", "workflow_dispatch"), ("GITHUB_REPOSITORY", "attacker/desktop-ocr-tool"),
-    ("GITHUB_REF", "refs/heads/master"), ("GITHUB_REF", "refs/heads/fix/ocr-model-upgrade"),
+    ("GITHUB_REF", "refs/heads/feat/document-template-ocr"), ("GITHUB_REF", "refs/heads/fix/ocr-model-upgrade"),
     ("GITHUB_SHA", "bad"),
     ("GITHUB_RUN_ID", ""), ("GITHUB_RUN_ATTEMPT", "0"),
 ])
@@ -63,7 +63,7 @@ def test_publication_marker_must_be_an_exact_head_commit_line(runner, message):
 def test_push_event_and_environment_must_agree(runner, defect):
     env, event, path = runner
     if defect == "repo": event["repository"]["full_name"] = "attacker/repository"
-    if defect == "ref": event["ref"] = "refs/heads/master"
+    if defect == "ref": event["ref"] = "refs/heads/feat/document-template-ocr"
     if defect == "after": event["after"] = "b" * 40
     if defect == "head": event["head_commit"]["id"] = "b" * 40
     if defect == "deleted": event["deleted"] = True
@@ -74,7 +74,8 @@ def test_push_event_and_environment_must_agree(runner, defect):
 
 @pytest.fixture
 def prepared(tmp_path):
-    names = (publisher.EXE_NAME, publisher.ZIP_NAME, publisher.CHECKSUM_NAME, publisher.METADATA_NAME)
+    names = (publisher.EXE_NAME, publisher.ZIP_NAME, publisher.CHECKSUM_NAME, publisher.METADATA_NAME,
+             publisher.README_NAME)
     assets = []
     for name in names:
         path = tmp_path / name
@@ -152,11 +153,11 @@ class FakeGitHub:
         raise AssertionError((method, endpoint, kwargs))
 
 
-def test_new_release_is_draft_until_all_four_digests_are_verified(prepared):
+def test_new_release_is_draft_until_all_five_digests_are_verified(prepared):
     client = FakeGitHub(prepared)
     result = publisher.publish(client, prepared)
     assert result["draft"] is False and result["prerelease"] is True
-    assert client.upload_count == 4
+    assert client.upload_count == 5
     mutations = [(method, endpoint) for method, endpoint, _ in client.calls if method != "GET"]
     assert mutations[0] == ("POST", "/releases")
     assert mutations[-1] == ("PATCH", "/releases/77")
@@ -193,8 +194,8 @@ def test_interrupted_matching_draft_resumes_only_missing_assets(prepared):
     first_id = client.assets[0]["id"]
     client.fail_upload_number = None
     publisher.publish(client, prepared)
-    assert len(client.assets) == 4 and client.assets[0]["id"] == first_id
-    assert client.upload_count == 5
+    assert len(client.assets) == 5 and client.assets[0]["id"] == first_id
+    assert client.upload_count == 6
 
 
 @pytest.mark.parametrize("field,value", [("target_commitish", "b" * 40), ("body", "other notes"),
@@ -357,12 +358,18 @@ def candidate(tmp_path, monkeypatch):
         'handwriting-source/tegaki-zh_TW/handwriting-zh_TW.xml': b'synthetic XML',
         'handwriting-source/tegaki-zh_TW/COPYING-LGPL-2.1.txt': b'synthetic LGPL',
     }
+    from scripts.public_release_bundle import PUBLIC_DOCUMENTATION
+    public_sources.update({name: ('synthetic documentation ' + origin).encode('utf-8')
+                           for name, origin in PUBLIC_DOCUMENTATION.items()})
+    for name in ('OFFLINE_README.txt', 'README.txt'):
+        public_sources[name] = '\ufeff離線使用說明\r\n開啟 EXE 即可使用。\r\n'.encode('utf-8')
     monkeypatch.setattr(handwriting_bundle, 'SOURCE_SHA256', hashlib.sha256(b'synthetic XML').hexdigest())
     monkeypatch.setattr(handwriting_bundle, 'LICENSE_SHA256', hashlib.sha256(b'synthetic LGPL').hexdigest())
     native_files = {name: hashlib.sha256(name.encode()).hexdigest() for name in
                     ('helper.cpp', 'model_and_strokes.h', 'CMakeLists.txt', 'vendor/zinnia/COPYING')}
     public_sources.update({'handwriting-source/zinnia/' + n: n.encode() for n in native_files})
-    origins = {'handwriting-source/MODEL_MANIFEST.json': 'models/handwriting/manifest.json'}
+    origins = {**PUBLIC_DOCUMENTATION,
+               'handwriting-source/MODEL_MANIFEST.json': 'models/handwriting/manifest.json'}
     for name, raw in public_sources.items():
         if '/tegaki-zh_TW/' in name:
             continue
@@ -427,7 +434,8 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     root, report, _, _, _ = candidate
     prepared = publisher.prepare_release(root, report, tmp_path / "upload", CONTEXT)
     assert {asset.name for asset in prepared.assets} == {
-        publisher.EXE_NAME, publisher.ZIP_NAME, publisher.CHECKSUM_NAME, publisher.METADATA_NAME}
+        publisher.EXE_NAME, publisher.ZIP_NAME, publisher.CHECKSUM_NAME, publisher.METADATA_NAME,
+        publisher.README_NAME}
     assert (tmp_path / "upload" / publisher.EXE_NAME).read_bytes() == b"same-exe-fixture"
     with zipfile.ZipFile(tmp_path / "upload" / publisher.ZIP_NAME) as archive:
         prefix = 'release-' + publisher.TAG + '/'
@@ -437,6 +445,12 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
         public_manifest = json.loads(archive.read(prefix + 'PUBLIC_MANIFEST.json'))
         assert public_manifest['original_candidate_sha256'] == publisher.sha256_file(root / 'artifacts' / publisher.ZIP_NAME)
         assert publisher.sha256_file(tmp_path / 'upload' / publisher.ZIP_NAME) != public_manifest['original_candidate_sha256']
+        guide = archive.read(prefix + 'OFFLINE_README.txt')
+        assert guide == archive.read(prefix + 'README.txt')
+        assert guide == (tmp_path / 'upload' / publisher.README_NAME).read_bytes()
+        assert guide.startswith(b'\xef\xbb\xbf')
+        from scripts.public_release_bundle import PUBLIC_DOCUMENTATION
+        assert set(PUBLIC_DOCUMENTATION) <= set(public_manifest['files'])
     sums = (tmp_path / "upload" / publisher.CHECKSUM_NAME).read_text()
     for asset in prepared.assets:
         if asset.name != publisher.CHECKSUM_NAME: assert f"{asset.sha256}  {asset.name}\n" in sums
@@ -455,6 +469,10 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     assert '候選測試版' in prepared.body and '各完成 500 次' in prepared.body
     assert '之後在拾字筆選字或手動複製的文字' in prepared.body
     assert 'Uncertain results do not auto-copy' not in prepared.body
+    assert '100 MB' in prepared.body and '500 頁' in prepared.body and '32 個' in prepared.body
+    assert 'PDFium' in prepared.body and 'XFA' in prepared.body
+    assert '{姓名}' in prepared.body and '{金額}' in prepared.body
+    assert publisher.README_NAME in prepared.body
 
 
 def test_prepared_metadata_assets_are_deterministic(candidate, tmp_path):
@@ -471,7 +489,7 @@ def test_failed_publisher_rerun_reuses_earlier_verified_same_run_artifact(candid
     monkeypatch.setenv('GITHUB_RUN_ATTEMPT', '2')
     context = publisher.RunnerContext(COMMIT, CONTEXT.run_id, '2')
     prepared = publisher.prepare_release(root, report, tmp_path / 'retry-upload', context)
-    assert len(prepared.assets) == 4
+    assert len(prepared.assets) == 5
     assert report.read_bytes() == original
     with zipfile.ZipFile(tmp_path / 'retry-upload' / publisher.METADATA_NAME) as archive:
         saved = json.loads(archive.read('verified-bundle.json'))
@@ -584,11 +602,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.4'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.5'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.3'
+    assert publisher.VERSION == '1.8.0-rc.4'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -596,7 +614,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.4'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.5'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
