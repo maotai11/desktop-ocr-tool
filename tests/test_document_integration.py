@@ -108,6 +108,45 @@ def test_entry_reuses_window_and_refuses_new_work_during_shutdown(document_shell
     assert shell._documents is None and shell._document_controller is None
 
 
+def test_clear_files_resets_window_and_controller_then_reimports_without_old_results(
+        qapp, qtbot, tmp_path, document_shell, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox, QPushButton
+
+    _, window, controller = document_shell
+    first, second = tmp_path / '第一份.png', tmp_path / '下一份.png'
+    _form(first, 'red')
+    _form(second, 'green')
+    before = {path: path.read_bytes() for path in (first, second)}
+    window.import_paths([str(first)])
+    qtbot.waitUntil(lambda: len(controller.pages) == 1 and window._canvas.image_size[0] > 0)
+    window._set_region(Region(0, 0, .5, .5))
+    window._template.setPlainText('客戶：{辨識1}')
+    window._start_recognition()
+    qtbot.waitUntil(lambda: window._output.toPlainText() == '客戶：王小明' and not window._busy)
+    copy_text('保留剪貼簿')
+    monkeypatch.setattr(QMessageBox, 'question', lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+    clear = window.findChild(QPushButton, 'clearDocuments')
+    assert clear is not None and clear.isEnabled()
+    clear.click()
+    qtbot.waitUntil(lambda: not controller.pages and not window._pages and not window._busy)
+    assert window._canvas.image_size == (0, 0)
+    assert window._results == [] and window._output.toPlainText() == ''
+    assert window._layout.field_names == ('辨識1',)
+    assert window._layout.region_for('辨識1', 0) is None
+    assert window._template.toPlainText() == '客戶：{辨識1}'
+    assert not window._recognize_button.isEnabled() and not window._copy_button.isEnabled()
+    assert qapp.clipboard().text() == '保留剪貼簿'
+
+    window.import_paths([str(second)])
+    qtbot.waitUntil(lambda: len(controller.pages) == 1 and window._canvas.image_size[0] > 0)
+    assert not window._recognize_button.isEnabled()
+    window._set_region(Region(0, 0, .5, .5))
+    window._start_recognition()
+    qtbot.waitUntil(lambda: window._output.toPlainText() == '客戶：李小華' and not window._busy)
+    assert qapp.clipboard().text() == '保留剪貼簿'
+    assert all(path.read_bytes() == contents for path, contents in before.items())
+
+
 def test_real_pdf_pages_use_the_bundled_ocr_and_merge_template(
         qapp, qtbot, tmp_path, document_shell):
     import json

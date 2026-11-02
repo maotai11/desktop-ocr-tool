@@ -2,19 +2,26 @@
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMessageBox, QScrollArea, QFrame,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ..clipboard.writer import write_text_to_clipboard
 from ..core.branding import application_icon
 from ..core.version import APP_DISPLAY_NAME
+from ..handwriting.candidates import Candidate
 from ..handwriting.controller import HandwritingController
 from ..handwriting.image_controller import ImageHandwritingController
-from ..handwriting.candidates import Candidate
 from .components.candidate_panel import CandidatePanel
-from .design_system import apply_button, TYPE_TITLE, TYPE_META
-from .theme import _BG, _TEXT_PRI, _TEXT_SEC, _SUCCESS, _ERROR
+from .design_system import TYPE_META, TYPE_TITLE, apply_button
 from .handwriting_pad import HandwritingPad
+from .theme import _BG, _ERROR, _SUCCESS, _TEXT_PRI, _TEXT_SEC
 
 
 class HandwritingWindow(QWidget):
@@ -92,7 +99,13 @@ class HandwritingWindow(QWidget):
         self.candidate_layout = self.candidate_panel.grid
         self.candidate_panel.selected.connect(self._copy)
         self.candidate_panel.expansion_changed.connect(self._expanded)
+        self._reserve_candidate_space()
         layout.addWidget(self.candidate_panel)
+        self._candidate_scroll = QTimer(self)
+        self._candidate_scroll.setSingleShot(True)
+        self._candidate_scroll.setInterval(0)
+        self._candidate_scroll.timeout.connect(self._ensure_candidates_visible)
+        self._candidate_scroll_revision = None
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(350)
@@ -139,11 +152,37 @@ class HandwritingWindow(QWidget):
             '影像補辨會另外用離線 OCR 補充最多兩個候選，仍需人工選字，不能保證補準缺字。')
 
     def _expanded(self, expanded):
+        self._reserve_candidate_space()
         if expanded:
             screen = self.screen()
             available = screen.availableGeometry().height() if screen else 800
             self.resize(self.width(), min(max(self.height(), 720), max(360, available-48)))
-            QTimer.singleShot(0, lambda: self.workspace_scroll.ensureWidgetVisible(self.candidate_panel, 0, 8))
+            self._schedule_candidates_visible()
+
+    def _reserve_candidate_space(self):
+        # Clearing expanded candidates swaps a 220px scroll area for a 108px
+        # empty state and hides the header controls. Without a stable footprint,
+        # the layout immediately gives that space to the pad during mousePress.
+        panel = self.candidate_panel
+        layout = panel.layout()
+        margins = layout.contentsMargins()
+        heading = layout.itemAt(0).layout()
+        header_height = max(heading.sizeHint().height(),
+                            panel.expand_button.sizeHint().height(),
+                            panel.expand_button.minimumHeight())
+        panel.setFixedHeight(margins.top() + header_height + layout.spacing()
+                             + panel.scroll.height() + margins.bottom())
+
+    def _schedule_candidates_visible(self):
+        self._candidate_scroll_revision = self.pad.buffer.revision
+        self._candidate_scroll.start()
+
+    def _ensure_candidates_visible(self):
+        if (self._shutting_down or not self.isVisible() or not self._buttons
+                or self.pad.buffer.active is not None
+                or self._candidate_scroll_revision != self.pad.buffer.revision):
+            return
+        self.workspace_scroll.ensureWidgetVisible(self.candidate_panel, 0, 8)
 
     def _fit_screen(self):
         screen = self.screen()
@@ -154,8 +193,10 @@ class HandwritingWindow(QWidget):
 
     def _clear_candidates(self):
         self.candidate_panel.clear()
+        self._reserve_candidate_space()
 
     def _changed(self):
+        self._candidate_scroll.stop()
         self._cancel_image()
         self._stroke_values = ()
         self._submitted = None
@@ -211,7 +252,7 @@ class HandwritingWindow(QWidget):
             return
         self._stroke_values = tuple(values)
         self.candidate_panel.set_candidates(values, self.pad.buffer.revision)
-        QTimer.singleShot(0, lambda: self.workspace_scroll.ensureWidgetVisible(self.candidate_panel, 0, 4))
+        self._schedule_candidates_visible()
         self._ready_status()
 
     @property
@@ -273,7 +314,7 @@ class HandwritingWindow(QWidget):
                 old.normalized_rank if old else 0, image.image_rank)
         self.candidate_panel.set_candidates(tuple(combined.values()), revision)
         self._set_status('已補入影像候選，請人工選字' if values else '影像未辨出單字，請選筆畫候選或重寫')
-        QTimer.singleShot(0, lambda: self.workspace_scroll.ensureWidgetVisible(self.candidate_panel, 0, 4))
+        self._schedule_candidates_visible()
 
     def _ready_status(self):
         if self._buttons:
@@ -303,10 +344,7 @@ class HandwritingWindow(QWidget):
     def closeEvent(self, event):
         self._debounce.stop()
         self._copy_feedback.stop()
-        self.pad.buffer.cancel()
-        self.pad._mouse_active = False
-        self.pad._touch_id = None
-        self._changed()
+        self.pad.cancel_active_stroke()
         self.controller.stop()
         self.image_controller.stop()
         super().closeEvent(event)
