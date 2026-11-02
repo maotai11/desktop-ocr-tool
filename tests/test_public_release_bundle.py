@@ -179,6 +179,8 @@ def source_inventory():
                    ('THIRD_PARTY_NOTICES.md', 'LICENSE-APACHE-2.0.txt',
                     'models/handwriting/manifest.json', 'native/handwriting/UPSTREAM_MANIFEST.json',
                     'native/handwriting/patches/0001-bound-vertex-tree.patch')})
+    source.update({origin: {'sha256': sha(origin.encode())}
+                   for origin in public.PUBLIC_DOCUMENTATION.values()})
     return identity, source
 
 
@@ -190,8 +192,55 @@ def test_public_selection_uses_committed_inventory_not_archive_names():
     assert 'docs/private.md' not in selected
     assert selected['THIRD_PARTY_NOTICES.md'] == source['THIRD_PARTY_NOTICES.md']['sha256']
     assert 'handwriting-source/zinnia/vendor/zinnia/COPYING' in selected
+    assert selected['OFFLINE_README.txt'] == selected['README.txt'] == source['docs/OFFLINE_README.txt']['sha256']
+    assert all(selected[name] == source[origin]['sha256']
+               for name, origin in public.PUBLIC_DOCUMENTATION.items())
     from scripts.handwriting_bundle import SOURCE_SHA256
     assert selected['handwriting-source/tegaki-zh_TW/handwriting-zh_TW.xml'] == SOURCE_SHA256
+
+
+@pytest.mark.parametrize('origin', sorted(set(public.PUBLIC_DOCUMENTATION.values())))
+def test_each_public_document_requires_its_exact_committed_source(origin):
+    identity, source = source_inventory()
+    del source[origin]
+    with pytest.raises(public.BundleError, match='Missing committed public source'):
+        public.approved_release_files(executable='InkPick.exe', executable_sha256='a'*64,
+                                      identity=identity, source_files=source)
+
+
+@pytest.mark.parametrize('name', sorted(public.PUBLIC_DOCUMENTATION))
+def test_only_explicitly_approved_document_bytes_are_copied(bundle, tmp_path, name):
+    _, members, write, approved, run = bundle
+    raw = ('synthetic public documentation ' + name).encode()
+    members['release/' + name] = raw
+    members['release/docs/private-notes.md'] = b'PRIVATE_MACHINE_PATH'
+    write()
+    approved[name] = sha(raw)
+    run()
+    with zipfile.ZipFile(tmp_path/'public.zip') as archive:
+        assert archive.read('release/' + name) == raw
+        assert 'release/docs/private-notes.md' not in archive.namelist()
+
+
+@pytest.mark.parametrize('name', ['docs/DOCUMENT_TEMPLATE.md', 'OFFLINE_README.txt',
+                                 'README.txt', 'docs/ui/document-template.png'])
+def test_tampered_approved_document_is_refused(bundle, tmp_path, name):
+    _, members, write, approved, run = bundle
+    approved[name] = sha(b'reviewed content')
+    members['release/' + name] = b'changed content'
+    write()
+    with pytest.raises(public.BundleError, match='Approved member content mismatch'):
+        run()
+    assert not (tmp_path/'public.zip').exists()
+
+
+@pytest.mark.parametrize('name', ['DOCS/DOCUMENT_TEMPLATE.md', 'docs/document_template.md',
+                                 'nested/docs/DOCUMENT_TEMPLATE.md', 'docs/ui/private.png'])
+def test_public_document_exceptions_do_not_allow_case_aliases_or_extra_docs(bundle, name):
+    _, _, _, approved, run = bundle
+    approved[name] = sha(b'arbitrary documentation')
+    with pytest.raises(public.BundleError, match='Private report'):
+        run()
 
 
 @pytest.mark.parametrize('defect', ['missing_license', 'changed_native', 'unknown_native', 'missing_helper'])

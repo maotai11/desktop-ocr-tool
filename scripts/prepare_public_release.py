@@ -1,14 +1,24 @@
-"""Prepare same-run public files locally. No GitHub client or token access."""
+"""Prepare verified EXE, portable ZIP, offline guide and validation assets.
+
+All public files come from the same verified build. No GitHub client or token
+access is needed here; the receipt binds the guide alongside the executable.
+"""
 from __future__ import annotations
+
 import argparse
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.publish_prerelease import (COMMIT_RE, REPOSITORY, RunnerContext,
-                                        prepare_release, require)
+from scripts.publish_prerelease import (
+    COMMIT_RE,
+    REPOSITORY,
+    RunnerContext,
+    prepare_release,
+    require,
+)
 
 
 def main(argv=None):

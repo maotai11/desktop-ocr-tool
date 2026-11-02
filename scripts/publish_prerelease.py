@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.3. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.4. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -23,8 +23,8 @@ import zipfile
 
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
-BRANCH_REF = "refs/heads/fix/ocr-selection-ui-20261102"
-TAG = "v1.8.0-rc.3"
+BRANCH_REF = "refs/heads/master"
+TAG = "v1.8.0-rc.4"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -33,6 +33,8 @@ EXE_NAME = "InkPick-" + TAG + ".exe"
 ZIP_NAME = "InkPick-" + TAG + ".zip"
 CHECKSUM_NAME = "InkPick-" + TAG + "-SHA256SUMS.txt"
 METADATA_NAME = "InkPick-" + TAG + "-validation-metadata.zip"
+README_NAME = "InkPick-" + TAG + "-README.txt"
+MAX_GUIDE_BYTES = 256 * 1024
 MAX_JSON_BYTES = 4 * 1024 * 1024
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
@@ -136,10 +138,17 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 新增檔案位置入口，查看實際截圖、附件、匯出、設定、Log 與執行暫存所在位置。
 保留 rc.2 的雙路手寫候選及手動「影像補辨」，公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 
+### 文件套版：PDF／圖片批次辨識
+- 點浮動窗「文件套版」，匯入 PDF 或 PNG／JPG／BMP／TIFF／WebP；預設每個檔案最多 100 MB，可在設定調整。整批最多 500 頁、每次最多 32 個欄位。
+- 在第一頁框選並命名欄位，例如「姓名」「金額」。後續頁預設沿用第一頁的相對位置；版型不同的頁面可單獨調整，未調整的欄位仍繼承第一頁。
+- 模板可輸入 `收件人：{{姓名}}，金額：{{金額}}`，也支援全形大括號。每頁產生一段文字，以空行分隔；辨識結果可先核對與修正，再按「複製」或匯出 UTF-8 TXT。
+- PDFium 與 OCR 模型已包在 EXE，匯入檔案在本機唯讀處理，不上傳、不改寫原始文件，也不自動複製套版結果。
+- 加密 PDF、XFA 動態表單或過大頁面會拒絕匯入；請先解密或列印／另存為一般 PDF。相對位置套用不等於版面自動對齊，第二頁以後仍應核對。
+
 ### 下載與使用
 - 適用 Windows 64 位元。建議下載可攜版 ZIP、解壓後執行；也可直接使用本頁的 EXE。
 - 已內附執行環境、兩組 OCR 模型與手寫引擎，不會在首次啟動下載模型，也不需安裝 Windows 手寫語言套件。
-- ZIP 另含第三方授權說明與手寫模型來源；使用單獨 EXE 時，也請保留同版 ZIP 的說明。執行前可用 SHA256SUMS 核對下載檔案。
+- ZIP 內附 README.md、OFFLINE_README.txt、README.txt、文件套版圖文操作指南與六張示範介面圖，另含第三方授權說明及手寫模型來源。也可單獨下載 `{README_NAME}` 帶到離線電腦；其位元組與 ZIP 內的離線說明相同，並列入 SHA256SUMS。
 - 使用選取模式時，辨識完成不會先動剪貼簿；按「複製」才寫入所選內容，取消不改剪貼簿，完整辨識結果仍保存在歷史。
 - 手寫候選字只有點選後才會複製，不會自動輸入其他程式；較早開始的 OCR 不會蓋掉之後在拾字筆選字或手動複製的文字。
 - 原有三項複製清理選項預設皆關閉，只影響複製內容。移除換行會把同一筆紀錄的多行文字接在一起，請按需要開啟。
@@ -154,7 +163,7 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 發布檢查綁定下列同一組檔案雜湊與來源版本：Windows 原生測試、EXE 內的 OCR／資料庫／手寫／啟閉測試，以及主程式和同次解壓的手寫引擎都被阻擋對外連線時的測試。
 兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
 GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立手寫程序有逾時終止與父程序退出檢查；既有 QThread 內的 OCR 卡住限制仍在。完整第三方授權審查尚未完成。
-另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉及兩種手寫探針；這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
+另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫及文件套版探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
 
 來源版本：`{context.source_commit}`
 同次建置的測試報告與檔案對應，請見 validation metadata ZIP。
@@ -328,9 +337,9 @@ def verified_assets(client: GitHubClient, release: dict, prepared: PreparedRelea
 
 def publish(client: GitHubClient, prepared: PreparedRelease) -> dict:
     """No clobber/delete/retag; resume matching drafts and accept exact releases."""
-    require(len(prepared.assets) == 4
-            and {a.name for a in prepared.assets} == {EXE_NAME, ZIP_NAME, CHECKSUM_NAME, METADATA_NAME},
-            "Expected exactly four unique prepared release assets")
+    require(len(prepared.assets) == 5
+            and {a.name for a in prepared.assets} == {EXE_NAME, ZIP_NAME, CHECKSUM_NAME, METADATA_NAME, README_NAME},
+            "Expected exactly five unique prepared release assets")
     for asset in prepared.assets:
         asset.recheck()
     check_tag(client, prepared.context.source_commit)
@@ -447,6 +456,28 @@ def deterministic_metadata_zip(path: Path, files: Mapping[str, bytes]) -> None:
             archive.writestr(info, files[name])
 
 
+def _check_document_probe(report: dict, manifest: dict, frozen: bool) -> None:
+    """Require the fixed non-GUI PDFium/region/template lifecycle contract."""
+    expected = {
+        'schema': 1, 'probe': 'document_template_lifecycle', 'passed': True,
+        'version': manifest['version'], 'frozen': frozen, 'platform': 'win32',
+        'executable_sha256': manifest['executable_sha256'] if frozen else None,
+        'clean_machine_verified': False, 'fixture_kind': 'SYNTHETIC_SOLID_RECTANGLES',
+        'ocr_accuracy_tested': False, 'model_inference_tested': False,
+    }
+    require(type(report) is dict and all(type(report.get(key)) is type(value)
+            and report.get(key) == value for key, value in expected.items()),
+            'Incomplete document lifecycle identity')
+    checks = report.get('checks')
+    required = {'pdf_rendering', 'image_rendering', 'region_inheritance',
+                'page_override', 'template_merge', 'source_unchanged', 'temporary_files_cleaned'}
+    require(type(checks) is dict and set(checks) == required
+            and all(value is True for value in checks.values()),
+            'Incomplete document lifecycle checks')
+    require(not any(key in report for key in ('error', 'error_code', 'traceback')),
+            'Document lifecycle includes a failure diagnostic')
+
+
 def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> None:
     """Bind standalone/empty-profile probes to the exact candidate EXE."""
     from scripts.prepare_public_validation import strict_json
@@ -472,6 +503,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
             ('isolated-app-smoke.json', _check_probe),
             ('isolated-handwriting.json', check_handwriting_probe),
             ('isolated-handwriting-image.json', check_handwriting_image_probe),
+            ('isolated-documents.json', _check_document_probe),
         ):
             raw = snapshots[prefix + name]
             report = strict_json(raw)
@@ -484,7 +516,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
 
 def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path,
                     context: RunnerContext) -> PreparedRelease:
-    """Reverify downloaded bytes, then prepare four immutable local upload files.
+    """Reverify downloaded bytes, then prepare five immutable local upload files.
 
     This is a credential-free/network-free function. The saved verifier's
     PyInstaller payload inspection is bound by the independently rehashed ZIP
@@ -521,7 +553,8 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/portable-validation/isolated-selftest.json",
                       "artifacts/portable-validation/isolated-app-smoke.json",
                       "artifacts/portable-validation/isolated-handwriting.json",
-                      "artifacts/portable-validation/isolated-handwriting-image.json"]
+                      "artifacts/portable-validation/isolated-handwriting-image.json",
+                      "artifacts/portable-validation/isolated-documents.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
@@ -584,6 +617,12 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Unexpected clean-machine or mixed-DPI certification claim")
     bundle = root / "artifacts" / ZIP_NAME
     prefix = "release-" + TAG + "/"
+    try:
+        approved = approved_release_files(
+            executable=EXE_NAME, executable_sha256=actual["executable_sha256"],
+            identity=manifest["handwriting"], source_files=source["files"])
+    except ValueError as exc:
+        raise PublicationError('Missing or invalid committed public files') from exc
     metadata_files = {"verified-bundle.json": canonical_json(saved)}
     for name in external_names:
         metadata_files[name] = snapshots[name]
@@ -613,9 +652,6 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         # Extract only the exact fixed EXE, never arbitrary archive members.
         with archive.open(prefix + EXE_NAME) as incoming, (output_dir / EXE_NAME).open("xb") as outgoing:
             shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
-    approved = approved_release_files(
-        executable=EXE_NAME, executable_sha256=actual["executable_sha256"],
-        identity=manifest["handwriting"], source_files=source["files"])
     public_bundle = prepare_public_bundle(
         bundle, output_dir / ZIP_NAME, prefix=prefix, approved=approved,
         executable=EXE_NAME, candidate_sha256=actual["bundle_sha256"],
@@ -623,6 +659,17 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     with zipfile.ZipFile(output_dir / ZIP_NAME) as archive:
         public_sources = verify_handwriting_source_distribution(
             archive, prefix, manifest["handwriting"], source["files"])
+        guide_info = archive.getinfo(prefix + 'OFFLINE_README.txt')
+        require(0 < guide_info.file_size <= MAX_GUIDE_BYTES, 'Offline guide is missing or oversized')
+        guide_bytes = archive.read(guide_info)
+        require(hashlib.sha256(guide_bytes).hexdigest() == approved['OFFLINE_README.txt'],
+                'Offline guide differs from committed public source')
+        try:
+            guide_bytes.decode('utf-8-sig')
+        except UnicodeError as exc:
+            raise PublicationError('Offline guide is not UTF-8 text') from exc
+        with (output_dir / README_NAME).open('xb') as stream:
+            stream.write(guide_bytes)
     require(public_sources == actual["handwriting_source_distribution"],
             "Public source distribution differs from verified candidate")
     exe = Asset.from_file(output_dir / EXE_NAME, "application/octet-stream")
@@ -637,11 +684,12 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                                {name: public_validation_report(name, data)
                                 for name, data in metadata_files.items()})
     evidence = Asset.from_file(output_dir / METADATA_NAME, "application/zip")
+    guide = Asset.from_file(output_dir / README_NAME, 'text/plain')
     checksum = output_dir / CHECKSUM_NAME
     with checksum.open("x", encoding="ascii", newline="\n") as stream:
-        stream.write("".join(f"{asset.sha256}  {asset.name}\n" for asset in (exe, portable, evidence)))
+        stream.write("".join(f"{asset.sha256}  {asset.name}\n" for asset in (exe, portable, evidence, guide)))
     sums = Asset.from_file(checksum, "text/plain")
-    assets = (exe, portable, sums, evidence)
+    assets = (exe, portable, sums, evidence, guide)
     return PreparedRelease(context, assets, release_notes(context, assets))
 
 
@@ -672,7 +720,7 @@ def main(argv=None) -> int:
                     "Missing private candidate inputs")
             prepared = prepare_release(args.artifact_root, args.verified_bundle, args.output_dir, context)
         if args.prepare_only:
-            print("Four candidate assets prepared; no network or token access")
+            print("Five candidate assets prepared; no network or token access")
             return 0
         # Read this single automatically supplied Actions token only after all
         # runner/event/artifact checks. No local credential discovery/fallback.

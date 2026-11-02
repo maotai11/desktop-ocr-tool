@@ -1,5 +1,14 @@
 # Third-party model notices
 
+## Offline PDF rendering
+
+- Document-template OCR uses pypdfium2 5.14.0 and its bundled PDFium library; no external PDF reader, Poppler installation or runtime download is used.
+- pypdfium2 is distributed under BSD-3-Clause / Apache-2.0, with its documentation and dependency notices supplied by the upstream wheel. Source and license details: https://github.com/pypdfium2-team/pypdfium2/tree/5.14.0 .
+- PDFium and its bundled dependencies have their own notices (including BSD, Apache, FreeType, ICU, JPEG, PNG, OpenJPEG and zlib notices). The one-file build includes the complete `pypdfium2-5.14.0.dist-info/licenses/` tree through package metadata, plus the native PDFium library and version data from `pypdfium2_raw`.
+- Imported PDF/image files are read locally. They are not submitted to an online conversion service by this feature.
+
+## OCR models
+
 DesktopOCR redistributes fixed ONNX conversions of PaddleOCR model assets supplied by RapidAI. The packaged model manifests record exact source URLs, SHA256, versions and upstream model-card references.
 
 - PaddleOCR / PP-OCRv6 model authors: PaddlePaddle Authors

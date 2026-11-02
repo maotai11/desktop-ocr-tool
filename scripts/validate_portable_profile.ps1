@@ -24,8 +24,8 @@ try {
     $bundle = (Resolve-Path -LiteralPath $BundleDirectory).Path
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or
-        $manifest.version -cne '1.8.0-rc.3' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.3.exe') {
+        $manifest.version -cne '1.8.0-rc.4' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.4.exe') {
         throw 'Unexpected portable candidate identity'
     }
     $original = Join-Path $bundle $manifest.executable_name
@@ -76,7 +76,8 @@ try {
         @{ mode = '--self-test'; name = 'isolated-selftest.json'; kind = 'ocr_database' },
         @{ mode = '--smoke-app'; name = 'isolated-app-smoke.json'; kind = 'application_lifecycle' },
         @{ mode = '--self-test-handwriting'; name = 'isolated-handwriting.json'; kind = 'handwriting_lifecycle' },
-        @{ mode = '--self-test-handwriting-image'; name = 'isolated-handwriting-image.json'; kind = 'handwriting_image_lifecycle' }
+        @{ mode = '--self-test-handwriting-image'; name = 'isolated-handwriting-image.json'; kind = 'handwriting_image_lifecycle' },
+        @{ mode = '--self-test-documents'; name = 'isolated-documents.json'; kind = 'document_template_lifecycle' }
     )) {
         $report = Join-Path $reports $probe.name
         if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report }
@@ -119,9 +120,43 @@ try {
         $result = Get-Content -LiteralPath $report -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($result.probe -cne $probe.kind -or $result.passed -ne $true -or
             $result.frozen -ne $true -or $result.platform -cne 'win32' -or
-            $result.qt_platform -cne 'windows' -or $result.version -cne $manifest.version -or
+            $result.version -cne $manifest.version -or
             $result.executable_sha256 -cne $hash -or $result.clean_machine_verified -ne $false) {
             throw 'Portable EXE probe identity or result differs from candidate'
+        }
+        if ($probe.kind -ceq 'document_template_lifecycle') {
+            # This probe uses real PDFium/Pillow without creating a Qt GUI.
+            # Preserve its narrower claim and require every fixed lifecycle
+            # check, rather than accepting the top-level passed flag alone.
+            $checkNames = @('pdf_rendering', 'image_rendering', 'region_inheritance',
+                'page_override', 'template_merge', 'source_unchanged', 'temporary_files_cleaned')
+            if ($result.schema -isnot [int64] -and $result.schema -isnot [int]) {
+                throw 'Document probe schema has the wrong type'
+            }
+            if ($result.schema -ne 1 -or $result.fixture_kind -cne 'SYNTHETIC_SOLID_RECTANGLES' -or
+                $result.passed -isnot [bool] -or $result.frozen -isnot [bool] -or
+                $result.clean_machine_verified -isnot [bool] -or
+                $result.ocr_accuracy_tested -isnot [bool] -or $result.ocr_accuracy_tested -ne $false -or
+                $result.model_inference_tested -isnot [bool] -or $result.model_inference_tested -ne $false -or
+                $result.checks -isnot [System.Management.Automation.PSCustomObject]) {
+                throw 'Incomplete synthetic document probe contract'
+            }
+            $keys = @($result.checks.PSObject.Properties.Name | Sort-Object)
+            if (($keys -join '|') -cne (($checkNames | Sort-Object) -join '|')) {
+                throw 'Incomplete document lifecycle checks'
+            }
+            foreach ($name in $checkNames) {
+                if ($result.checks.$name -isnot [bool] -or $result.checks.$name -ne $true) {
+                    throw 'Document lifecycle check failed'
+                }
+            }
+            foreach ($name in @('error', 'error_code', 'traceback')) {
+                if ($result.PSObject.Properties.Name -ccontains $name) {
+                    throw 'Document probe includes a failure diagnostic'
+                }
+            }
+        } elseif ($result.qt_platform -cne 'windows') {
+            throw 'Portable Qt probe did not use the Windows platform'
         }
         $summary.probes[$probe.name] = @{
             status = 'PASSED'

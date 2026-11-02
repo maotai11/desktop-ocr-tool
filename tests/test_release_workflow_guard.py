@@ -11,9 +11,9 @@ def test_publish_workflow_is_fixed_push_only_and_job_scoped():
     job = workflow['jobs']['publish_prerelease']
     assert job['needs'] == 'validate'
     assert job['permissions'] == {'contents': 'write', 'actions': 'read'}
-    for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/fix/ocr-selection-ui-20261102'",
+    for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/master'",
                    "github.repository == 'maotai11/desktop-ocr-tool'",
-                   "github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.3'"):
+                   "github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.4'"):
         assert clause in job['if']
     assert job['steps'][0]['with']['ref'] == '${{ github.sha }}'
     assert job['steps'][0]['with']['persist-credentials'] == 'false'
@@ -95,5 +95,6 @@ def test_portable_single_executable_gate_precedes_publication_and_is_fail_closed
     assert 'New-NetFirewallRule -Name $ruleName' in script
     assert 'Remove-NetFirewallRule -Name $ruleName' in script
     assert 'clean_machine_verified = $false' in script
-    for mode in ('--self-test', '--smoke-app', '--self-test-handwriting', '--self-test-handwriting-image'):
+    for mode in ('--self-test', '--smoke-app', '--self-test-handwriting', '--self-test-handwriting-image',
+                 '--self-test-documents'):
         assert f"mode = '{mode}'" in script

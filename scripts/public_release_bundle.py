@@ -25,6 +25,18 @@ NAME = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*')
 PUBLIC_MANIFEST = 'PUBLIC_MANIFEST.json'
 BLOCKED = {'BUILD_MANIFEST.json', 'SOURCE_MANIFEST.json', 'dependency-inventory.json',
            'candidate-validation', 'docs', 'artifacts', 'Validate-Candidate.ps1'}
+PUBLIC_DOCUMENTATION = {
+    'README.md': 'README.md',
+    'OFFLINE_README.txt': 'docs/OFFLINE_README.txt',
+    'README.txt': 'docs/OFFLINE_README.txt',
+    'docs/DOCUMENT_TEMPLATE.md': 'docs/DOCUMENT_TEMPLATE.md',
+    'docs/ui/floating-window.png': 'docs/ui/floating-window.png',
+    'docs/ui/ocr-selection.png': 'docs/ui/ocr-selection.png',
+    'docs/ui/copy-settings.png': 'docs/ui/copy-settings.png',
+    'docs/ui/file-locations.png': 'docs/ui/file-locations.png',
+    'docs/ui/document-template.png': 'docs/ui/document-template.png',
+    'docs/ui/document-fields.png': 'docs/ui/document-fields.png',
+}
 
 
 class BundleError(ValueError):
@@ -84,8 +96,11 @@ def prepare_public_bundle(candidate, output, *, prefix, approved, executable,
     for name, digest in approved.items():
         safe_name(name)
         require(type(digest) is str and HASH.fullmatch(digest), 'Invalid approved digest')
+        blocked = {value.casefold() for value in BLOCKED}
+        if name in PUBLIC_DOCUMENTATION:
+            blocked.discard('docs')  # Only these exact, source-bound paths are public.
         require(name.casefold() != PUBLIC_MANIFEST.casefold()
-                and not any(p.casefold() in {v.casefold() for v in BLOCKED} for p in name.split('/')),
+                and not any(p.casefold() in blocked for p in name.split('/')),
                 'Private report cannot be in a public manifest')
     require(type(source_commit) is str and re.fullmatch('[0-9a-f]{40}', source_commit), 'Invalid commit')
     require(type(candidate_sha256) is str and HASH.fullmatch(candidate_sha256), 'Invalid candidate hash')
@@ -174,11 +189,13 @@ def approved_release_files(*, executable, executable_sha256, identity, source_fi
     require(type(executable_sha256) is str and HASH.fullmatch(executable_sha256), 'Invalid EXE hash')
     require(type(source_files) is dict and type(identity) is dict, 'Invalid verified source evidence')
     files = identity.get('helper', {}).get('source', {}).get('files')
-    require(type(files) is dict and 0 < len(files) <= MAX_MEMBERS - 10, 'Missing native source inventory')
+    require(type(files) is dict and 0 < len(files) <= MAX_MEMBERS - len(PUBLIC_DOCUMENTATION) - 8,
+            'Missing native source inventory')
     approved = {executable: executable_sha256,
                 'handwriting-source/tegaki-zh_TW/handwriting-zh_TW.xml': SOURCE_SHA256,
                 'handwriting-source/tegaki-zh_TW/COPYING-LGPL-2.1.txt': LICENSE_SHA256}
     mapping = {
+        **PUBLIC_DOCUMENTATION,
         'THIRD_PARTY_NOTICES.md': 'THIRD_PARTY_NOTICES.md',
         'LICENSE-APACHE-2.0.txt': 'LICENSE-APACHE-2.0.txt',
         'handwriting-source/MODEL_MANIFEST.json': 'models/handwriting/manifest.json',

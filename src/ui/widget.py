@@ -107,6 +107,9 @@ class FloatingWidget(QWidget):
         self._data_dir = data_dir
         self._console = None
         self._handwriting = None
+        self._documents = None
+        self._document_controller = None
+        self._documents_closing = False
         self._clip_paused = False
         self._ocr_ready = False
         self._items = []
@@ -236,6 +239,13 @@ class FloatingWidget(QWidget):
         actions.addWidget(self._btn_screenshot)
         actions.addWidget(self._btn_handwriting)
         vbox.addLayout(actions)
+
+        self._btn_documents = QPushButton("文件套版")
+        self._btn_documents.setIcon(_line_icon('folder', _TEXT_SEC))
+        self._btn_documents.setMinimumHeight(32)
+        self._btn_documents.setToolTip("匯入 PDF／圖片，框選欄位後套用文字模板")
+        self._btn_documents.clicked.connect(self.open_document_template)
+        vbox.addWidget(self._btn_documents)
 
         self._ocr_progress_bar = QProgressBar()
         self._ocr_progress_bar.setFixedHeight(3)
@@ -434,6 +444,42 @@ class FloatingWidget(QWidget):
 
     def handwriting_is_stopped(self):
         return self._handwriting is None or self._handwriting.is_stopped
+
+    def open_document_template(self):
+        if self._documents_closing:
+            return
+        if self._documents is None:
+            from ..workers.document_worker import DocumentController
+            from .document_template_window import DocumentTemplateWindow
+
+            window = DocumentTemplateWindow(self._cfg, parent=self)
+            controller = DocumentController(self._ocr_worker, parent=self)
+            window.export_directory = self._file_mgr.get_export_dir()
+            window.import_requested.connect(controller.import_paths)
+            window.page_requested.connect(controller.request_page)
+            window.recognize_requested.connect(controller.start_recognition)
+            window.cancel_requested.connect(controller.cancel)
+            controller.document_loaded.connect(window.set_document_pages)
+            controller.page_ready.connect(window.set_page_preview)
+            controller.results_detailed.connect(window.set_recognition_results)
+            controller.progress.connect(window.set_progress)
+            controller.busy_changed.connect(window.set_busy)
+            controller.failed.connect(window.show_error)
+            self._documents, self._document_controller = window, controller
+        self._documents.show()
+        self._documents.raise_()
+        self._documents.activateWindow()
+
+    def shutdown_documents(self):
+        self._documents_closing = True
+        if self._documents is not None:
+            self._documents.shutdown()
+            self._documents.hide()
+        if self._document_controller is not None:
+            self._document_controller.shutdown()
+
+    def documents_is_stopped(self):
+        return self._document_controller is None or self._document_controller.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')

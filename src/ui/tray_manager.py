@@ -43,6 +43,9 @@ class TrayManager:
         act_handwriting = menu.addAction('手寫')
         act_handwriting.triggered.connect(self._widget.open_handwriting)
 
+        act_documents = menu.addAction('文件套版（PDF／圖片）')
+        act_documents.triggered.connect(self._widget.open_document_template)
+
         menu.addSeparator()
 
         self._act_pause = menu.addAction("暫停剪貼簿監聽")

@@ -9,9 +9,10 @@ CTX=p.RunnerContext('a'*40,'123','1')
 @pytest.fixture
 def public_input(tmp_path):
     root=tmp_path/'public'; root.mkdir()
-    for name in (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME):
+    for name in (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME,p.README_NAME):
         (root/name).write_bytes(('synthetic fixture '+name).encode())
-    sums=''.join(f'{p.sha256_file(root/name)}  {name}\n' for name in (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME))
+    sums=''.join(f'{p.sha256_file(root/name)}  {name}\n' for name in
+                 (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME,p.README_NAME))
     (root/p.CHECKSUM_NAME).write_bytes(sums.encode('ascii'))
     assets=tuple(p.Asset.from_file(root/name,kind) for name,kind in r.expected_assets().items())
     prepared=p.PreparedRelease(CTX,assets,p.release_notes(CTX,assets))
@@ -25,7 +26,7 @@ def mutate(root,key,value):
 
 def test_same_run_receipt_roundtrip(public_input):
     prepared=r.load_prepared(public_input,CTX)
-    assert len(prepared.assets)==4
+    assert len(prepared.assets)==5
     assert prepared.context==CTX
     assert prepared.body==p.release_notes(CTX,prepared.assets)
 
@@ -38,7 +39,7 @@ def test_receipt_schema_and_identity_rejected(public_input,field,value):
     mutate(public_input,field,value)
     with pytest.raises(p.PublicationError):r.load_prepared(public_input,CTX)
 
-@pytest.mark.parametrize('name',[p.EXE_NAME,p.ZIP_NAME,p.CHECKSUM_NAME,p.METADATA_NAME])
+@pytest.mark.parametrize('name',[p.EXE_NAME,p.ZIP_NAME,p.CHECKSUM_NAME,p.METADATA_NAME,p.README_NAME])
 def test_modified_asset_rejected(public_input,name):
     path=public_input/name;raw=path.read_bytes();path.write_bytes(b'X'+raw[1:])
     with pytest.raises(p.PublicationError):r.load_prepared(public_input,CTX)
@@ -58,6 +59,33 @@ def test_rehashed_wrong_checksum_still_rejected(public_input):
     receipt['assets'][p.CHECKSUM_NAME]={'bytes':path.stat().st_size,'sha256':p.sha256_file(path)}
     (public_input/r.RECEIPT).write_bytes(p.canonical_json(receipt))
     with pytest.raises(p.PublicationError):r.load_prepared(public_input,CTX)
+
+
+def test_manual_is_required_even_when_other_four_assets_are_unchanged(public_input):
+    (public_input/p.README_NAME).unlink()
+    with pytest.raises(p.PublicationError, match='Unexpected public input files'):
+        r.load_prepared(public_input,CTX)
+
+
+def test_rehashed_checksum_cannot_omit_the_manual(public_input):
+    checksum=public_input/p.CHECKSUM_NAME
+    checksum.write_bytes(''.join(f'{p.sha256_file(public_input/name)}  {name}\n' for name in
+                               (p.EXE_NAME,p.ZIP_NAME,p.METADATA_NAME)).encode('ascii'))
+    receipt=json.loads((public_input/r.RECEIPT).read_bytes())
+    receipt['assets'][p.CHECKSUM_NAME]={'bytes':checksum.stat().st_size,'sha256':p.sha256_file(checksum)}
+    (public_input/r.RECEIPT).write_bytes(p.canonical_json(receipt))
+    with pytest.raises(p.PublicationError, match='Public checksum mismatch'):
+        r.load_prepared(public_input,CTX)
+
+
+def test_rehashed_oversized_manual_is_refused(public_input):
+    manual=public_input/p.README_NAME
+    manual.write_bytes(b'x'*(p.MAX_GUIDE_BYTES+1))
+    receipt=json.loads((public_input/r.RECEIPT).read_bytes())
+    receipt['assets'][p.README_NAME]={'bytes':manual.stat().st_size,'sha256':p.sha256_file(manual)}
+    (public_input/r.RECEIPT).write_bytes(p.canonical_json(receipt))
+    with pytest.raises(p.PublicationError, match='Invalid asset record'):
+        r.load_prepared(public_input,CTX)
 
 def test_redirected_asset_rejected(public_input,tmp_path):
     path=public_input/p.EXE_NAME;outside=tmp_path/'outside';path.rename(outside)

@@ -68,6 +68,9 @@ DEFAULT_SETTINGS = {
         "copy_remove_apostrophes": False,
         "copy_remove_newlines": False
     },
+    "documents": {
+        "max_file_size_mb": 100
+    },
     "history": {
         "max_items": 10000,
         "auto_archive_days": 90,
