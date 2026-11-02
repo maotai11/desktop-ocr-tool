@@ -140,6 +140,8 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 - 手寫候選區更新時保留高度，書寫中不再自動捲動，單筆筆畫也固定座標，避免畫布變動讓筆畫跳位。展開、收合及選字複製維持原操作。
 - 文件套版新增「清除框選」：「所有頁共用」清掉所選欄位的共用框及各頁例外；「只改這一頁」只清當前頁，不會自動退回第一頁的位置。重新框選或按「此頁套用第一頁」後再辨識。
 - 「清空文件」確認後清除匯入頁面、全部位置與結果，保留欄位名稱及文字模板；不刪原檔、不改剪貼簿。文件預覽新增可見的「−」「＋」、比例、「100%」及「拖曳移動」，手動縮放可跨頁及視窗大小變動保留。
+- 更新 Pillow 13.0.0、setuptools 84.2.1 與建置用 pip 26.2.2，改用不含 OpenEXR 的 OpenCV 5.0.0.93 並排除不需的影片 DLL。Linux／Windows 的實際 Python 套件清單須通過 pip-audit；有漏洞或漏掃即阻止發布。
+- 手寫回傳候選後回收輔助程序，新筆畫取消過期要求；OCR 閒置時停用 CPU 忙等。系統匣、快捷鍵及載入模型仍保留，完全結束請從系統匣退出。正在執行的原生 PDF／OCR 呼叫仍需先返回。
 
 螢幕擷取仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 
@@ -171,6 +173,7 @@ GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立�
 另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫及文件套版探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
 
 來源版本：`{context.source_commit}`
+套件與背景工作範圍見 [資安檢查](https://github.com/maotai11/desktop-ocr-tool/blob/{context.source_commit}/docs/SECURITY_REVIEW.md)。Linux 五組合成操作未觀察到網際網路系統呼叫；這不代表所有 GUI 路徑或原生 DLL 已完成漏洞認證。
 同次建置的測試報告與檔案對應，請見 validation metadata ZIP。
 
 ### 檔案 SHA256
@@ -547,6 +550,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
     external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "test-results.xml",
+                      "artifacts/security-audit.json", "artifacts/dependency-inventory.json",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
                       "artifacts/firewall-validation/frozen-app-smoke.json",
@@ -607,6 +611,27 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Unexpected release asset names")
     source = actual.get("source_manifest", {})
     manifest = actual.get("build_manifest", {})
+    audit = json.loads(snapshots['artifacts/security-audit.json'])
+    inventory_bytes = snapshots['artifacts/dependency-inventory.json']
+    inventory_hash = hashlib.sha256(inventory_bytes).hexdigest()
+    installed = json.loads(inventory_bytes).get('installed')
+    require(type(audit) is dict and type(audit.get('schema')) is int and audit.get('schema') == 1
+            and audit.get('probe') == 'dependency_vulnerabilities'
+            and audit.get('passed') is True
+            and audit.get('source_commit') == context.source_commit
+            and audit.get('scope') == 'PYTHON_INSTALLED_DISTRIBUTIONS'
+            and audit.get('scanner') == 'pip-audit'
+            and audit.get('scanner_version') == '2.10.1'
+            and audit.get('dependency_inventory_sha256') == inventory_hash
+            and type(installed) is dict and bool(installed)
+            and type(audit.get('packages_count')) is int and audit.get('packages_count') == len(installed)
+            and type(audit.get('vulnerabilities_count')) is int
+            and audit['vulnerabilities_count'] == 0 and audit.get('findings') == []
+            and 'error_code' not in audit,
+            'Missing, inconsistent or failed dependency vulnerability audit')
+    if 'dependency_inventory' in manifest:
+        require(manifest['dependency_inventory'].get('sha256') == inventory_hash,
+                'Security audit inventory differs from candidate')
     check_portable_profile(snapshots, manifest)
     require(source.get("dirty") is False
             and COMMIT_RE.fullmatch(source.get("head_tree", "")) is not None

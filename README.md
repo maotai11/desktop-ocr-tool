@@ -6,6 +6,8 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 
 這次修正設定下拉選單的文字對比與手寫時畫布跳動，並在文件套版補上「清除框選」「清空文件」及可見的縮放、拖曳控制。
 
+同時更新有已知漏洞的 Pillow、setuptools 與建置工具，手寫辨識完成後回收輔助程序，OCR 閒置時停用 CPU 忙等。套件掃描及網路觀察的範圍見 [資安與背景工作檢查](docs/SECURITY_REVIEW.md)。
+
 ## 下載與第一次執行
 
 從 [v1.8.0-rc.5 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.5) 下載：
@@ -134,6 +136,10 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 - 新版公開 ZIP 排除原始 JUnit、錯誤堆疊與絕對建置路徑；公開驗證摘要不帶使用者資料夾。Repo 歷史與較早 Release 的檢查結果見 [隱私檢查](https://github.com/maotai11/desktop-ocr-tool/blob/master/docs/PRIVACY_AUDIT.md)。
 
 ## 辨識限制與離線驗證範圍
+
+發布前會對 Linux／Windows 的實際 Python 套件清單執行 pip-audit；有漏洞、漏掃或查詢失敗即停止發布。這不涵蓋所有原生 DLL 或未知漏洞。Linux 另追蹤五組合成操作及其子程序的網路系統呼叫；Windows 使用同版 EXE 的防火牆阻擋測試。每版結果見下載頁的 validation metadata。
+
+手寫完成後會結束輔助程序；新筆畫會取消過期工作。系統匣、快捷鍵與載入的 OCR 模型仍保留，讓下次操作可用；剪貼簿監看預設關閉。文件按停止或清空後不再處理後續頁面，但已進入原生 PDF／OCR 的運算需先返回。要完全結束請從系統匣選「退出」。
 
 OCR 有 PP-OCRv6 Small／Medium 辨字模型可選，兩者都已內含；Medium 較耗記憶體，不代表每字較準。請核對姓名、日期、金額與帳號。
 

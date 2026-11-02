@@ -108,7 +108,9 @@ def run():
         cfg = read_yaml(Path(rapidocr_onnxruntime.__file__).parent/'config.yaml')['Rec']
         cfg.update(model_path=manifest['rec']['absolute_path'], intra_op_num_threads=1,
                    inter_op_num_threads=1, rec_batch_num=1, rec_img_shape=[3,48,320])
-        rec = TextRecognizer(cfg)
+        from src.ocr.session_options import non_spinning_sessions
+        with non_spinning_sessions():
+            rec = TextRecognizer(cfg)
         verify_recognizer_identity(rec, manifest['rec'])
         sink.write(frame(READY, 0, struct.pack('<HHI', 0, 0, os.getpid()))); sink.flush()
         request = _read(source)

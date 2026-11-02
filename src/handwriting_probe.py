@@ -81,6 +81,8 @@ def run_handwriting_probe(report_path, wait_for_firewall=False):
         controller.stop()
 
     def finished():
+        if not stopping:
+            return  # A completed helper is now reaped between requests too.
         deadline.stop()
         report['helper_stopped'] = controller.is_stopped
         report['phase'] = 'completed'

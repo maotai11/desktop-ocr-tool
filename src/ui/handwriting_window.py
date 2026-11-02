@@ -197,6 +197,8 @@ class HandwritingWindow(QWidget):
 
     def _changed(self):
         self._candidate_scroll.stop()
+        if hasattr(self.controller, 'cancel_current'):
+            self.controller.cancel_current()
         self._cancel_image()
         self._stroke_values = ()
         self._submitted = None
@@ -220,6 +222,8 @@ class HandwritingWindow(QWidget):
         if self._shutting_down or self.pad.buffer.active is not None or not self.pad.buffer.strokes:
             return
         self._cancel_image()
+        if hasattr(self.controller, 'cancel_current'):
+            self.controller.cancel_current()
         revision = self.pad.buffer.revision
         self._copy_feedback.stop()
         self._submitted = None

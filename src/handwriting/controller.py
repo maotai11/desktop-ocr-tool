@@ -30,6 +30,7 @@ class HandwritingController(QObject):
         self._generation = 0
         self._ready = False
         self._closing = False
+        self._retiring = False
         self._stderr_bytes = self._stdout_bytes = 0
         self._load_timeout_ms, self._request_timeout_ms = load_timeout_ms, request_timeout_ms
         self._deadline = QTimer(self)
@@ -75,6 +76,7 @@ class HandwritingController(QObject):
         self._decoder = ReplyDecoder()
         self._stderr_bytes = self._stdout_bytes = 0
         self._ready = False
+        self._retiring = False
         process = QProcess(self)
         self._process = process
         process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
@@ -89,7 +91,7 @@ class HandwritingController(QObject):
         process.start()
 
     def _started(self):
-        if self._closing:
+        if self._closing or self._retiring:
             self._kill()
             return
         try:
@@ -105,7 +107,7 @@ class HandwritingController(QObject):
             self._fail('手寫引擎通訊失敗')
 
     def _dispatch(self):
-        if self._pending is None or self._closing:
+        if self._pending is None or self._closing or self._retiring:
             return
         self._active, self._pending = self._pending, None
         self._decoder = ReplyDecoder()
@@ -118,6 +120,9 @@ class HandwritingController(QObject):
         if process is None:
             return
         process.setReadChannel(QProcess.ProcessChannel.StandardOutput)
+        if self._retiring:
+            process.read(HEADER.size + MAX_REPLY_BYTES + 1)
+            return
         while process.bytesAvailable():
             data = bytes(process.read(HEADER.size + MAX_REPLY_BYTES + 1))
             self._stdout_bytes += len(data)
@@ -153,6 +158,7 @@ class HandwritingController(QObject):
                     self._dispatch()
                     if self._active is None:
                         self.busy_changed.emit(False)
+                        self._retire_idle_process()
             except ProtocolError:
                 self._fail('手寫引擎版本或回傳格式不符，請更新完整免安裝資料夾')
                 return
@@ -162,6 +168,9 @@ class HandwritingController(QObject):
         if process is None:
             return
         process.setReadChannel(QProcess.ProcessChannel.StandardError)
+        if self._retiring:
+            process.read(4096)
+            return
         while process.bytesAvailable():
             data = process.read(4096)
             self._stderr_bytes += len(data)
@@ -172,12 +181,12 @@ class HandwritingController(QObject):
 
     def _process_error(self, error):
         if error == QProcess.ProcessError.FailedToStart:
-            if not self._closing:
+            if not self._closing and not self._retiring:
                 self._fail('手寫引擎無法啟動')
             # FailedToStart has no finished signal, including a shutdown race.
             self._finished()
             return
-        if self._closing:
+        if self._closing or self._retiring:
             return
         self._fail('手寫引擎已停止，請重試')
 
@@ -186,6 +195,7 @@ class HandwritingController(QObject):
         generation = self._latest_request_generation()
         self._pending = self._active = None
         self._ready = False
+        self._retiring = False
         if not self._closing:
             self._emit_error(generation, message)
         self.busy_changed.emit(False)
@@ -193,6 +203,29 @@ class HandwritingController(QObject):
 
     def _kill(self):
         if self._process is not None:
+            self._process.kill()
+
+    def _retire_idle_process(self):
+        """Release a completed helper; accept new work after its owner is reaped."""
+        if self._process is None or self._active is not None or self._pending is not None:
+            return
+        self._retiring = True
+        self._ready = False
+        self._deadline.stop()
+        # One-shot helpers may already be exiting after their valid RESULT.
+        # Failure to write STOP here must not turn that result into an error.
+        self._process.write(frame(STOP, 0))
+        self._process.closeWriteChannel()
+        self._stop_timer.start(750)
+
+    def cancel_current(self):
+        """Cancel stale work without preventing the next handwriting request."""
+        self._pending = self._active = None
+        self._deadline.stop()
+        self._ready = False
+        self.busy_changed.emit(False)
+        if self._process is not None:
+            self._retiring = True
             self._process.kill()
 
     def stop(self):
@@ -210,23 +243,31 @@ class HandwritingController(QObject):
             self._kill()
 
     def resume(self):
-        if self.is_stopped:
-            self._closing = False
+        if self._closing and self._process is not None:
+            self._retiring = True
+        self._closing = False
 
     def _finished(self, *args):
         process, self._process = self._process, None
         self._deadline.stop()
         self._stop_timer.stop()
+        retiring = self._retiring
+        pending = self._pending if retiring and not self._closing else None
         was_busy = self._active is not None or self._pending is not None
         generation = self._latest_request_generation()
         self._pending = self._active = None
         self._ready = False
+        self._retiring = False
         if self._job:
             self._job.close()
             self._job = None
         if process is not None:
             process.deleteLater()
+        if pending is not None:
+            self._pending = pending
+            self._start()
+            return
         self.busy_changed.emit(False)
-        if was_busy and not self._closing:
+        if was_busy and not self._closing and not retiring:
             self._emit_error(generation, '手寫引擎已停止，請重試')
         self.stopped.emit()

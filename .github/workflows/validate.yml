@@ -29,9 +29,12 @@ jobs:
           cache: pip
       - if: runner.os == 'Linux'
         id: linux_dependencies
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+        run: sudo apt-get update && sudo apt-get install -y libegl1 strace
       # One native command per step: Windows PowerShell must propagate each
       # exit code before a later successful command can replace LASTEXITCODE.
+      - name: Update pinned build installer
+        id: build_installer
+        run: python -m pip install --upgrade pip==26.2.2
       - name: Resolve wheelhouse
         id: wheels
         run: python -m pip wheel --wheel-dir artifacts/wheelhouse -r requirements-dev.txt
@@ -59,6 +62,27 @@ jobs:
       - name: Probe pinned handwriting helper
         id: helper_probe
         run: python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
+      - name: Create isolated security scanner environment
+        id: security_environment
+        run: python -m venv artifacts/security-tools
+      - name: Install pinned security scanner outside application environment
+        id: security_tool
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            artifacts/security-tools/Scripts/python.exe -m pip install -r requirements-security.txt
+          else
+            artifacts/security-tools/bin/python -m pip install -r requirements-security.txt
+          fi
+      - name: Audit exact installed dependencies before building
+        id: security_audit
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python scripts/audit_dependencies.py --inventory artifacts/dependency-inventory.json --tool-python artifacts/security-tools/Scripts/python.exe --report artifacts/security-audit.json
+          else
+            python scripts/audit_dependencies.py --inventory artifacts/dependency-inventory.json --tool-python artifacts/security-tools/bin/python --report artifacts/security-audit.json
+          fi
       - name: Collect and run tests with owned process and memory limits
         id: tests
         run: python scripts/run_bounded_pytest.py --report artifacts/pytest-bounds.json --memory-mib 4096 --timeout 1800 -- -q --junitxml=test-results.xml
@@ -72,6 +96,10 @@ jobs:
         run: python src/main.py --self-test-handwriting-image source-handwriting-image.json
       - id: source_documents
         run: python src/main.py --self-test-documents artifacts/source-documents.json
+      - name: Trace synthetic application process trees for network activity
+        id: network_audit
+        if: runner.os == 'Linux'
+        run: python scripts/audit_runtime_network.py --report artifacts/runtime-network-audit.json
       - if: runner.os == 'Windows'
         id: build
         run: python scripts/build.py

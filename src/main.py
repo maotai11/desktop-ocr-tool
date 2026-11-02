@@ -11,6 +11,8 @@ if not getattr(sys, 'frozen', False):
         sys.path.insert(0, _ROOT)
 
 def run(argv=None):
+    from src.runtime_policy import configure_runtime
+    configure_runtime()
     # Child route precedes QApplication, single-instance lock and OCR workers.
     if (sys.argv[1:] if argv is None else argv) == ['--handwriting-image-helper']:
         from src.handwriting.image_helper import run
