@@ -13,7 +13,7 @@ def test_publish_workflow_is_fixed_push_only_and_job_scoped():
     assert job['permissions'] == {'contents': 'write', 'actions': 'read'}
     for clause in ("github.event_name == 'push'", "github.ref == 'refs/heads/master'",
                    "github.repository == 'maotai11/desktop-ocr-tool'",
-                   "github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.4'"):
+                   "github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.5'"):
         assert clause in job['if']
     assert job['steps'][0]['with']['ref'] == '${{ github.sha }}'
     assert job['steps'][0]['with']['persist-credentials'] == 'false'

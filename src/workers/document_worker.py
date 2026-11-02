@@ -52,6 +52,7 @@ class DocumentRenderWorker(QueueWorker):
         super().__init__(parent, capacity=64)
         self._cached_page = None
         self._cached_image = None
+        self._cache_clear_requested = Event()
 
     def _clear_cache(self):
         if self._cached_image is not None:
@@ -59,6 +60,9 @@ class DocumentRenderWorker(QueueWorker):
         self._cached_image = self._cached_page = None
 
     def clear_cache(self):
+        # The flag is still observed when a burst of cancelled previews has
+        # filled the bounded queue and cannot accept another explicit task.
+        self._cache_clear_requested.set()
         try:
             self.submit(_RenderTask('clear', None, None))
             return True
@@ -77,6 +81,9 @@ class DocumentRenderWorker(QueueWorker):
     def run(self):
         try:
             for task in self.tasks():
+                if self._cache_clear_requested.is_set():
+                    self._clear_cache()
+                    self._cache_clear_requested.clear()
                 if task.kind == 'clear':
                     self._clear_cache()
                     continue
@@ -416,6 +423,23 @@ class DocumentController(QObject):
             self._emit_results(True)
         if self._renderer._started_once:
             self._renderer.clear_cache()
+
+    @Slot()
+    def clear_document(self):
+        """Forget this session; cancel late work without touching input files."""
+        if self._closing:
+            return
+        self._cancel(emit_results=False)
+        self._pages = ()
+        self._layout = None
+        self._template = ''
+        self._names = ()
+        self._results = []
+        self._statuses = []
+        self._position = (0, 0)
+        self._done_count = self._text_chars = 0
+        self.document_loaded.emit(())
+        self.busy_changed.emit(False, '已清除匯入文件')
 
     @Slot()
     def shutdown(self):

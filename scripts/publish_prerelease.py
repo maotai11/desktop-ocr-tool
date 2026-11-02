@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.4. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.5. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.4"
+TAG = "v1.8.0-rc.5"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,13 +133,18 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-浮動窗精簡為擷取文字、截圖、手寫及最近紀錄；搜尋移到歷史視窗，Ctrl+Shift+Q 可直接搜尋。
-框選螢幕後才進行辨識，預設維持辨識完成後自動複製全文；可在設定改成「選取後複製」，再於原圖框選、勾選段落或反白預覽中的文字。
-新增檔案位置入口，查看實際截圖、附件、匯出、設定、Log 與執行暫存所在位置。
-保留 rc.2 的雙路手寫候選及手動「影像補辨」，公開封裝繼續排除原始診斷、建置路徑與使用者資料。
+本版修正設定下拉選單的文字對比與手寫時畫布跳動，並補齊文件套版的清除與縮放操作。
+
+### 本次修正
+- 設定下拉選單使用明確底色、文字與選取配色，避免系統配色讓選項看不清楚。
+- 手寫候選區更新時保留高度，書寫中不再自動捲動，單筆筆畫也固定座標，避免畫布變動讓筆畫跳位。展開、收合及選字複製維持原操作。
+- 文件套版新增「清除框選」：「所有頁共用」清掉所選欄位的共用框及各頁例外；「只改這一頁」只清當前頁，不會自動退回第一頁的位置。重新框選或按「此頁套用第一頁」後再辨識。
+- 「清空文件」確認後清除匯入頁面、全部位置與結果，保留欄位名稱及文字模板；不刪原檔、不改剪貼簿。文件預覽新增可見的「−」「＋」、比例、「100%」及「拖曳移動」，手動縮放可跨頁及視窗大小變動保留。
+
+螢幕擷取仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 
 ### 文件套版：PDF／圖片批次辨識
-- 點浮動窗「文件套版」，匯入 PDF 或 PNG／JPG／BMP／TIFF／WebP；預設每個檔案最多 100 MB，可在設定調整。整批最多 500 頁、每次最多 32 個欄位。
+- 點浮動窗「文件套版」，匯入 PDF 或 PNG／JPG／BMP／TIFF／WebP；預設每個檔案最多 100 MB，可在文件視窗調整。整批最多 500 頁、每次最多 32 個欄位。
 - 在第一頁框選並命名欄位，例如「姓名」「金額」。後續頁預設沿用第一頁的相對位置；版型不同的頁面可單獨調整，未調整的欄位仍繼承第一頁。
 - 模板可輸入 `收件人：{{姓名}}，金額：{{金額}}`，也支援全形大括號。每頁產生一段文字，以空行分隔；辨識結果可先核對與修正，再按「複製」或匯出 UTF-8 TXT。
 - PDFium 與 OCR 模型已包在 EXE，匯入檔案在本機唯讀處理，不上傳、不改寫原始文件，也不自動複製套版結果。

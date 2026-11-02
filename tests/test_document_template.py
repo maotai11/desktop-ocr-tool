@@ -63,7 +63,26 @@ def test_empty_slots_and_page_reset_are_explicit_without_inventing_a_full_page_r
     layout.set_region('辨識1', Region(.1, .1, .5, .5))
     layout.set_region('辨識1', Region(.3, .3, .5, .5), 1)
     layout.set_region('辨識1', None, 1)
+    assert layout.region_for('辨識1', 1) is None
+    assert layout.has_override('辨識1', 1)
+    layout.clear_override('辨識1', 1)
     assert layout.region_for('辨識1', 1) == Region(.1, .1, .5, .5)
+
+
+def test_explicit_cleared_page_survives_snapshot_rename_and_base_changes():
+    base = Region(.1, .1, .2, .2)
+    layout = TemplateLayout([Field('姓名', base), Field('金額', base)])
+    layout.set_region('姓名', None, 2)
+    snapshot = layout.copy()
+    assert snapshot.overrides == {2: {'姓名': None}}
+    assert snapshot.region_for('金額', 2) == base
+    layout.rename_field('姓名', '收件人')
+    layout.set_region('收件人', Region(.2, .2, .3, .3))
+    assert layout.region_for('收件人', 2) is None
+    assert layout.region_for('收件人', 1) == Region(.2, .2, .3, .3)
+    assert snapshot.region_for('姓名', 2) is None
+    layout.clear_page_overrides(2)
+    assert layout.region_for('收件人', 2) == Region(.2, .2, .3, .3)
 
 
 def test_snapshot_mappings_cannot_move_a_running_jobs_region():

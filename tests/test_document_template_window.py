@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 from PySide6.QtCore import QPointF, Qt
+from PySide6.QtWidgets import QMessageBox
 
 from src.clipboard.writer import copy_text, get_clipboard_epoch
 from src.documents.template import Region
@@ -245,6 +246,172 @@ def test_real_drag_maps_to_source_coordinates_after_zoom(window, qtbot):
     assert region.y == pytest.approx(200 / 800, abs=.01)
     assert region.width == pytest.approx(200 / 600, abs=.01)
     assert region.height == pytest.approx(200 / 800, abs=.01)
+
+
+def test_clear_current_field_does_not_fall_back_and_reset_restores_inheritance(window):
+    ready(window, 3)
+    base = window._layout.region_for('辨識1', 0)
+    assert not window._reset_override.isEnabled()
+    window._page_combo.setCurrentIndex(1)
+    window.set_page_preview(1, Image.new('RGB', (600, 800), 'white'))
+    window.set_recognition_results([{'辨識1': '甲'}, {'辨識1': '乙'}, {'辨識1': '丙'}])
+    window._clear_region_button.click()
+    assert window._layout.region_for('辨識1', 1) is None
+    assert window._layout.has_override('辨識1', 1)
+    assert window._layout.region_for('辨識1', 0) == base
+    assert window._layout.region_for('辨識1', 2) == base
+    assert '此頁已清除' in window._field_list.currentItem().text()
+    assert not window._clear_region_button.isEnabled()
+    assert window._reset_override.isEnabled()
+    assert not window._recognize_button.isEnabled()
+    assert not window._copy_button.isEnabled()
+    assert window._results == []
+    assert window._canvas._overlays == []
+    assert '第 2 頁' in window._validation.text()
+    window._reset_override.click()
+    assert window._layout.region_for('辨識1', 1) == base
+    assert not window._reset_override.isEnabled()
+    assert window._recognize_button.isEnabled()
+
+
+def test_clear_all_pages_removes_selected_field_overrides_and_keeps_other_fields(window, qapp):
+    ready(window, 3)
+    base = window._layout.region_for('辨識1', 0)
+    window._layout.add_field('金額', base)
+    window._layout.set_region('辨識1', Region(.3, .3, .2, .2), 2)
+    window._layout.set_region('金額', Region(.4, .4, .2, .2), 2)
+    window._refresh_fields('辨識1')
+    copy_text('保留剪貼簿')
+    window._clear_region_button.click()
+    assert all(window._layout.region_for('辨識1', page) is None for page in range(3))
+    assert window._layout.overrides == {2: {'金額': Region(.4, .4, .2, .2)}}
+    assert window._layout.region_for('金額', 0) == base
+    assert window._layout.field_names == ('辨識1', '金額')
+    assert window._template.toPlainText() == '{辨識1}'
+    assert not window._clear_region_button.isEnabled()
+    assert qapp.clipboard().text() == '保留剪貼簿'
+
+
+def test_visible_zoom_controls_keyboard_bounds_and_fit_resize(window, qtbot):
+    imported(window, 1)
+    window._actual_size_button.click()
+    assert window._canvas.zoom_percent == pytest.approx(100)
+    assert window._zoom_label.text() == '100%'
+    window._zoom_in.click()
+    assert window._canvas.zoom_percent == pytest.approx(120)
+    window._zoom_out.click()
+    assert window._canvas.zoom_percent == pytest.approx(100)
+    window.activateWindow()
+    window._canvas.setFocus()
+    qtbot.keyClick(window._canvas, Qt.Key.Key_Equal, Qt.KeyboardModifier.ControlModifier)
+    assert window._canvas.zoom_percent == pytest.approx(120)
+    qtbot.keyClick(window._canvas, Qt.Key.Key_Minus, Qt.KeyboardModifier.ControlModifier)
+    assert window._canvas.zoom_percent == pytest.approx(100)
+    window.resize(1000, 700)
+    qtbot.waitUntil(lambda: window.width() == 1000)
+    assert window._canvas.zoom_percent == pytest.approx(100)
+    window._canvas.set_zoom(99999)
+    assert window._canvas.zoom_percent == pytest.approx(1200)
+    assert not window._zoom_in.isEnabled()
+    window._canvas.set_zoom(.01)
+    assert window._canvas.zoom_percent == pytest.approx(5)
+    assert not window._zoom_out.isEnabled()
+    qtbot.keyClick(window._canvas, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+    assert window._canvas._auto_fit
+    assert 5 < window._canvas.zoom_percent < 100
+
+
+def test_zoomed_drag_maps_crop_and_pan_never_selects_a_region(window, qtbot):
+    imported(window, 1)
+    canvas = window._canvas
+    canvas.set_zoom(200)
+    canvas.centerOn(250, 325)
+    start = canvas.mapFromScene(QPointF(200, 300))
+    end = canvas.mapFromScene(QPointF(300, 350))
+    qtbot.mousePress(canvas.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    qtbot.mouseMove(canvas.viewport(), pos=end)
+    qtbot.mouseRelease(canvas.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    region = window._layout.region_for('辨識1', 0)
+    bounds = region.pixel_bounds(1200, 1600)
+    assert bounds == pytest.approx((400, 600, 600, 700), abs=2)
+    previous_scroll = canvas.verticalScrollBar().value()
+    midpoint = canvas.viewport().rect().center()
+    qtbot.mousePress(canvas.viewport(), Qt.MouseButton.MiddleButton, pos=midpoint)
+    qtbot.mouseMove(canvas.viewport(), pos=midpoint + QPointF(0, -40).toPoint())
+    qtbot.mouseRelease(canvas.viewport(), Qt.MouseButton.MiddleButton, pos=midpoint + QPointF(0, -40).toPoint())
+    assert canvas.verticalScrollBar().value() > previous_scroll
+    assert window._layout.region_for('辨識1', 0) == region
+    window._pan_button.click()
+    qtbot.mousePress(canvas.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    qtbot.mouseMove(canvas.viewport(), pos=end)
+    qtbot.mouseRelease(canvas.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert window._layout.region_for('辨識1', 0) == region
+
+
+def test_manual_zoom_survives_page_change_but_pending_preview_disables_controls(window):
+    ready(window)
+    base = window._layout.region_for('辨識1', 0)
+    window._canvas.set_zoom(150)
+    window._page_combo.setCurrentIndex(1)
+    assert window._zoom_label.text() == '—'
+    assert not any(control.isEnabled() for control in window._zoom_controls)
+    window.set_page_preview(1, Image.new('RGB', (300, 400), 'white'))
+    assert window._canvas.zoom_percent == pytest.approx(150)
+    assert window._layout.region_for('辨識1', 1) == base
+    assert base.pixel_bounds(300, 400) == (30, 60, 150, 100)
+
+
+def test_clear_documents_confirmation_cancel_and_accept_keep_sources_and_clipboard(
+        window, qapp, tmp_path, monkeypatch):
+    source = tmp_path / '原始.png'
+    source.write_bytes(b'original file bytes')
+    ready(window, source=SimpleNamespace(path=source))
+    window._template.setPlainText('姓名：{辨識1}')
+    window.set_recognition_results([{'辨識1': '甲'}, {'辨識1': '乙'}])
+    copy_text('剪貼簿保留')
+    cleared = []
+    window.clear_requested.connect(lambda: cleared.append(True))
+    monkeypatch.setattr(QMessageBox, 'question', lambda *args: QMessageBox.StandardButton.No)
+    window._clear_documents_button.click()
+    assert len(window._pages) == 2
+    assert window._output.toPlainText() == '姓名：甲\n\n姓名：乙'
+    assert cleared == []
+    monkeypatch.setattr(QMessageBox, 'question', lambda *args: QMessageBox.StandardButton.Yes)
+    window.set_busy(True, '辨識中')
+    assert window._clear_documents_button.isEnabled()
+    window._clear_documents_button.click()
+    assert cleared == [True]
+    assert window._pages == []
+    assert window._current_page == -1
+    assert window._page_combo.count() == 0
+    assert window._canvas.image_size == (0, 0)
+    assert window._results == []
+    assert window._output.toPlainText() == ''
+    assert window._layout.field_names == ('辨識1',)
+    assert window._layout.fields[0].base_region is None
+    assert window._layout.overrides == {}
+    assert window._template.toPlainText() == '姓名：{辨識1}'
+    assert not window._clear_documents_button.isEnabled()
+    assert not window._busy
+    assert source.read_bytes() == b'original file bytes'
+    assert qapp.clipboard().text() == '剪貼簿保留'
+    window.set_document_pages(())  # Controller's silent synchronization callback.
+    assert cleared == [True]
+    imported(window, 1)
+    assert window._layout.region_for('辨識1', 0) is None
+    assert not window._recognize_button.isEnabled()
+
+
+def test_clear_busy_import_with_no_loaded_page_can_cancel_and_reset(window, monkeypatch):
+    cleared = []
+    window.clear_requested.connect(lambda: cleared.append(True))
+    window.set_busy(True, '匯入中')
+    monkeypatch.setattr(QMessageBox, 'question', lambda *args: QMessageBox.StandardButton.Yes)
+    assert window._clear_documents_button.isEnabled()
+    window._clear_documents_button.click()
+    assert cleared == [True]
+    assert not window._busy
+    assert window._import_button.isEnabled()
 
 
 def test_new_documents_preserve_base_template_but_reset_overrides(window):

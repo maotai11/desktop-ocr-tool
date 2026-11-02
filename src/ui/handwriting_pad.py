@@ -1,4 +1,6 @@
 """Mouse and single-touch handwriting pad. No raster OCR or network calls."""
+from itertools import pairwise
+
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QEventPoint, QPainter, QPen
 from PySide6.QtWidgets import QWidget
@@ -17,6 +19,8 @@ class HandwritingPad(QWidget):
         self.buffer = StrokeBuffer()
         self._mouse_active = False
         self._touch_id = None
+        self._stroke_rect = None
+        self._stroke_origin = None
         self.setMinimumSize(220, 220)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -24,6 +28,12 @@ class HandwritingPad(QWidget):
         self.setToolTip('在方框內寫一個字，點選候選字即可複製')
 
     def canvas_rect(self):
+        if self._stroke_rect is not None:
+            # A layout/scroll/DPI change must not change the coordinate frame
+            # half-way through a mouse or touch stroke. Keep painting and input
+            # in the same screen position until the gesture is complete.
+            origin = QPointF(self.mapToGlobal(self.rect().topLeft()))
+            return self._stroke_rect.translated(self._stroke_origin - origin)
         size = max(1, min(self.width(), self.height()) - 8)
         return QRectF((self.width() - size) / 2, (self.height() - size) / 2, size, size)
 
@@ -34,11 +44,16 @@ class HandwritingPad(QWidget):
             (position.y() - rect.top()) / rect.height()))
 
     def _begin(self, position):
-        if not self.canvas_rect().contains(position):
+        rect = self.canvas_rect()
+        if not rect.contains(position):
             return False
         if not self.buffer.begin(*self._point(position)):
             self.limit_reached.emit()
             return False
+        # changed() can synchronously update the surrounding layout. Snapshot
+        # before notifying it, after the initial point has been accepted.
+        self._stroke_rect = QRectF(rect)
+        self._stroke_origin = QPointF(self.mapToGlobal(self.rect().topLeft()))
         self.changed.emit()
         self.update()
         return True
@@ -54,6 +69,7 @@ class HandwritingPad(QWidget):
 
     def _finish(self):
         if self.buffer.finish():
+            self._stroke_rect = self._stroke_origin = None
             self.changed.emit()
             self.stroke_finished.emit()
             self.update()
@@ -61,6 +77,7 @@ class HandwritingPad(QWidget):
     def clear(self):
         self._mouse_active = False
         self._touch_id = None
+        self._stroke_rect = self._stroke_origin = None
         self.buffer.clear()
         self.changed.emit()
         self.update()
@@ -68,11 +85,20 @@ class HandwritingPad(QWidget):
     def undo(self):
         self._mouse_active = False
         self._touch_id = None
+        self._stroke_rect = self._stroke_origin = None
         self.buffer.undo()
         self.changed.emit()
         self.update()
         if self.buffer.strokes:
             self.stroke_finished.emit()
+
+    def cancel_active_stroke(self):
+        self._mouse_active = False
+        self._touch_id = None
+        self.buffer.cancel()
+        self._stroke_rect = self._stroke_origin = None
+        self.changed.emit()
+        self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._touch_id is None:
@@ -122,10 +148,7 @@ class HandwritingPad(QWidget):
             event.accept()
             return True
         if kind == QEvent.Type.TouchCancel:
-            self._touch_id = None
-            self.buffer.cancel()
-            self.changed.emit()
-            self.update()
+            self.cancel_active_stroke()
             event.accept()
             return True
         return super().event(event)
@@ -153,5 +176,5 @@ class HandwritingPad(QWidget):
             if len(stroke) == 1:
                 painter.drawPoint(map_point(stroke[0]))
             else:
-                for start, end in zip(stroke, stroke[1:]):
+                for start, end in pairwise(stroke):
                     painter.drawLine(map_point(start), map_point(end))

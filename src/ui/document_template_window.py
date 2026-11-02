@@ -6,7 +6,16 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QFontMetrics,
+    QImage,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
@@ -26,6 +35,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -103,6 +113,9 @@ class _FieldLabel(QGraphicsSimpleTextItem):
 class RegionCanvas(QGraphicsView):
     """Source-coordinate rectangles remain correct while fitting or zooming."""
     region_drawn = Signal(object)
+    zoom_changed = Signal(float)
+    MIN_ZOOM = .05
+    MAX_ZOOM = 12.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -117,13 +130,17 @@ class RegionCanvas(QGraphicsView):
         self._start_view = None
         self._rubber = None
         self._auto_fit = True
+        self._manual_zoom = 1.0
+        self._pan_mode = False
+        self._pan_start = None
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setBackgroundBrush(QColor(_BG_RAISE))
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        self.setMinimumSize(240, 150)
+        self.setMinimumSize(240, 100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAccessibleName('文件預覽，可拖曳框選欄位')
-        self.setToolTip('拖曳框選；Ctrl 加滾輪縮放。也可在右側輸入位置。')
+        self.setToolTip('拖曳框選；Ctrl 加滾輪縮放；按住滑鼠中鍵移動頁面。')
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.viewport().setCursor(Qt.CursorShape.CrossCursor)
         self._empty = self._scene.addText('匯入 PDF 或圖片，從第一頁框選欄位')
         self._empty.setDefaultTextColor(QColor(_TEXT_SEC))
@@ -137,19 +154,21 @@ class RegionCanvas(QGraphicsView):
 
     def set_image(self, image):
         detached = _image_copy(image)
-        self._start = self._start_view = None
+        self._start = self._start_view = self._pan_start = None
         self._scene.clear()
         self._empty = self._rubber = None
         self._overlays = []
         self._labels = []
         self._pixmap_item = self._scene.addPixmap(QPixmap.fromImage(detached))
         self._scene.setSceneRect(self._pixmap_item.boundingRect())
-        self._auto_fit = True
         self._draw_regions()
-        self.fit_page()
+        if self._auto_fit:
+            self.fit_page()
+        else:
+            self.set_zoom(self._manual_zoom * 100)
 
     def clear_image(self, message='載入頁面…'):
-        self._start = self._start_view = self._rubber = None
+        self._start = self._start_view = self._rubber = self._pan_start = None
         self._pixmap_item = None
         self._overlays = []
         self._labels = []
@@ -158,6 +177,7 @@ class RegionCanvas(QGraphicsView):
         self._empty = self._scene.addText(message)
         self._empty.setDefaultTextColor(QColor(_TEXT_SEC))
         self._scene.setSceneRect(self._empty.boundingRect())
+        self.zoom_changed.emit(0)
 
     def set_regions(self, regions, selected_name=None):
         self._regions = dict(regions)
@@ -205,6 +225,40 @@ class RegionCanvas(QGraphicsView):
             self.resetTransform()
             self.fitInView(self._pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
             self._position_labels()
+            self.zoom_changed.emit(self.zoom_percent)
+
+    @property
+    def zoom_percent(self):
+        return abs(self.transform().m11()) * 100 if self._pixmap_item is not None else 0.0
+
+    def set_zoom(self, percent, under_mouse=False):
+        if self._pixmap_item is None:
+            return
+        target = min(self.MAX_ZOOM, max(self.MIN_ZOOM, percent / 100))
+        current = abs(self.transform().m11())
+        self._auto_fit = False
+        self._manual_zoom = target
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse if under_mouse
+                                     else QGraphicsView.ViewportAnchor.AnchorViewCenter)
+        self.scale(target / current, target / current)
+        self._position_labels()
+        self.zoom_changed.emit(self.zoom_percent)
+
+    def zoom_in(self):
+        self.set_zoom(self.zoom_percent * 1.2)
+
+    def zoom_out(self):
+        self.set_zoom(self.zoom_percent / 1.2)
+
+    def actual_size(self):
+        self.set_zoom(100)
+
+    def set_pan_mode(self, enabled):
+        self._pan_mode = bool(enabled)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag if enabled
+                         else QGraphicsView.DragMode.NoDrag)
+        self.viewport().setCursor(Qt.CursorShape.OpenHandCursor if enabled
+                                  else Qt.CursorShape.CrossCursor)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -214,12 +268,7 @@ class RegionCanvas(QGraphicsView):
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier and self._pixmap_item is not None:
             factor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
-            current = self.transform().m11()
-            if .05 <= current * factor <= 12:
-                self._auto_fit = False
-                self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-                self.scale(factor, factor)
-                self._position_labels()
+            self.set_zoom(self.zoom_percent * factor, under_mouse=True)
             event.accept()
             return
         super().wheelEvent(event)
@@ -229,6 +278,14 @@ class RegionCanvas(QGraphicsView):
         return QPointF(max(0, min(width, point.x())), max(0, min(height, point.y())))
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.MiddleButton and self._pixmap_item is not None:
+            self._pan_start = event.position().toPoint()
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        if self._pan_mode:
+            super().mousePressEvent(event)
+            return
         if (event.button() == Qt.MouseButton.LeftButton and self._pixmap_item is not None
                 and self._pixmap_item.boundingRect().contains(self.mapToScene(event.position().toPoint()))):
             self._start = self._bounded(self.mapToScene(event.position().toPoint()))
@@ -242,6 +299,13 @@ class RegionCanvas(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._pan_start is not None:
+            delta = event.position().toPoint() - self._pan_start
+            self._pan_start = event.position().toPoint()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
         if self._start is not None:
             current = self._bounded(self.mapToScene(event.position().toPoint()))
             self._rubber.setRect(QRectF(self._start, current).normalized())
@@ -250,6 +314,12 @@ class RegionCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.MiddleButton and self._pan_start is not None:
+            self._pan_start = None
+            self.viewport().setCursor(Qt.CursorShape.OpenHandCursor if self._pan_mode
+                                      else Qt.CursorShape.CrossCursor)
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self._start is not None:
             current = self._bounded(self.mapToScene(event.position().toPoint()))
             rect = QRectF(self._start, current).normalized()
@@ -283,6 +353,7 @@ class DocumentTemplateWindow(QWidget):
     page_requested = Signal(int)
     recognize_requested = Signal(object)
     cancel_requested = Signal()
+    clear_requested = Signal()
 
     def __init__(self, cfg, parent=None):
         super().__init__(parent, Qt.WindowType.Window)
@@ -311,6 +382,7 @@ class DocumentTemplateWindow(QWidget):
             QPushButton {{ background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid {_BORDER_L};
                 border-radius: 7px; padding: 7px 12px; }}
             QPushButton:hover {{ background: {_BG_HOVER}; }}
+            QPushButton:checked {{ background: {_ACCENT_18}; border-color: {_ACCENT}; color: {_ACCENT}; }}
             QPushButton:focus, QLineEdit:focus, QPlainTextEdit:focus {{ border-color: {_ACCENT}; }}
             QPushButton:disabled {{ color: {_TEXT_SEC}; border-color: {_BORDER}; }}
             QPushButton#recognizeDocuments {{ background: {_ACCENT}; color: {_ACCENT_T}; font-weight: 600; border: none; }}
@@ -353,6 +425,11 @@ class DocumentTemplateWindow(QWidget):
         self._import_button = QPushButton('匯入 PDF／圖片')
         self._import_button.clicked.connect(self._choose_files)
         tools.addWidget(self._import_button)
+        self._clear_documents_button = QPushButton('清空文件')
+        self._clear_documents_button.setObjectName('clearDocuments')
+        self._clear_documents_button.setToolTip('移除匯入文件、全部框選與辨識結果，保留欄位名稱和文字模板；原始檔案不會刪除。')
+        self._clear_documents_button.clicked.connect(self._confirm_clear_documents)
+        tools.addWidget(self._clear_documents_button)
         tools.addWidget(_plain_label('單檔上限'))
         self._file_limit = QSpinBox()
         self._file_limit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
@@ -397,15 +474,54 @@ class DocumentTemplateWindow(QWidget):
         self._page_combo.currentIndexChanged.connect(self._select_page)
         self._page_combo.setAccessibleName('文件頁面')
         self._page_count = _plain_label('尚未匯入')
-        fit = QPushButton('適合視窗')
-        fit.clicked.connect(lambda: self._canvas.fit_page())
         page_bar.addWidget(self._previous)
         page_bar.addWidget(self._page_combo, 1)
         page_bar.addWidget(self._next)
-        page_bar.addWidget(fit)
         preview_layout.addLayout(page_bar)
         self._canvas = RegionCanvas()
         self._canvas.region_drawn.connect(self._set_region)
+        self._canvas.zoom_changed.connect(self._update_zoom_controls)
+        zoom_bar = QHBoxLayout()
+        zoom_bar.setSpacing(5)
+        self._zoom_out = QPushButton('−')
+        self._zoom_out.setAccessibleName('縮小頁面')
+        self._zoom_out.setToolTip('縮小（Ctrl＋−）')
+        self._zoom_out.clicked.connect(self._canvas.zoom_out)
+        self._zoom_in = QPushButton('＋')
+        self._zoom_in.setAccessibleName('放大頁面')
+        self._zoom_in.setToolTip('放大（Ctrl＋＋）')
+        self._zoom_in.clicked.connect(self._canvas.zoom_in)
+        self._zoom_label = _plain_label('—')
+        self._zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._zoom_label.setMinimumWidth(44)
+        self._zoom_label.setAccessibleName('目前頁面縮放比例')
+        self._fit_button = QPushButton('適合視窗')
+        self._fit_button.setToolTip('整頁顯示（Ctrl＋0）')
+        self._fit_button.clicked.connect(self._canvas.fit_page)
+        self._actual_size_button = QPushButton('100%')
+        self._actual_size_button.setToolTip('原始大小（Ctrl＋1）')
+        self._actual_size_button.clicked.connect(self._canvas.actual_size)
+        self._pan_button = QPushButton('拖曳移動')
+        self._pan_button.setCheckable(True)
+        self._pan_button.setToolTip('開啟後拖曳可移動頁面，關閉後拖曳可框選；也可按住滑鼠中鍵移動。')
+        self._pan_button.toggled.connect(self._canvas.set_pan_mode)
+        self._zoom_controls = (self._zoom_out, self._zoom_in, self._fit_button,
+                               self._actual_size_button, self._pan_button)
+        for control in (self._zoom_out, self._zoom_label, self._zoom_in, self._fit_button,
+                        self._actual_size_button, self._pan_button):
+            if isinstance(control, QPushButton):
+                control.setStyleSheet('QPushButton { padding: 5px 7px; }')
+            zoom_bar.addWidget(control)
+        zoom_bar.addStretch()
+        preview_layout.addLayout(zoom_bar)
+        self._zoom_shortcuts = []
+        for key, action in (('Ctrl++', self._canvas.zoom_in), ('Ctrl+=', self._canvas.zoom_in),
+                            ('Ctrl+-', self._canvas.zoom_out), ('Ctrl+0', self._canvas.fit_page),
+                            ('Ctrl+1', self._canvas.actual_size)):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(action)
+            self._zoom_shortcuts.append(shortcut)
         preview_layout.addWidget(self._canvas, 1)
         preview_layout.addWidget(self._page_count)
         workspace.addWidget(preview_panel)
@@ -448,6 +564,7 @@ class DocumentTemplateWindow(QWidget):
         self._scope.addItem('所有頁共用', 'all')
         self._scope.addItem('只改這一頁', 'page')
         self._scope.setAccessibleName('框選位置的套用範圍')
+        self._scope.currentIndexChanged.connect(self._refresh_actions)
         field_layout.addWidget(self._scope)
         coordinates = QGridLayout()
         self._coordinates = []
@@ -466,11 +583,15 @@ class DocumentTemplateWindow(QWidget):
         position_actions = QHBoxLayout()
         self._apply_position = QPushButton('套用位置')
         self._apply_position.clicked.connect(self._apply_coordinates)
+        self._clear_region_button = QPushButton('清除框選')
+        self._clear_region_button.setToolTip('依套用範圍清除所選欄位的位置；「所有頁共用」會清除此欄位在每頁的框選。')
+        self._clear_region_button.clicked.connect(self._clear_region)
         self._reset_override = QPushButton('此頁套用第一頁')
         self._reset_override.clicked.connect(self._clear_page_overrides)
         position_actions.addWidget(self._apply_position)
-        position_actions.addWidget(self._reset_override)
+        position_actions.addWidget(self._clear_region_button)
         field_layout.addLayout(position_actions)
+        field_layout.addWidget(self._reset_override)
         self._region_note = _plain_label('在第一頁拖曳框選，其他頁會沿用位置。')
         self._region_note.setWordWrap(True)
         self._region_note.setStyleSheet(f'color: {_TEXT_SEC}; font-size: 11px;')
@@ -568,6 +689,27 @@ class DocumentTemplateWindow(QWidget):
         if paths:
             self.import_requested.emit(paths, self._file_limit.value())
 
+    def _confirm_clear_documents(self):
+        if not (self._pages or self._results or self._busy):
+            return
+        answer = QMessageBox.question(
+            self, '清空文件',
+            '移除匯入文件、全部框選與辨識結果？\n'
+            '欄位名稱和文字模板會保留，原始檔案不會刪除。',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            self.clear_documents()
+            self.clear_requested.emit()
+
+    def clear_documents(self):
+        """Clear the local session without deleting sources or changing the clipboard."""
+        self._layout = TemplateLayout(self._layout.field_names)
+        self._pan_button.setChecked(False)
+        self.set_document_pages(())
+        self._canvas.fit_page()
+        self.set_busy(False, '已清空文件；欄位名稱和文字模板已保留。')
+
     def dragEnterEvent(self, event):
         if not self._busy and event.mimeData().hasUrls() and all(
                 url.isLocalFile() for url in event.mimeData().urls()):
@@ -601,6 +743,8 @@ class DocumentTemplateWindow(QWidget):
             self._status.setText(f'已匯入 {len(self._pages)} 頁。從第一頁設定欄位，其他頁會沿用。')
         else:
             self._page_count.setText('尚未匯入')
+            self._canvas.clear_image('匯入 PDF 或圖片，從第一頁框選欄位')
+            self._status.setText('匯入文件後，從第一頁框選需要的文字。')
         self._refresh_fields()
         self._refresh_actions()
 
@@ -611,7 +755,7 @@ class DocumentTemplateWindow(QWidget):
         self._canvas.clear_image()
         self._scope.setCurrentIndex(0 if index == 0 else 1)
         self._scope.model().item(1).setEnabled(index > 0)
-        self._page_count.setText(f'第 {index + 1}／{len(self._pages)} 頁 · 拖曳框選，Ctrl＋滾輪可縮放')
+        self._page_count.setText(f'第 {index + 1}／{len(self._pages)} 頁 · 拖曳框選欄位')
         self._refresh_fields()
         self._refresh_actions()
         self.page_requested.emit(index)
@@ -636,7 +780,8 @@ class DocumentTemplateWindow(QWidget):
         for field in self._layout.fields:
             region = self._layout.region_for(field.name, max(0, self._current_page))
             if region is None:
-                state = '未框選'
+                state = ('此頁已清除' if self._current_page > 0
+                         and self._layout.has_override(field.name, self._current_page) else '未框選')
             elif self._current_page > 0 and self._layout.has_override(field.name, self._current_page):
                 state = '此頁位置'
             else:
@@ -659,7 +804,7 @@ class DocumentTemplateWindow(QWidget):
         for control, value in zip(self._coordinates, values):
             control.setValue(value * 100)
         if self._current_page > 0:
-            self._region_note.setText('這一頁未調整的欄位，會沿用第一頁位置。')
+            self._region_note.setText('未調整的欄位會沿用第一頁；清除此頁後，需重新框選或套用第一頁。')
         else:
             self._region_note.setText('第一頁的位置會套用到所有頁，也可逐頁調整。')
         self._refresh_canvas()
@@ -729,6 +874,22 @@ class DocumentTemplateWindow(QWidget):
         except (TemplateError, ValueError) as exc:
             self.show_error(str(exc))
 
+    def _clear_region(self):
+        name = self._selected_field()
+        if not name or self._current_page < 0 or self._busy:
+            return
+        if self._scope.currentData() == 'all':
+            self._layout.set_region(name, None)
+            for page in self._layout.overrides:
+                self._layout.clear_override(name, page)
+            message = f'已清除「{name}」所有頁面的框選。'
+        else:
+            self._layout.set_region(name, None, self._current_page)
+            message = f'已清除「{name}」這一頁的框選，其他頁不變。'
+        self._clear_results()
+        self._refresh_fields(name)
+        self._status.setText(message)
+
     def _clear_page_overrides(self):
         if self._current_page > 0:
             self._layout.clear_page_overrides(self._current_page)
@@ -761,19 +922,45 @@ class DocumentTemplateWindow(QWidget):
         self._recognize_button.setEnabled(bool(self._pages) and not error and not self._busy)
         self._cancel_button.setEnabled(self._busy)
         self._import_button.setEnabled(not self._busy)
+        self._clear_documents_button.setEnabled(bool(self._pages or self._results or self._busy))
         self._file_limit.setEnabled(not self._busy)
-        selected = bool(self._selected_field())
+        name = self._selected_field()
+        selected = name in self._layout.field_names
         for button in (self._rename_button, self._remove_field_button):
             button.setEnabled(selected and not self._busy)
         self._apply_position.setEnabled(selected and not self._busy and bool(self._canvas.image_size[0]))
+        if selected and self._current_page >= 0:
+            if self._scope.currentData() == 'all':
+                has_region = (self._layout.region_for(name, 0) is not None
+                              or any(regions.get(name) is not None for regions in self._layout.overrides.values()))
+            else:
+                has_region = self._layout.region_for(name, self._current_page) is not None
+        else:
+            has_region = False
+        self._clear_region_button.setEnabled(has_region and not self._busy)
         self._canvas.setEnabled(not self._busy and bool(self._canvas.image_size[0]))
         self._add_field_button.setEnabled(bool(self._pages) and not self._busy)
-        self._reset_override.setEnabled(self._current_page > 0 and not self._busy)
+        self._reset_override.setEnabled(self._current_page > 0 and not self._busy
+                                       and self._current_page in self._layout.overrides)
         self._previous.setEnabled(not self._busy and self._current_page > 0)
         self._next.setEnabled(not self._busy and 0 <= self._current_page < len(self._pages)-1)
         output_ready = bool(self._output.toPlainText().strip()) and not self._busy and not self._has_failed_results()
         self._copy_button.setEnabled(output_ready)
         self._export_button.setEnabled(output_ready)
+        self._update_zoom_controls()
+
+    def _update_zoom_controls(self, percent=None):
+        if not hasattr(self, '_zoom_controls'):
+            return
+        percent = self._canvas.zoom_percent if percent is None else percent
+        ready = bool(self._canvas.image_size[0]) and not self._busy
+        self._zoom_label.setText(f'{percent:.0f}%' if percent else '—')
+        for control in self._zoom_controls:
+            control.setEnabled(ready)
+        self._zoom_out.setEnabled(ready and percent > self._canvas.MIN_ZOOM * 100 + .01)
+        self._zoom_in.setEnabled(ready and percent < self._canvas.MAX_ZOOM * 100 - .01)
+        for shortcut in self._zoom_shortcuts:
+            shortcut.setEnabled(ready)
 
     def _start_recognition(self):
         error = self._validation_error()

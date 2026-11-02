@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from .theme import (
     _BG, _BG_RAISE, _BG_HOVER, _BORDER,
     _TEXT_PRI, _TEXT_SEC, _ACCENT, _ACCENT_H, _ACCENT_T,
-    _ACCENT_15, _ACCENT_18, _ACCENT_35,
+    _ACCENT_15, _ACCENT_35, apply_combo_box_theme,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,28 +97,6 @@ _DIALOG_QSS = f"""
     QLineEdit:focus {{
         border: 1px solid {_ACCENT};
     }}
-    QComboBox {{
-        background: {_BG_RAISE};
-        color: {_TEXT_PRI};
-        border: 1px solid {_BORDER};
-        border-radius: 4px;
-        padding: 3px 8px;
-        min-width: 100px;
-    }}
-    QComboBox:focus {{
-        border: 1px solid {_ACCENT};
-    }}
-    QComboBox::drop-down {{
-        border: none;
-        width: 20px;
-    }}
-    QComboBox QAbstractItemView {{
-        background: {_BG_RAISE};
-        color: {_TEXT_PRI};
-        border: 1px solid {_BORDER};
-        selection-background-color: {_ACCENT_18};
-        selection-color: {_ACCENT};
-    }}
     QScrollBar:vertical {{
         background: transparent; width: 6px; margin: 3px 0;
     }}
@@ -165,6 +143,8 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(520, 420)
         self._setup_ui()
         self.setStyleSheet(_DIALOG_QSS)
+        for combo in self.findChildren(QComboBox):
+            apply_combo_box_theme(combo)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)

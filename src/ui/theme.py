@@ -62,3 +62,63 @@ _ERROR_18 = "rgba(224, 85, 85, 0.18)"
 _ERROR_25 = "rgba(224, 85, 85, 0.25)"
 _ERROR_30 = "rgba(224, 85, 85, 0.30)"
 _ERROR_35 = "rgba(224, 85, 85, 0.35)"
+
+
+_COMBO_BOX_QSS = f"""
+    QComboBox {{
+        background: {_BG_RAISE}; color: {_TEXT_PRI};
+        selection-background-color: {_ACCENT}; selection-color: {_ACCENT_T};
+        border: 1px solid {_BORDER}; border-radius: 4px;
+        padding: 3px 8px; min-width: 100px;
+    }}
+    QComboBox:hover {{ background: {_BG_HOVER}; }}
+    QComboBox:focus {{ border: 1px solid {_ACCENT}; }}
+    QComboBox:disabled {{
+        background: {_BG_RAISE}; color: {_TEXT_SEC};
+        selection-background-color: {_BG_HOVER}; selection-color: {_TEXT_SEC};
+    }}
+    QComboBox::drop-down {{ border: none; width: 20px; }}
+"""
+
+_COMBO_POPUP_QSS = f"""
+    QAbstractItemView {{
+        background: {_BG_RAISE}; color: {_TEXT_PRI};
+        border: 1px solid {_BORDER};
+        selection-background-color: {_ACCENT}; selection-color: {_ACCENT_T};
+    }}
+    QAbstractItemView::item {{
+        background: {_BG_RAISE}; color: {_TEXT_PRI}; padding: 5px 8px;
+    }}
+    QAbstractItemView::item:hover:!selected {{ background: {_BG_HOVER}; color: {_TEXT_PRI}; }}
+    QAbstractItemView::item:selected {{ background: {_ACCENT}; color: {_ACCENT_T}; }}
+    QAbstractItemView::item:disabled {{ background: {_BG_RAISE}; color: {_TEXT_SEC}; }}
+"""
+
+
+def apply_combo_box_theme(combo):
+    """Keep native focus painting and popup rows on the same readable palette."""
+    from PySide6.QtGui import QColor, QPalette
+    from PySide6.QtWidgets import QStyledItemDelegate
+
+    palette = QPalette(combo.palette())
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive,
+                  QPalette.ColorGroup.Disabled):
+        disabled = group == QPalette.ColorGroup.Disabled
+        foreground = _TEXT_SEC if disabled else _TEXT_PRI
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base,
+                     QPalette.ColorRole.AlternateBase, QPalette.ColorRole.Button):
+            palette.setColor(group, role, QColor(_BG_RAISE))
+        for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text,
+                     QPalette.ColorRole.ButtonText):
+            palette.setColor(group, role, QColor(foreground))
+        palette.setColor(group, QPalette.ColorRole.Highlight, QColor(_BG_HOVER if disabled else _ACCENT))
+        palette.setColor(group, QPalette.ColorRole.HighlightedText, QColor(_TEXT_SEC if disabled else _ACCENT_T))
+    combo.setPalette(palette)
+    combo.setStyleSheet(_COMBO_BOX_QSS)
+    view = combo.view()
+    # Native menu delegates can use host menu roles instead of the view's Text
+    # roles. The standard item delegate keeps row states and keyboard navigation.
+    combo.setItemDelegate(QStyledItemDelegate(combo))
+    view.setPalette(palette)
+    view.viewport().setPalette(palette)
+    view.setStyleSheet(_COMBO_POPUP_QSS)

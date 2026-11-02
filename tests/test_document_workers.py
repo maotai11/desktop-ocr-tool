@@ -345,3 +345,122 @@ def test_failed_ocr_and_empty_text_are_visible_statuses_without_history_signal(q
     assert results[-1] == ([{'上': '', '下': ''}], [{'上': 'failed', '下': 'failed'}], False)
     assert history == []
     assert events[-1] == 'results'
+
+
+@pytest.mark.parametrize('phase', ['import', 'preview', 'ocr'])
+def test_clear_document_discards_late_work_then_can_import_and_recognize_again(
+        qapp, qtbot, tmp_path, workers, monkeypatch, phase):
+    from src.workers import document_worker
+    old = image_file(tmp_path, 'old.png')
+    new = image_file(tmp_path, 'new.png', ((90, 80, 70), (60, 50, 40)))
+    original_hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in (old, new)]
+    engine, _, controller = workers()
+    entered, release = threading.Event(), threading.Event()
+    loaded, previews, batches = [], [], []
+    controller.document_loaded.connect(loaded.append)
+    controller.page_ready.connect(lambda *args: previews.append(args))
+    controller.results_detailed.connect(lambda *args: batches.append(args))
+    copy_text('保留的剪貼簿')
+    if phase == 'import':
+        real_load = document_worker.load_sources
+
+        def blocked_load(*args, **kwargs):
+            entered.set()
+            assert release.wait(5)
+            return real_load(*args, **kwargs)
+
+        monkeypatch.setattr(document_worker, 'load_sources', blocked_load)
+        controller.import_paths([old])
+    else:
+        imported(qtbot, controller, [old])
+        if phase == 'preview':
+            real_render = document_worker.render_page
+
+            def blocked_render(*args, **kwargs):
+                if kwargs.get('preview'):
+                    entered.set()
+                    assert release.wait(5)
+                return real_render(*args, **kwargs)
+
+            monkeypatch.setattr(document_worker, 'render_page', blocked_render)
+            controller.request_page(0)
+        else:
+            engine.block = 'document'
+            entered, release = engine.entered, engine.release
+            controller.start_recognition(snapshot(controller))
+    try:
+        qtbot.waitUntil(entered.is_set)
+        cached = controller._renderer._cached_image
+        controller.clear_document()
+        assert controller.pages == ()
+        assert loaded[-1] == ()
+        assert controller._results == controller._statuses == []
+        assert controller._state == 'idle'
+        assert batches == []
+        assert controller._renderer.isRunning()  # Cancellation does not terminate a native thread.
+        release.set()
+        qtbot.waitUntil(lambda: controller._renderer._cached_image is None)
+        if cached is not None:
+            with pytest.raises(ValueError):
+                cached.getpixel((0, 0))
+        imported(qtbot, controller, [new])
+        controller.start_recognition(snapshot(controller))
+        qtbot.waitUntil(lambda: bool(batches))
+        assert previews == []
+        assert batches == [([{'上': '90,80,70', '下': '60,50,40'}],
+                            [{'上': 'done', '下': 'done'}], False)]
+        assert qapp.clipboard().text() == '保留的剪貼簿'
+        assert original_hashes == [hashlib.sha256(path.read_bytes()).hexdigest() for path in (old, new)]
+    finally:
+        release.set()
+
+
+def test_clear_document_is_idempotent_and_rejected_after_shutdown(qtbot, tmp_path, workers):
+    _, _, controller = workers()
+    imported(qtbot, controller, [image_file(tmp_path, 'one.png')])
+    loaded = []
+    controller.document_loaded.connect(loaded.append)
+    controller.clear_document()
+    controller.clear_document()
+    assert controller.pages == () and loaded == [(), ()]
+    controller.shutdown()
+    controller.clear_document()
+    assert loaded == [(), ()]
+
+
+def test_clear_document_releases_cache_even_when_cancelled_preview_queue_is_full(
+        qtbot, tmp_path, workers, monkeypatch):
+    from src.workers import document_worker
+    engine, _, controller = workers()
+    engine.block = 'document'
+    imported(qtbot, controller, [image_file(tmp_path, 'one.png')])
+    controller.start_recognition(snapshot(controller))
+    qtbot.waitUntil(engine.entered.is_set)
+    cached = controller._renderer._cached_image
+    preview_entered, release_preview = threading.Event(), threading.Event()
+    real_render = document_worker.render_page
+
+    def blocked_preview(*args, **kwargs):
+        if kwargs.get('preview'):
+            preview_entered.set()
+            assert release_preview.wait(5)
+        return real_render(*args, **kwargs)
+
+    monkeypatch.setattr(document_worker, 'render_page', blocked_preview)
+    try:
+        controller.request_page(0)
+        qtbot.waitUntil(preview_entered.is_set)
+        cancelled = threading.Event()
+        cancelled.set()
+        for index in range(controller._renderer._capacity):
+            controller._renderer.preview(index + 100, 0, controller.pages[0], cancelled)
+        assert controller._renderer._queue.qsize() == controller._renderer._capacity
+        controller.clear_document()
+        release_preview.set()
+        qtbot.waitUntil(lambda: controller._renderer._cached_image is None)
+        with pytest.raises(ValueError):
+            cached.getpixel((0, 0))
+        assert controller.pages == ()
+    finally:
+        release_preview.set()
+        engine.release.set()

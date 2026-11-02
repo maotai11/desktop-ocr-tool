@@ -123,9 +123,9 @@ class TemplateLayout:
     ``copy()`` when submitting work so later UI changes cannot move a running job.
     """
     def __init__(self, fields: Iterable[Field] = (),
-                 overrides: Mapping[int, Mapping[str, Region]] | None = None):
+                 overrides: Mapping[int, Mapping[str, Region | None]] | None = None):
         self._fields: dict[str, Field] = {}
-        self._overrides: dict[int, dict[str, Region]] = {}
+        self._overrides: dict[int, dict[str, Region | None]] = {}
         for field in fields:
             self.add_field(field)
         if overrides is not None:
@@ -147,7 +147,7 @@ class TemplateLayout:
         return tuple(self._fields)
 
     @property
-    def overrides(self) -> dict[int, dict[str, Region]]:
+    def overrides(self) -> dict[int, dict[str, Region | None]]:
         return {page: dict(regions) for page, regions in self._overrides.items()}
 
     def _require_field(self, name: str) -> Field:
@@ -176,14 +176,13 @@ class TemplateLayout:
                 self._overrides.pop(page, None)
 
     def set_region(self, name: str, region: Region | None, page_index: int | None = None) -> None:
+        """Set a position, or explicitly clear it; clear_override restores inheritance."""
         field = self._require_field(name)
         page = 0 if page_index is None else _page_index(page_index)
         if region is not None and not isinstance(region, Region):
             raise TemplateError('欄位位置必須是有效框選範圍。')
         if page == 0:
             self._fields[field.name] = Field(field.name, region)
-        elif region is None:
-            self.clear_override(field.name, page)
         else:
             self._overrides.setdefault(page, {})[field.name] = region
 

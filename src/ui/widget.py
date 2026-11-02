@@ -459,6 +459,7 @@ class FloatingWidget(QWidget):
             window.page_requested.connect(controller.request_page)
             window.recognize_requested.connect(controller.start_recognition)
             window.cancel_requested.connect(controller.cancel)
+            window.clear_requested.connect(controller.clear_document)
             controller.document_loaded.connect(window.set_document_pages)
             controller.page_ready.connect(window.set_page_preview)
             controller.results_detailed.connect(window.set_recognition_results)
