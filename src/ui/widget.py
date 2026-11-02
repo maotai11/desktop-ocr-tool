@@ -207,7 +207,7 @@ class FloatingWidget(QWidget):
         self._btn_ocr.setIcon(_line_icon('capture', _ACCENT_T))
         self._btn_ocr.setIconSize(QSize(20, 20))
         self._btn_ocr.setMinimumHeight(46)
-        self._btn_ocr.setToolTip("框選螢幕，辨識後選取要複製的文字 · Ctrl+Shift+O")
+        self._btn_ocr.setToolTip("框選螢幕並辨識文字 · Ctrl+Shift+O")
         self._btn_ocr.clicked.connect(self.trigger_capture_ocr)
         self._btn_ocr.setStyleSheet(f"""
             QPushButton {{
@@ -334,10 +334,26 @@ class FloatingWidget(QWidget):
         self._btn_console.setIcon(_line_icon('history', _TEXT_SEC))
         self._btn_console.setToolTip("查看、搜尋及匯出紀錄")
         self._btn_console.clicked.connect(self.open_console)
-        self._btn_data_dir = QPushButton("儲存位置")
+        self._btn_data_dir = QPushButton("檔案位置")
         self._btn_data_dir.setIcon(_line_icon('folder', _TEXT_SEC))
-        self._btn_data_dir.setToolTip(f"開啟截圖與紀錄的資料夾\n{os.path.abspath(self._data_dir)}")
-        self._btn_data_dir.clicked.connect(self.open_data_directory)
+        self._btn_data_dir.setToolTip("開啟截圖、附件、匯出、設定、Log 與程式暫存位置")
+        self._storage_menu = QMenu(self._btn_data_dir)
+        self._storage_menu.setStyleSheet(f"""
+            QMenu {{
+                background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid {_BORDER_L};
+                padding: 4px; font-size: 12px;
+            }}
+            QMenu::item {{ padding: 7px 24px 7px 10px; background: transparent; }}
+            QMenu::item:selected {{ background: {_BG_HOVER}; }}
+            QMenu::item:disabled {{ color: {_TEXT_SEC}; }}
+            QMenu::separator {{ height: 1px; background: {_BORDER_L}; margin: 4px 6px; }}
+        """)
+        self._storage_menu.setToolTipsVisible(True)
+        self._storage_attachments = QMenu("截圖與附件", self._storage_menu)
+        self._storage_records = QMenu("紀錄與設定", self._storage_menu)
+        self._storage_attachments.setToolTipsVisible(True)
+        self._storage_records.setToolTipsVisible(True)
+        self._btn_data_dir.clicked.connect(self.show_storage_locations)
         self._btn_pause = QPushButton()
         self._btn_pause.setCheckable(True)
         self._btn_pause.setFixedSize(30, 30)
@@ -358,14 +374,51 @@ class FloatingWidget(QWidget):
         bottom_bar.addWidget(self._btn_pause)
         vbox.addLayout(bottom_bar)
 
-    def open_data_directory(self):
-        """Open the active storage root, including custom and portable locations."""
-        path = os.path.abspath(self._data_dir)
-        if not os.path.isdir(path):
-            QMessageBox.information(self, "找不到儲存位置", "儲存資料夾目前不存在。請到設定確認儲存位置。")
+    def _populate_storage_menu(self):
+        from .storage_locations import get_storage_locations
+        self._storage_menu.clear()
+        self._storage_attachments.clear()
+        self._storage_records.clear()
+        self._storage_menu.addMenu(self._storage_attachments)
+        attachments = self._storage_attachments
+        records = None
+        for location in get_storage_locations(self._data_dir, self._cfg):
+            if location.key in ('captures', 'annotations', 'thumbnails'):
+                host = attachments
+            elif location.key in ('history', 'config'):
+                if records is None:
+                    self._storage_menu.addMenu(self._storage_records)
+                    records = self._storage_records
+                host = records
+            else:
+                host = self._storage_menu
+            if location.key == 'runtime_temp':
+                self._storage_menu.addSeparator()
+            action = host.addAction(location.label)
+            action.setData(location.key)
+            action.setToolTip(location.tooltip)
+            action.setEnabled(location.available)
+            action.triggered.connect(
+                lambda _checked=False, loc=location: self._open_storage_location(loc.path, loc.label)
+            )
+
+    def show_storage_locations(self):
+        self._populate_storage_menu()
+        self._storage_menu.popup(self._btn_data_dir.mapToGlobal(self._btn_data_dir.rect().bottomLeft()))
+
+    def _open_storage_location(self, path, label):
+        if path is None:
             return
-        if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
-            QMessageBox.information(self, "無法開啟資料夾", f"請在檔案總管開啟：\n{path}")
+        absolute = os.path.abspath(path)
+        if not os.path.isdir(absolute):
+            QMessageBox.information(self, "找不到檔案位置", f"{label}目前不存在：\n{absolute}")
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(absolute)):
+            QMessageBox.information(self, "無法開啟資料夾", f"請在檔案總管開啟：\n{absolute}")
+
+    def open_data_directory(self):
+        """Compatibility entry point for opening the active history/data root."""
+        self._open_storage_location(self._data_dir, "歷史資料")
 
     def open_handwriting(self):
         if self._handwriting is None:
@@ -380,7 +433,7 @@ class FloatingWidget(QWidget):
             self._handwriting.shutdown()
 
     def handwriting_is_stopped(self):
-        return self._handwriting is None or self._handwriting.controller.is_stopped
+        return self._handwriting is None or self._handwriting.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')

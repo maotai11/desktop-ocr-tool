@@ -195,6 +195,34 @@ try {
         }
         $summary.probes[$probe.name] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $report -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
+    # Same frozen EXE in its early worker route. The child must prove its PID,
+    # use the bundled Small recognizer, and be cancellable/reaped under its Job.
+    $imageName = 'frozen-handwriting-image.json'
+    $imagePath = Join-Path $reports.FullName $imageName
+    if (Test-Path -LiteralPath $imagePath) { Remove-Item -LiteralPath $imagePath }
+    $imageProcess = Start-Process -FilePath $exe -ArgumentList @('--self-test-handwriting-image', "`"$imagePath`"") -PassThru
+    if (-not $imageProcess.WaitForExit($TimeoutSeconds * 1000)) {
+        & taskkill.exe /PID $imageProcess.Id /T /F | Out-Null
+        throw 'Handwriting image probe timed out; owned tree terminated'
+    }
+    $imageProcess.Refresh()
+    if ($imageProcess.ExitCode -ne 0) { throw 'Handwriting image probe failed' }
+    $image = Get-Content -LiteralPath $imagePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($image.schema -ne 1 -or $image.probe -cne 'handwriting_image_lifecycle' -or
+        $image.helper_protocol -ne 2 -or $image.frozen -ne $true -or
+        $image.platform -cne 'win32' -or $image.qt_platform -cne 'windows' -or
+        $image.version -cne $manifest.version -or $image.executable_sha256 -cne $hash -or
+        $image.clean_machine_verified -ne $false -or
+        $image.model_sha256 -cne $manifest.model_profiles.'v6-small'.rec.sha256 -or
+        $image.character_sha256 -cne $manifest.model_profiles.'v6-small'.rec.character_sha256 -or
+        $image.accuracy_evidence -cne 'UPSTREAM_TRAINING_RASTER_FUNCTIONAL_ONLY') {
+        throw 'Handwriting image probe identity mismatch'
+    }
+    foreach ($key in @('passed', 'inference_completed', 'worker_pid_verified', 'job_assigned', 'cancelled_and_reaped', 'children_reaped')) {
+        if ($image.$key -isnot [bool] -or $image.$key -ne $true) { throw "Incomplete image worker gate: $key" }
+    }
+    if (@($image.candidates) -cnotcontains '一') { throw 'Image single-character control missing' }
+    $summary.probes[$imageName] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant() }
     if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash) { throw 'Executable changed during validation' }
     $summary.passed = $true
 } catch {

@@ -70,7 +70,7 @@ def source_manifest(root: Path):
     names = sorted(set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
                        .decode('utf-8').split('\0')) - {''})
     tracked = set(git('ls-files', '-z', '--cached').decode('utf-8').split('\0'))
-    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json', 'source-handwriting.json'}
+    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json', 'source-handwriting.json', 'source-handwriting-image.json'}
     excluded = set(names) & generated - tracked
     names = [name for name in names if name not in excluded]
     files = {}
@@ -306,26 +306,66 @@ def validate_candidate(paths):
     except ValueError as exc:
         raise RuntimeError('Incomplete handwriting candidate gate') from exc
     reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
+    from scripts.verify_candidate_bundle import check_handwriting_image_probe
+    path = paths['validation_dir'] / 'frozen-handwriting-image.json'
+    report = _run_probe(paths['out_exe'], '--self-test-handwriting-image', path)
+    try:
+        check_handwriting_image_probe(report, dict(manifest, executable_sha256=expected_hash), True)
+    except ValueError as exc:
+        raise RuntimeError('Incomplete handwriting image candidate gate') from exc
+    reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
     return reports
 
 
 def write_release_readme(path: Path) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write(f"{APP_DISPLAY_NAME} v{APP_VERSION}\n")
-        handle.write("=" * 40 + "\n\n")
-        handle.write("執行方式:\n")
-        handle.write(f"  直接雙擊 {versioned_exe_name()}\n\n")
-        handle.write("注意事項:\n")
-        handle.write("  - 設定、資料與日誌會寫到 release 目錄旁的 config/data/logs。\n")
-        handle.write("  - OCR 模型已內含；不需要 Python、pip 或首次下載。\n")
-        handle.write("  - 首次使用剪貼簿監聽預設關閉；歷史及截圖為明文，無自動到期刪除。\n")
-        handle.write("  - 此檔案是候選建置；是否可交付須核對 VALIDATION_STATUS.md 與對應 SHA256。\n\n")
-        handle.write("快捷鍵:\n")
-        handle.write("  Ctrl+Shift+O  框選 OCR\n")
-        handle.write("  Ctrl+Shift+S  框選截圖\n")
-        handle.write("  Ctrl+Shift+F  全螢幕擷取\n")
-        handle.write("  Ctrl+Shift+Space  顯示或隱藏浮動視窗\n")
-        handle.write("  Ctrl+Shift+M  開啟主控台\n")
+    path.write_text(f"""{APP_DISPLAY_NAME} v{APP_VERSION}
+========================================
+
+啟動
+1. Windows 10 1809 以上／Windows 11，64 位元。
+2. 將整份 ZIP 解壓到可寫入的資料夾，再雙擊 {versioned_exe_name()}。
+3. 已內附 Python 執行環境、Qt、兩組 OCR 模型及手寫引擎；目標電腦不需安裝 Python、pip 或語言套件，首次啟動也不下載模型，可斷網使用。
+
+擷取文字與複製模式
+1. 點「擷取文字」或按 Ctrl+Shift+O，再拖曳框選螢幕區域。
+2. 程式只辨識框選內容；預設在辨識完成後自動複製全部文字，直接 Ctrl+V 貼上。
+3. 若只想複製其中一部分，開啟「設定 → 剪貼簿 → 辨識完成後」，改為「先選文字再複製」並儲存，立即生效。
+4. 選字模式的順序是：框選螢幕 → OCR 辨識 → 選擇要複製的文字 → 按「複製」。
+5. 可以在原圖框選／點選文字框、勾選段落，或在預覽反白一小段。按住 Ctrl 拖曳可加選；「全選」可複製整份結果。
+6. 選字模式不會預先改動剪貼簿，取消或關閉選取視窗也不複製；完整結果仍留在歷史。若未保留原圖，仍可勾選文字。
+
+截圖、手寫與歷史
+- 「截圖」會儲存框選圖片；是否同時辨識依設定中的截圖選項。
+- 「手寫」一次寫一個字，再點選候選字複製；可展開更多候選或手動啟動影像補辨，不會直接向其他程式輸入。
+- 點「歷史紀錄」可搜尋、編輯、釘選、刪除及匯出；浮動窗沒有搜尋框，Ctrl+Shift+Q 會直接開啟歷史搜尋。
+- 逗號、撇號與換行的複製清理預設關閉，只改貼上的內容，不改歷史原文。移除換行會接起同一筆的各行。
+
+查看實際留檔與暫存
+浮動窗底部「檔案位置」會顯示目前真正使用的路徑，包含：
+- 截圖：data/captures；標註附件：data/annotations；縮圖：data/thumbnails。
+- 匯出檔案：data/exports；歷史資料：data/app.db 及資料庫暫存檔。
+- 設定檔案：config；執行記錄 (Log)：logs。
+- 程式暫存：這次單檔 EXE 解壓的 _MEI 資源資料夾，正常結束後由執行器清理，執行中請勿刪除。
+一般可攜版的 config/data/logs 在 EXE 旁；使用自訂資料位置或 DESKTOP_OCR_HOME 時，以「檔案位置」顯示為準。歷史與附件不自動到期，Log 每日輪替並最多保留 30 份備份。它們是本機明文檔案。
+
+快捷鍵
+Ctrl+Shift+O      框選文字辨識
+Ctrl+Shift+S      框選截圖
+Ctrl+Shift+F      全螢幕擷取
+Ctrl+Shift+Space  顯示／隱藏浮動窗
+Ctrl+Shift+M      開啟歷史視窗
+Ctrl+Shift+Q      搜尋歷史
+
+從舊版升級
+先關閉舊程式並備份原本的 config/data/logs。將新版 EXE 放回同一個可寫入資料夾，保留原有資料；不要用新版 ZIP 覆蓋自己的資料。若換資料夾，請一併移轉原有 config/data，並更新捷徑與自動啟動路徑。
+
+驗證、授權與限制
+這是候選測試版。公開檔案包含本說明、README.md、授權與手寫模型來源；執行前可從同版 Release 的 SHA256SUMS 核對 EXE/ZIP。該版 validation-metadata.zip 記錄同一次 Windows 建置與離線探針結果，不代表已在你的乾淨電腦、觸控或混合 DPI 環境實測。
+手寫字表含 11,853 字，不含「尞、𠮷、𠀋」；模型筆跡測試不是真人手寫準確率。姓名、金額、日期及帳號請自行核對。
+程式本身不傳送 OCR 圖片或手寫筆跡；若開啟 Windows／第三方雲端剪貼簿，複製內容可能由該服務傳送。
+本版下載與檔案雜湊： https://github.com/maotai11/desktop-ocr-tool/releases/tag/v{APP_VERSION}
+原始碼與最新說明： https://github.com/maotai11/desktop-ocr-tool
+""", encoding="utf-8")
 
 
 def package_release(paths: dict[str, Path], validation_reports=None, source=None) -> None:
@@ -367,6 +407,12 @@ def package_release(paths: dict[str, Path], validation_reports=None, source=None
         shutil.copy2(ROOT/name, paths['release_dir']/name)
     if (ROOT/'docs/VALIDATION_STATUS.md').exists():
         shutil.copy2(ROOT/'docs/VALIDATION_STATUS.md', paths['release_dir']/'VALIDATION_STATUS.md')
+    # Keep README's new engineering/evidence links usable inside the ZIP too.
+    documentation = paths['release_dir'] / 'docs'
+    documentation.mkdir(exist_ok=True)
+    for name in ('VALIDATION_STATUS.md', 'HANDWRITING_IMPROVEMENT_20261015.md'):
+        shutil.copy2(ROOT / 'docs' / name, documentation / name)
+    shutil.copytree(ROOT / 'docs/handwriting-evidence', documentation / 'handwriting-evidence')
     if validation_reports:
         shutil.copytree(paths['validation_dir'], paths['release_dir'] / 'candidate-validation')
     shutil.copy2(ROOT / 'scripts/validate_windows_bundle.ps1',

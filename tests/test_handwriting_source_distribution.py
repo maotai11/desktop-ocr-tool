@@ -11,9 +11,10 @@ import pytest
 
 from scripts.build_handwriting_helper import source_identity
 from scripts.verify_candidate_bundle import verify_handwriting_source_distribution
+from src.core.version import APP_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
-PREFIX = 'release-v1.8.0-rc.1/'
+PREFIX = f'release-v{APP_VERSION}/'
 BASE = PREFIX + 'handwriting-source/'
 
 

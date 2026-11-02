@@ -44,7 +44,7 @@ def identity(root):
             raise ValueError('Corresponding handwriting source/license hash mismatch')
     helper = json.loads((root / HELPER_LOCK).read_text(encoding='utf-8'))
     helper_name = HELPER_PATH if helper.get('platform') == 'win32' else HELPER_PATH.removesuffix('.exe')
-    if (helper.get('schema') != 1 or helper.get('protocol') != 1
+    if (helper.get('schema') != 1 or helper.get('protocol') != 2
             or helper.get('sha256') != sha256(root / helper_name)
             or helper.get('size_bytes') != (root / helper_name).stat().st_size):
         raise ValueError('Handwriting helper hash/size mismatch')
@@ -86,7 +86,7 @@ def inspect_payload(reader, names, expected, source_files=None):
     helper_bytes = extract(HELPER_PATH)
     helper = expected['helper']
     if (helper.get('platform') != 'win32' or helper.get('machine') != 'AMD64'
-            or helper.get('crt') != 'MSVC /MT Release' or helper.get('protocol') != 1
+            or helper.get('crt') != 'MSVC /MT Release' or helper.get('protocol') != 2
             or helper.get('name') != 'inkpick-handwriting.exe'
             or len(helper_bytes) != helper['size_bytes']
             or hashlib.sha256(helper_bytes).hexdigest() != helper['sha256']

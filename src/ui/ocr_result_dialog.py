@@ -2,15 +2,21 @@
 import json
 import math
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPointF,
+    QPropertyAnimation,
+    QRectF,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
-    QKeySequence,
     QPainter,
     QPen,
     QPixmap,
     QPolygonF,
-    QShortcut,
 )
 from PySide6.QtWidgets import (
     QDialog,
@@ -319,17 +325,34 @@ class OcrResultDialog(QDialog):
         self._copy.setObjectName('copySelection')
         self._copy.clicked.connect(self._request_copy)
         self._copy.setToolTip('複製（Ctrl+Enter）')
-        self._copy_shortcuts = []
-        for sequence in ('Ctrl+Return', 'Ctrl+Enter'):
-            shortcut = QShortcut(QKeySequence(sequence), self)
-            shortcut.activated.connect(self._request_copy)
-            self._copy_shortcuts.append(shortcut)
         footer.addWidget(self._copy)
         layout.addLayout(footer)
         for button in self.findChildren(QPushButton):
             button.setAutoDefault(False)
         self._select_all.setEnabled(bool(self._entries))
         self._clear.setEnabled(bool(self._entries))
+        self.installEventFilter(self)
+        for child in self.findChildren(QWidget):
+            child.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+            modifiers = event.modifiers()
+            copy_key = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            control = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+            other_modifier = bool(modifiers & (Qt.KeyboardModifier.AltModifier |
+                                               Qt.KeyboardModifier.MetaModifier |
+                                               Qt.KeyboardModifier.ShiftModifier))
+            if copy_key and control and not other_modifier:
+                # Handle one native key event path. Registering Return and
+                # keypad Enter as two QShortcuts can be ambiguous on Windows,
+                # and QTextEdit otherwise consumes Ctrl+Enter itself.
+                event.accept()
+                if (event.type() == QEvent.Type.KeyPress and not event.isAutoRepeat()
+                        and self._copy.isEnabled()):
+                    self._request_copy()
+                return True
+        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event):
         if hasattr(self, '_preview'):

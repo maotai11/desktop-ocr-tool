@@ -12,7 +12,7 @@ from src.clipboard.writer import copy_text, get_clipboard_epoch
 @pytest.fixture
 def selection_pipeline(qtbot, tmp_db, item_repo, file_mgr):
     pipeline, worker, _thread, _ocr, _capture, _widget = make_pipeline(
-        tmp_db, item_repo, file_mgr)
+        tmp_db, item_repo, file_mgr, copy_mode='select')
     pipeline.selection_requested.connect(pipeline.select_ocr_text)
     yield pipeline, worker
     for dialog in list(pipeline._ocr_selections.values()):

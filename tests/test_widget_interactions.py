@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from PySide6.QtCore import QPoint, QPointF, QEvent, Qt
@@ -229,7 +230,7 @@ def test_quick_search_opens_history_and_focuses_its_search(qtbot, tmp_path, monk
     assert console._search.selectedText() == "原有查詢"
 
 
-def test_storage_button_opens_active_local_directory(qtbot, tmp_path, monkeypatch):
+def test_storage_button_offers_active_directory_in_locations_menu(qtbot, tmp_path, monkeypatch):
     from src.ui.widget import QDesktopServices
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
@@ -239,11 +240,17 @@ def test_storage_button_opens_active_local_directory(qtbot, tmp_path, monkeypatc
     urls = []
     monkeypatch.setattr(QDesktopServices, 'openUrl', lambda url: urls.append(url) or True)
 
+    popped = []
+    monkeypatch.setattr(widget._storage_menu, 'popup', lambda point: popped.append(point))
     widget._btn_data_dir.click()
+    assert len(popped) == 1
+    assert urls == []
+    history = next(action for action in widget._storage_records.actions() if action.data() == 'history')
+    history.trigger()
 
     assert len(urls) == 1
     assert urls[0].isLocalFile()
-    assert urls[0].toLocalFile() == str(custom_path)
+    assert Path(urls[0].toLocalFile()).resolve() == custom_path.resolve()
 
 
 def test_storage_open_failure_shows_manual_path(qtbot, tmp_path, monkeypatch):
@@ -320,3 +327,50 @@ def test_empty_ocr_status_keeps_short_visible_message(qtbot, tmp_path):
     widget.set_ocr_status('未找到文字，已保留先前內容')
     assert widget._ocr_status_lbl.text() == '未找到文字'
     assert widget._ocr_status_lbl.toolTip() == '未找到文字，已保留先前內容'
+
+
+def test_storage_menu_lists_all_generated_locations_and_reuses_submenus(qtbot, tmp_path, monkeypatch):
+    from src.ui import storage_locations
+    from src.ui.widget import QMenu
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    monkeypatch.setattr(storage_locations, 'get_project_root', lambda: str(tmp_path))
+    for name in ('logs', 'config'):
+        (tmp_path / name).mkdir()
+    for name in ('captures', 'annotations', 'thumbnails', 'exports'):
+        (tmp_path / name).mkdir()
+    original_menu_count = len(widget.findChildren(QMenu))
+
+    for _ in range(20):
+        widget._populate_storage_menu()
+
+    assert len(widget.findChildren(QMenu)) == original_menu_count
+    actions = widget._storage_menu.actions() + widget._storage_attachments.actions() + widget._storage_records.actions()
+    by_key = {action.data(): action for action in actions if action.data()}
+    for key in ('captures', 'annotations', 'thumbnails', 'exports', 'history', 'config', 'logs', 'program'):
+        assert by_key[key].isEnabled()
+        assert str(tmp_path) in by_key[key].toolTip()
+    assert not by_key['runtime_temp'].isEnabled()
+
+
+def test_storage_action_rechecks_location_disappearing_after_menu_open(qtbot, tmp_path, monkeypatch):
+    from src.ui.widget import QDesktopServices, QMessageBox
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    # _make_widget puts its actual FileManager below data/, while active UI root
+    # is tmp_path; create the UI's active exports directory for this scenario.
+    exports = tmp_path / 'exports'
+    exports.mkdir()
+    widget._populate_storage_menu()
+    action = next(action for action in widget._storage_menu.actions() if action.data() == 'exports')
+    assert action.isEnabled()
+    exports.rmdir()
+    opened = []
+    notices = []
+    monkeypatch.setattr(QDesktopServices, 'openUrl', lambda url: opened.append(url) or True)
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: notices.append(args[1:]))
+
+    action.trigger()
+
+    assert not opened
+    assert notices == [('找不到檔案位置', f'匯出檔案目前不存在：\n{exports}')]

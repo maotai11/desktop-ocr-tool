@@ -5,7 +5,7 @@ constexpr size_t MAX_STROKES = 128;
 constexpr size_t MAX_STROKE_POINTS = 512;
 constexpr size_t MAX_POINTS = 16384;
 constexpr size_t MAX_INPUT_BYTES = 2 + 2 * MAX_STROKES + 4 * MAX_POINTS;
-constexpr size_t NBEST = 10;
+constexpr size_t NBEST = 30;
 constexpr uint16_t CANVAS_SIZE = 1000;
 const char *MODEL_SHA256 = "cd47f16b64e7ecaa4c2813d0f98231dfea7b411f48be1ead5c9b2eeb19330b11";
 

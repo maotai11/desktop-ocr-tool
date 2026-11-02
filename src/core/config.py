@@ -63,6 +63,7 @@ DEFAULT_SETTINGS = {
         "ignore_self": True,
         "max_text_length": 50000,
         "deduplicate": True,
+        "ocr_copy_mode": "all",
         "copy_remove_commas": False,
         "copy_remove_apostrophes": False,
         "copy_remove_newlines": False

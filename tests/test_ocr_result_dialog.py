@@ -1,6 +1,7 @@
 """Interaction coverage for explicit OCR region/text copy selection."""
 import json
 
+import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QImage, QTextCursor
 
@@ -150,18 +151,25 @@ def test_image_drag_selects_region_and_ctrl_drag_adds(qtbot, tmp_path):
     assert dialog.selected_text == '甲\n乙'
 
 
-def test_copy_shortcut_requires_nonempty_explicit_selection(qtbot):
+@pytest.mark.parametrize('key', [Qt.Key.Key_Return, Qt.Key.Key_Enter])
+@pytest.mark.parametrize('target', ['_preview', '_list', '_select_all', '_cancel'])
+def test_copy_shortcut_requires_nonempty_explicit_selection(qtbot, key, target):
     dialog = _dialog(qtbot)
     requested = []
     dialog.copy_requested.connect(requested.append)
     dialog.activateWindow()
     qtbot.waitUntil(dialog.isActiveWindow)
-    dialog._preview.setFocus()
-    qtbot.keyClick(dialog._preview, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    focused = getattr(dialog, target)
+    focused.setFocus()
+    qtbot.waitUntil(lambda: dialog.focusWidget() is focused)
+    qtbot.keyClick(focused, key, Qt.KeyboardModifier.ControlModifier)
     assert requested == []
+    assert dialog._preview.toPlainText() == ''
+    assert dialog.isVisible()
     dialog.select_indexes([1])
-    qtbot.keyClick(dialog._preview, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    qtbot.keyClick(focused, key, Qt.KeyboardModifier.ControlModifier)
     assert requested == ['第二行']
+    assert dialog.result() == dialog.DialogCode.Accepted
 
 
 def test_first_show_animation_finishes_and_does_not_replay(qtbot):
@@ -220,3 +228,17 @@ def test_minimum_size_keeps_copy_and_text_controls_inside_dialog(qtbot, tmp_path
     assert dialog.size().width() == 560
     assert dialog.size().height() == 400
     assert dialog._preview.height() >= 88
+
+
+def test_plain_return_still_edits_preview_without_copying(qtbot):
+    dialog = _dialog(qtbot)
+    requested = []
+    dialog.copy_requested.connect(requested.append)
+    dialog.select_indexes([1])
+    dialog.activateWindow()
+    qtbot.waitUntil(dialog.isActiveWindow)
+    dialog._preview.setFocus()
+    qtbot.keyClick(dialog._preview, Qt.Key.Key_Return)
+    assert requested == []
+    assert '\n' in dialog._preview.toPlainText()
+    assert dialog.isVisible()

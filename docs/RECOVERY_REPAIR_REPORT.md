@@ -28,10 +28,10 @@ Schema v5為additive migration；既有items、人工文字、FTS均有保留測
 
 ## 驗證證據
 
-- baseline156 tests：`evidence/recovery/baseline-tests.xml`
-- 最終完整suite：299 passed、0 failed、0 skipped，8.73s；`evidence/recovery/final-tests.xml`
-- source self-test／full app smoke：`evidence/recovery/source-selftest.json`、`source-app-smoke.json`
-- 上述兩個Linux source probes在per-process libseccomp網路syscall EPERM guard下執行，guard實際驗證IPv4／IPv6／Unix socket拒絕；對應`*-guard.json`。strace因環境ptrace權限限制未執行，沒有socket trace／wire payload觀察。seccomp不關閉既有descriptor，也不模擬乾淨Windows機器
+- baseline156 tests：見 [歷史摘要與原始hash](evidence/HISTORICAL_VALIDATION_20261003.md)，原始JUnit已移出目前樹
+- 較早報告階段為299 passed、0 failed、0 skipped，8.73s；實際封存最終XML則為384 passed、0 failures/errors/skips，9.020s，兩者不可混同；見 [歷史摘要](evidence/HISTORICAL_VALIDATION_20261003.md)
+- source self-test結果欄位見 [歷史摘要](evidence/HISTORICAL_VALIDATION_20261003.json)；原含模型路徑JSON已移出目前樹。[full app smoke](evidence/recovery/source-app-smoke.json)仍保留
+- 上述兩個Linux source probes在per-process libseccomp網路syscall EPERM guard下執行，guard實際驗證IPv4／IPv6／Unix socket拒絕；對應guard允許公開欄位及原始hash見 [歷史摘要](evidence/HISTORICAL_VALIDATION_20261003.json)。strace因環境ptrace權限限制未執行，沒有socket trace／wire payload觀察。seccomp不關閉既有descriptor，也不模擬乾淨Windows機器
 - smoke驗證connection lifetime：`evidence/recovery/sqlite-lifetime.json`，不靠gc釋放，Windows尚待native CI
 - dependency環境：`evidence/recovery/pip-freeze.txt`
 - synthetic像素、GT、source/model/font hashes與raw結果：`evidence/ocr-recovery-20261003/`

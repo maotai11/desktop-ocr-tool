@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget,
     QWidget, QLabel, QCheckBox, QSpinBox, QDoubleSpinBox,
     QLineEdit, QPushButton, QFormLayout,
-    QDialogButtonBox, QComboBox, QGroupBox
+    QDialogButtonBox, QComboBox, QGroupBox, QScrollArea, QFrame
 )
 
 from .theme import (
@@ -119,6 +119,14 @@ _DIALOG_QSS = f"""
         selection-background-color: {_ACCENT_18};
         selection-color: {_ACCENT};
     }}
+    QScrollBar:vertical {{
+        background: transparent; width: 6px; margin: 3px 0;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {_BORDER}; border-radius: 3px; min-height: 24px;
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
     QDialogButtonBox QPushButton {{
         background: {_BG_RAISE};
         color: {_TEXT_PRI};
@@ -251,6 +259,17 @@ class SettingsDialog(QDialog):
         clip = QWidget()
         clf = QFormLayout(clip)
         clf.setSpacing(10)
+        self._ocr_copy_mode = QComboBox()
+        self._ocr_copy_mode.addItem('自動複製全部文字', 'all')
+        self._ocr_copy_mode.addItem('先選文字再複製', 'select')
+        copy_mode = self._cfg.get('clipboard', 'ocr_copy_mode', default='all')
+        self._ocr_copy_mode.setCurrentIndex(1 if copy_mode == 'select' else 0)
+        clf.addRow('辨識完成後：', self._ocr_copy_mode)
+        copy_mode_note = QLabel('選字模式會在辨識後開啟選取視窗；儲存後立即生效。')
+        copy_mode_note.setWordWrap(True)
+        copy_mode_note.setStyleSheet(f'color: {_TEXT_SEC}; font-size: 11px;')
+        clf.addRow('', copy_mode_note)
+
         self._cb_monitor = QCheckBox("啟用剪貼簿監聽")
         self._cb_monitor.setChecked(
             self._cfg.get('clipboard', 'monitor_clipboard', default=False)
@@ -293,7 +312,11 @@ class SettingsDialog(QDialog):
         dedup_lbl = QLabel("連續相同內容（60 秒內）自動去重")
         dedup_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
         clf.addRow("去重：", dedup_lbl)
-        tabs.addTab(clip, "剪貼簿")
+        clip_scroll = QScrollArea()
+        clip_scroll.setWidgetResizable(True)
+        clip_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        clip_scroll.setWidget(clip)
+        tabs.addTab(clip_scroll, "剪貼簿")
 
         # ---- 快捷鍵 ----
         hk_tab = QWidget()
@@ -362,6 +385,7 @@ class SettingsDialog(QDialog):
         self._cfg.set('ocr', 'max_image_short_side', self._sp_short_side.value())
         if self._model_profile.currentData() is not None:
             self._cfg.set('ocr', 'model_profile', self._model_profile.currentData())
+        self._cfg.set('clipboard', 'ocr_copy_mode', self._ocr_copy_mode.currentData())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
         for key, check in self._copy_cleanup_checks.items():
@@ -370,7 +394,7 @@ class SettingsDialog(QDialog):
         from ..core.autostart import set_autostart
         set_autostart(self._cb_autostart.isChecked())
 
-        logger.info('設定已儲存；重新啟動後生效')
+        logger.info('設定已儲存；複製選項立即生效，辨識引擎設定需重新啟動')
         # 最後才關閉 dialog
         self.accept()
 

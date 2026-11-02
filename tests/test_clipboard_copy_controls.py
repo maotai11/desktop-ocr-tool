@@ -11,7 +11,12 @@ import pytest
 from PySide6.QtCore import Qt
 
 from src.clipboard.text_cleanup import COPY_CLEANUP_OPTIONS, prepare_copy_text
-from src.clipboard.writer import copy_text, copy_text_batch, get_last_write_id
+from src.clipboard.writer import (
+    copy_text,
+    copy_text_batch,
+    get_clipboard_epoch,
+    get_last_write_id,
+)
 from src.core.config import DEFAULT_SETTINGS
 from src.core.constants import CUSTOM_MIME_TYPE
 from src.data.models import OcrResultDTO
@@ -62,6 +67,7 @@ def test_old_settings_merge_cleanup_defaults_off(tmp_path, monkeypatch):
     cfg = ConfigManager()
     for key, _, _ in COPY_CLEANUP_OPTIONS:
         assert cfg.get('clipboard', key) is False
+    assert cfg.get('clipboard', 'ocr_copy_mode') == 'all'
     assert cfg.get('clipboard', 'monitor_clipboard') is True
     assert cfg.get('clipboard', 'auto_save_text') is False
     assert cfg.get('hotkeys', 'paste_last') == 'Alt+V'
@@ -120,7 +126,7 @@ def test_current_candidate_waits_for_selection_and_copies_without_changing_saved
     dto = persist(item_repo, item_id, original, status)
     before = item_repo.get_by_id(item_id)
     attempts_before = item_repo.get_ocr_attempts(item_id)
-    owner, statuses = pipeline(item_repo, Config(copy_remove_commas=True, copy_remove_apostrophes=True))
+    owner, statuses = pipeline(item_repo, Config(ocr_copy_mode='select', copy_remove_commas=True, copy_remove_apostrophes=True))
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
     assert qapp.clipboard().text() == 'previous'
@@ -134,8 +140,9 @@ def test_current_candidate_waits_for_selection_and_copies_without_changing_saved
     assert '已複製所選文字' in statuses[-1]
 
 
+@pytest.mark.parametrize('mode', ['all', 'select'])
 @pytest.mark.parametrize('change', ['delete', 'delete_restore', 'edit', 'empty_edit', 'new_job', 'closing'])
-def test_review_ack_guards_keep_previous_clipboard(qapp, item_repo, make_image_dto, change):
+def test_review_ack_guards_keep_previous_clipboard(qapp, item_repo, make_image_dto, change, mode):
     item_id = item_repo.insert(make_image_dto())
     dto = persist(item_repo, item_id, 'usable uncertain candidate', 'needs_review')
     if change in ('delete', 'delete_restore'):
@@ -146,18 +153,19 @@ def test_review_ack_guards_keep_previous_clipboard(qapp, item_repo, make_image_d
         item_repo.update_edited_text(item_id, 'manual' if change == 'edit' else '')
     elif change == 'new_job':
         item_repo.begin_ocr_attempt(item_id)
-    owner, _ = pipeline(item_repo, closing=change == 'closing')
+    owner, _ = pipeline(item_repo, Config(ocr_copy_mode=mode), closing=change == 'closing')
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
     assert qapp.clipboard().text() == 'previous'
     assert owner.selections == []
 
 
+@pytest.mark.parametrize('mode', ['all', 'select'])
 @pytest.mark.parametrize('text,status', [('failed text', 'failed'), ('', 'done'), ('  \n\t', 'needs_review')])
-def test_unusable_result_never_overwrites_previous_clipboard(qapp, item_repo, make_image_dto, text, status):
+def test_unusable_result_never_overwrites_previous_clipboard(qapp, item_repo, make_image_dto, text, status, mode):
     item_id = item_repo.insert(make_image_dto())
     dto = persist(item_repo, item_id, text, status)
-    owner, _ = pipeline(item_repo)
+    owner, _ = pipeline(item_repo, Config(ocr_copy_mode=mode))
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
     assert qapp.clipboard().text() == 'previous'
@@ -167,7 +175,7 @@ def test_unusable_result_never_overwrites_previous_clipboard(qapp, item_repo, ma
 def test_cleaned_empty_review_candidate_does_not_claim_copied(qapp, item_repo, make_image_dto):
     item_id = item_repo.insert(make_image_dto())
     dto = persist(item_repo, item_id, ",'\n", 'needs_review')
-    cfg = Config(copy_remove_commas=True, copy_remove_apostrophes=True, copy_remove_newlines=True)
+    cfg = Config(ocr_copy_mode='select', copy_remove_commas=True, copy_remove_apostrophes=True, copy_remove_newlines=True)
     owner, statuses = pipeline(item_repo, cfg)
     qapp.clipboard().setText('previous')
     Pipeline.persisted(owner, item_id, dto)
@@ -264,15 +272,20 @@ def test_settings_cleanup_defaults_cancel_and_save(qtbot, monkeypatch):
     cfg = Config()
     dialog = SettingsDialog(cfg)
     qtbot.addWidget(dialog)
+    assert dialog._ocr_copy_mode.currentData() == 'all'
+    dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
     assert all(not check.isChecked() for check in dialog._copy_cleanup_checks.values())
     for check in dialog._copy_cleanup_checks.values():
         check.setChecked(True)
     dialog.reject()
+    assert cfg.get('clipboard', 'ocr_copy_mode') == 'all'
     assert all(cfg.get('clipboard', key) is False for key in dialog._copy_cleanup_checks)
     dialog = SettingsDialog(cfg)
     qtbot.addWidget(dialog)
+    dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
     dialog._copy_cleanup_checks['copy_remove_commas'].setChecked(True)
     dialog._save()
+    assert cfg.get('clipboard', 'ocr_copy_mode') == 'select'
     assert cfg.get('clipboard', 'copy_remove_commas') is True
     assert cfg.get('clipboard', 'copy_remove_apostrophes') is False
     assert cfg.get('clipboard', 'copy_remove_newlines') is False
@@ -288,11 +301,132 @@ def test_settings_cleanup_save_reload_roundtrip(qtbot, tmp_path, monkeypatch):
     cfg.set('hotkeys', 'paste_last', 'Alt+V')
     dialog = SettingsDialog(cfg)
     qtbot.addWidget(dialog)
+    dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
     for check in dialog._copy_cleanup_checks.values():
         check.setChecked(True)
     dialog._save()
     reloaded = ConfigManager()
+    assert reloaded.get('clipboard', 'ocr_copy_mode') == 'select'
+    reopened = SettingsDialog(reloaded)
+    qtbot.addWidget(reopened)
+    assert reopened._ocr_copy_mode.currentData() == 'select'
     assert all(reloaded.get('clipboard', key) is True for key, _, _ in COPY_CLEANUP_OPTIONS)
     assert reloaded.get('clipboard', 'monitor_clipboard') is False
     assert reloaded.get('hotkeys', 'paste_last') == 'Alt+V'
     assert prepare_copy_text("-1,234.50'\n567", reloaded) == '-1234.50567'
+
+
+@pytest.mark.parametrize('status', ['done', 'needs_review', 'confirmed'])
+@pytest.mark.parametrize('setting', ['default', 'missing', 'none', 'all'])
+def test_default_full_copy_preserves_epoch_and_saved_review_state(
+        qapp, item_repo, make_image_dto, status, setting):
+    cfg = Config()
+    if setting == 'missing':
+        cfg.data['clipboard'].pop('ocr_copy_mode', None)
+    elif setting == 'none':
+        cfg = None
+    elif setting == 'all':
+        cfg.set('clipboard', 'ocr_copy_mode', 'all')
+    item_id = item_repo.insert(make_image_dto())
+    original = '完整𠮷字\n第二行，1,234.50'
+    dto = persist(item_repo, item_id, original, status)
+    before = item_repo.get_by_id(item_id)
+    attempts = item_repo.get_ocr_attempts(item_id)
+    owner, statuses = pipeline(item_repo, cfg)
+    copy_text('先前手動複製')
+    epoch = get_clipboard_epoch()
+    Pipeline.persisted(owner, item_id, dto)
+    assert qapp.clipboard().text() == original
+    assert get_clipboard_epoch() == epoch
+    assert owner.selections == []
+    assert '已複製全部文字' in statuses[-1]
+    if status == 'needs_review':
+        assert '待確認' in statuses[-1]
+    assert item_repo.get_by_id(item_id) == before
+    assert item_repo.get_ocr_attempts(item_id) == attempts
+
+
+def test_automatic_full_copy_keeps_existing_cleanup_options(qapp, item_repo, make_image_dto):
+    cfg = Config(copy_remove_commas=True, copy_remove_apostrophes=True, copy_remove_newlines=True)
+    item_id = item_repo.insert(make_image_dto())
+    dto = persist(item_repo, item_id, "-1,234.50'\n567", 'needs_review')
+    owner, _ = pipeline(item_repo, cfg)
+    Pipeline.persisted(owner, item_id, dto)
+    assert qapp.clipboard().text() == '-1234.50567'
+    assert item_repo.get_by_id(item_id).text_content == "-1,234.50'\n567"
+    assert item_repo.get_by_id(item_id).ocr_status == 'needs_review'
+
+
+def test_cleaned_empty_automatic_result_does_not_claim_copied(qapp, item_repo, make_image_dto):
+    cfg = Config(copy_remove_commas=True, copy_remove_apostrophes=True, copy_remove_newlines=True)
+    item_id = item_repo.insert(make_image_dto())
+    dto = persist(item_repo, item_id, ",'\n", 'needs_review')
+    owner, statuses = pipeline(item_repo, cfg)
+    copy_text('保留原內容')
+    Pipeline.persisted(owner, item_id, dto)
+    assert qapp.clipboard().text() == '保留原內容'
+    assert owner.selections == []
+    assert '已複製' not in statuses[-1]
+
+
+def test_missing_mode_in_legacy_settings_dialog_defaults_to_all(qtbot):
+    from src.ui.settings_dialog import SettingsDialog
+    cfg = Config()
+    cfg.data['clipboard'].pop('ocr_copy_mode', None)
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+    assert dialog._ocr_copy_mode.currentData() == 'all'
+    dialog.reject()
+    assert 'ocr_copy_mode' not in cfg.data['clipboard']
+
+
+def test_saved_copy_mode_applies_to_next_result_without_restart(
+        qtbot, qapp, monkeypatch, item_repo, make_image_dto):
+    from src.ui.settings_dialog import SettingsDialog
+    monkeypatch.setattr('src.core.autostart.set_autostart', lambda _: None)
+    cfg = Config()
+    owner, _ = pipeline(item_repo, cfg)
+    item_id = item_repo.insert(make_image_dto())
+    first = persist(item_repo, item_id, '第一次完整結果', 'done')
+    Pipeline.persisted(owner, item_id, first)
+    assert qapp.clipboard().text() == '第一次完整結果'
+
+    settings = SettingsDialog(cfg)
+    qtbot.addWidget(settings)
+    settings._ocr_copy_mode.setCurrentIndex(settings._ocr_copy_mode.findData('select'))
+    settings._save()
+    second = persist(item_repo, item_id, '第二次選字結果', 'done')
+    Pipeline.persisted(owner, item_id, second)
+    assert owner.selections == [(item_id, second)]
+    assert qapp.clipboard().text() == '第一次完整結果'
+    Pipeline.copy_ocr_selection(owner, item_id, second, '選字')
+    assert qapp.clipboard().text() == '選字'
+
+    settings = SettingsDialog(cfg)
+    qtbot.addWidget(settings)
+    settings._ocr_copy_mode.setCurrentIndex(settings._ocr_copy_mode.findData('all'))
+    settings._save()
+    third = persist(item_repo, item_id, '第三次又自動複製全部', 'done')
+    Pipeline.persisted(owner, item_id, third)
+    assert qapp.clipboard().text() == '第三次又自動複製全部'
+    assert owner.selections == [(item_id, second)]
+
+
+def test_copy_settings_small_window_scrolls_without_truncating_help(qtbot):
+    from PySide6.QtWidgets import QLabel, QScrollArea, QTabWidget
+
+    from src.ui.settings_dialog import SettingsDialog
+    dialog = SettingsDialog(Config())
+    qtbot.addWidget(dialog)
+    tabs = dialog.findChild(QTabWidget)
+    tabs.setCurrentIndex(next(i for i in range(tabs.count()) if tabs.tabText(i) == '剪貼簿'))
+    dialog.resize(520, 420)
+    dialog.show()
+    scroll = tabs.currentWidget()
+    assert isinstance(scroll, QScrollArea)
+    qtbot.waitUntil(lambda: scroll.verticalScrollBar().maximum() > 0)
+    labels = scroll.widget().findChildren(QLabel)
+    assert all(label.height() >= label.heightForWidth(label.width()) for label in labels)
+    assert dialog._ocr_copy_mode.currentData() == 'all'
+    scroll.ensureWidgetVisible(labels[-1])
+    assert scroll.verticalScrollBar().value() > 0

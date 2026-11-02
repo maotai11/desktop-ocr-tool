@@ -117,18 +117,25 @@ class Pipeline(QObject):
         if needs_review:
             self.widget.set_ocr_status('有些文字待確認，請對照原圖')
         else:
-            self.widget.set_ocr_status('辨識完成，選取要複製的文字')
+            self.widget.set_ocr_status('辨識完成')
         if (not self.closing and item.edited_text is None and
                 item.edit_revision == result.base_edit_revision and
                 result.status in ('done', 'needs_review', 'confirmed') and
                 item.ocr_status in ('done', 'needs_review', 'confirmed')):
-            # A late background result must not interrupt newer manual intent.
-            # Selection is explicit; completion alone never writes the clipboard.
-            from ..clipboard.writer import get_clipboard_epoch
+            # A late background result must not interrupt newer manual intent,
+            # whichever copy mode is currently selected.
+            from ..clipboard.writer import copy_text, get_clipboard_epoch
             if (result.clipboard_epoch is not None and
                     result.clipboard_epoch != get_clipboard_epoch()):
                 return
-            self.selection_requested.emit(item_id, result)
+            copy_mode = self.cfg.get('clipboard', 'ocr_copy_mode', default='all') if self.cfg else 'all'
+            if copy_mode == 'select':
+                self.widget.set_ocr_status('有些文字待確認，選取後再複製' if needs_review
+                                           else '辨識完成，選取要複製的文字')
+                self.selection_requested.emit(item_id, result)
+            elif copy_text(item.get_effective_text(), self.cfg, automatic=True):
+                self.widget.set_ocr_status('有些文字待確認；已複製全部文字，請對照原圖' if needs_review
+                                           else '已複製全部文字')
 
     def _selection_is_current(self, item_id, result):
         item = self.repo.get_by_id(item_id)
