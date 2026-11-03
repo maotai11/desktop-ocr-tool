@@ -56,6 +56,17 @@ def document_probe(version, executable_hash, frozen=True):
                     temporary_files_cleaned=True))
 
 
+def comparison_probe(version, executable_hash, frozen=True):
+    return dict(schema=1, probe='comparison_lifecycle', version=version,
+        platform='win32', qt_platform='windows', frozen=frozen, passed=True,
+        executable_sha256=executable_hash if frozen else None, clean_machine_verified=False,
+        fixture_kind='SYNTHETIC_COMPARISON_PAIRS', ocr_accuracy_tested=False,
+        model_inference_tested=False,
+        checks=dict.fromkeys(('fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
+            'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
+            'cancelled_results_ignored', 'workers_stopped'), True))
+
+
 def extra_evidence(root, manifest):
     inventory = json.dumps({'installed': {'pillow': '13.0.0', 'pip': '26.2.2'}}).encode()
     (root / 'artifacts/dependency-inventory.json').write_bytes(inventory)
@@ -66,6 +77,11 @@ def extra_evidence(root, manifest):
         dependency_inventory_sha256=hashlib.sha256(inventory).hexdigest())
     (root / 'artifacts/security-audit.json').write_text(json.dumps(audit), encoding='utf-8')
     firewall = root / 'artifacts/firewall-validation'
+    for destination, frozen in ((root / 'source-comparison.json', False),
+                                (firewall / 'frozen-comparison.json', True)):
+        comparison = comparison_probe(manifest['version'], manifest['executable_sha256'], frozen)
+        comparison['source_commit'] = manifest['source']['commit']
+        destination.write_text(json.dumps(comparison), encoding='utf-8')
     report = probe(manifest['version'], manifest['executable_sha256'])
     source = probe(manifest['version'], manifest['executable_sha256'], frozen=False)
     (root / 'source-handwriting.json').write_text(json.dumps(source), encoding='utf-8')
@@ -115,6 +131,9 @@ def extra_evidence(root, manifest):
     raw = json.dumps(document_probe(manifest['version'], manifest['executable_sha256'])).encode()
     (portable / 'isolated-documents.json').write_bytes(raw)
     probes['isolated-documents.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
+    raw = json.dumps(comparison_probe(manifest['version'], manifest['executable_sha256'])).encode()
+    (portable / 'isolated-comparison.json').write_bytes(raw)
+    probes['isolated-comparison.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
     summary = dict(schema=1, probe='isolated_profile', passed=True,
         version=manifest['version'], executable_sha256=manifest['executable_sha256'],
         clean_machine_verified=False, profile_empty=True, copied_executable_only=True,

@@ -37,6 +37,8 @@ PUBLIC_DOCUMENTATION = {
     'docs/ui/file-locations.png': 'docs/ui/file-locations.png',
     'docs/ui/document-template.png': 'docs/ui/document-template.png',
     'docs/ui/document-fields.png': 'docs/ui/document-fields.png',
+    'docs/ui/comparison-window.png': 'docs/ui/comparison-window.png',
+    'docs/ui/comparison-compact.png': 'docs/ui/comparison-compact.png',
 }
 
 

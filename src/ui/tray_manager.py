@@ -22,6 +22,8 @@ class TrayManager:
         self._tray.setToolTip(APP_DISPLAY_NAME)
         self._build_menu()
         self._tray.activated.connect(self._on_activated)
+        if hasattr(widget, 'comparison_status'):
+            widget.comparison_status.connect(self.set_comparison_status)
 
     def _build_menu(self):
         menu = QMenu()
@@ -45,6 +47,10 @@ class TrayManager:
 
         act_documents = menu.addAction('文件套版（PDF／圖片）')
         act_documents.triggered.connect(self._widget.open_document_template)
+        act_comparison = menu.addAction('A／B 核對')
+        act_comparison.triggered.connect(self._widget.open_comparison)
+        act_comparison_pause = menu.addAction('暫停 A／B 核對')
+        act_comparison_pause.triggered.connect(self._widget.pause_comparison)
 
         menu.addSeparator()
 
@@ -73,6 +79,22 @@ class TrayManager:
 
     def set_tooltip(self, text: str):
         self._tray.setToolTip(text)
+
+    def set_comparison_status(self, status):
+        from ..core.version import APP_DISPLAY_NAME
+        colors = {'match': '#4ade80', 'mismatch': '#fb7185', 'uncertain': '#fbbf24'}
+        labels = {'match': '文字一致', 'mismatch': '文字不同', 'uncertain': '待確認', 'paused': '已暫停'}
+        self._tray.setToolTip(f'{APP_DISPLAY_NAME} · A／B 核對：{labels.get(status, "核對中")}')
+        if status not in colors:
+            self._tray.setIcon(self._icon)
+            return
+        pixmap = self._icon.pixmap(32, 32)
+        painter = QPainter(pixmap)
+        painter.setPen(QPen(QColor('#17202b'), 2))
+        painter.setBrush(QColor(colors[status]))
+        painter.drawEllipse(19, 19, 12, 12)
+        painter.end()
+        self._tray.setIcon(QIcon(pixmap))
 
     def show_notification(self, title: str, message: str):
         self._tray.showMessage(title, message, self._icon, 3000)

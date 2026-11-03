@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QScrollArea, QLabel, QMessageBox,
     QFrame, QMenu, QApplication, QProgressBar, QComboBox, QGraphicsOpacityEffect, QStyle
 )
-from PySide6.QtCore import Qt, QEvent, QUrl, QPropertyAnimation, QEasingCurve, QSize
+from PySide6.QtCore import Qt, QEvent, QUrl, QPropertyAnimation, QEasingCurve, QSize, Signal
 from PySide6.QtGui import QDesktopServices, QIcon, QPixmap, QPainter, QPen, QColor, QPainterPath
 
 from .theme import (
@@ -94,6 +94,8 @@ def _line_icon(kind: str, color: str) -> QIcon:
 
 
 class FloatingWidget(QWidget):
+    comparison_status = Signal(str)
+
     def __init__(self, item_repo, file_mgr, db_worker, ocr_worker,
                  cfg, data_dir, parent=None, tag_repo=None):
         super().__init__(parent)
@@ -110,6 +112,10 @@ class FloatingWidget(QWidget):
         self._documents = None
         self._document_controller = None
         self._documents_closing = False
+        self._comparison = None
+        self._comparison_controller = None
+        self._comparison_overlay = None
+        self._comparison_closing = False
         self._clip_paused = False
         self._ocr_ready = False
         self._items = []
@@ -246,6 +252,11 @@ class FloatingWidget(QWidget):
         self._btn_documents.setToolTip("匯入 PDF／圖片，框選欄位後套用文字模板")
         self._btn_documents.clicked.connect(self.open_document_template)
         vbox.addWidget(self._btn_documents)
+        self._btn_comparison = QPushButton("A／B 核對")
+        self._btn_comparison.setMinimumHeight(32)
+        self._btn_comparison.setToolTip("固定兩個位置持續核對，用顏色提醒不同")
+        self._btn_comparison.clicked.connect(self.open_comparison)
+        vbox.addWidget(self._btn_comparison)
 
         self._ocr_progress_bar = QProgressBar()
         self._ocr_progress_bar.setFixedHeight(3)
@@ -481,6 +492,93 @@ class FloatingWidget(QWidget):
 
     def documents_is_stopped(self):
         return self._document_controller is None or self._document_controller.is_stopped
+
+    def open_comparison(self):
+        if self._comparison_closing:
+            return
+        if self._comparison is None:
+            from ..comparison.controller import ComparisonController
+            from .comparison_window import ComparisonWindow
+            from .capture_overlay import CaptureOverlay
+            controller = ComparisonController(self._ocr_worker, parent=self)
+            # Independent top-level: hiding the floating launcher must not hide
+            # the comparison status while the user works in another program.
+            window = ComparisonWindow(controller)
+            overlay = CaptureOverlay()
+            self._comparison, self._comparison_controller = window, controller
+            self._comparison_overlay = overlay
+            window.select_requested.connect(self._select_comparison_region)
+            window.screen_invalidated.connect(
+                lambda: overlay._cancel() if window._selection_active else None)
+            overlay.cancelled.connect(lambda: window.set_selection_active(False)
+                                      if not self._comparison_closing else None)
+            controller.updated.connect(lambda result: self.comparison_status.emit(result['verdict']))
+            controller.state_changed.connect(self._comparison_state_changed)
+            controller.failed.connect(lambda message: self.comparison_status.emit('uncertain'))
+            controller.before_capture = self._comparison_can_capture
+        self.hide()
+        self._comparison.show()
+        self._comparison.raise_()
+        self._comparison.activateWindow()
+
+    def _comparison_state_changed(self, state):
+        if state in ('idle', 'paused'):
+            self.comparison_status.emit('paused')
+        elif state == 'running':
+            self.comparison_status.emit('running')
+
+    def _select_comparison_region(self, name):
+        if self._comparison_closing:
+            return
+        self.hide()
+        self._comparison.set_selection_active(True)
+        self._comparison_overlay.selection_prompt = f'框選 {name} 區域 · Esc 取消'
+
+        def selected(x, y, width, height, monitor):
+            if self._comparison_closing:
+                return
+            self._comparison.set_region(name, (x, y, width, height, monitor))
+            self._comparison.set_selection_active(False)
+
+        self._comparison_overlay.start_capture(selected)
+
+    def _comparison_can_capture(self):
+        if self._comparison_closing or not self._comparison.can_capture():
+            return False
+        # Other InkPick windows can obscure source pixels as well. Check them
+        # before every cycle; never silently compare our own tool over a target.
+        from PySide6.QtCore import QRect
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return False
+        origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
+        regions = [QRect(*rect[:4]) for rect in self._comparison_controller.regions.values()]
+        for window in QApplication.topLevelWidgets():
+            if window is self._comparison or not window.isVisible() or window.isMinimized():
+                continue
+            frame = window.frameGeometry()
+            bounds = QRect(round((frame.x() - origin.x()) * dpr),
+                           round((frame.y() - origin.y()) * dpr),
+                           round(frame.width() * dpr), round(frame.height() * dpr))
+            if any(bounds.intersects(region) for region in regions):
+                return False
+        return True
+
+    def pause_comparison(self):
+        if self._comparison_controller is not None:
+            self._comparison_controller.pause()
+
+    def shutdown_comparison(self):
+        self._comparison_closing = True
+        if self._comparison_overlay is not None:
+            self._comparison_overlay._cancel()
+        if self._comparison_controller is not None:
+            self._comparison_controller.shutdown()
+        if self._comparison is not None:
+            self._comparison.shutdown()
+
+    def comparison_is_stopped(self):
+        return self._comparison_controller is None or self._comparison_controller.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')

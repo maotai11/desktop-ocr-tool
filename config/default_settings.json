@@ -56,7 +56,8 @@
     "ocr_copy_mode": "all",
     "copy_remove_commas": false,
     "copy_remove_apostrophes": false,
-    "copy_remove_newlines": false
+    "copy_remove_newlines": false,
+    "copy_remove_punctuation": false
   },
   "documents": {
     "max_file_size_mb": 100

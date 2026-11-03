@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.5. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.6. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.5"
+TAG = "v1.8.0-rc.6"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,32 +133,35 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版修正設定下拉選單的文字對比與手寫時畫布跳動，並補齊文件套版的清除與縮放操作。
+本版新增固定 A／B 區域連續核對，以及複製時移除所有標點符號的選項。
 
-### 本次修正
-- 設定下拉選單使用明確底色、文字與選取配色，避免系統配色讓選項看不清楚。
-- 手寫候選區更新時保留高度，書寫中不再自動捲動，單筆筆畫也固定座標，避免畫布變動讓筆畫跳位。展開、收合及選字複製維持原操作。
-- 文件套版新增「清除框選」：「所有頁共用」清掉所選欄位的共用框及各頁例外；「只改這一頁」只清當前頁，不會自動退回第一頁的位置。重新框選或按「此頁套用第一頁」後再辨識。
-- 「清空文件」確認後清除匯入頁面、全部位置與結果，保留欄位名稱及文字模板；不刪原檔、不改剪貼簿。文件預覽新增可見的「−」「＋」、比例、「100%」及「拖曳移動」，手動縮放可跨頁及視窗大小變動保留。
-- 更新 Pillow 13.0.0、setuptools 84.2.1 與建置用 pip 26.2.2，改用不含 OpenEXR 的 OpenCV 5.0.0.93 並排除不需的影片 DLL。Linux／Windows 的實際 Python 套件清單須通過 pip-audit；有漏洞或漏掃即阻止發布。
-- 手寫回傳候選後回收輔助程序，新筆畫取消過期要求；OCR 閒置時停用 CPU 忙等。系統匣、快捷鍵及載入模型仍保留，完全結束請從系統匣退出。正在執行的原生 PDF／OCR 呼叫仍需先返回。
+### A／B 連續核對
+- 點浮動窗「A／B 核對」，在主螢幕分別「框選 A」「框選 B」，按「開始核對」。每輪從同一張快照取得兩區，再依序辨識；下一輪沿用原位置，不需重框。
+- 預設只比較文字與數字，忽略空白、標點及其他符號；可改為「逐字完全相同」。因此 `1.23` 與 `123` 在預設規則可能相同，金額或標點有意義時請用逐字模式。
+- 綠色顯示相同，紅色顯示不同，琥珀色顯示待確認；同時列出 A／B 原文、輪次與更新時間。空白、失敗及待核對結果不會顯示已確認相同。
+- 每輪完成後預設等 2 秒，可調為 1–60 秒；共用既有 OCR 引擎，忙碌時等待，不累積輪次。按「暫停」、重新框選或關閉視窗會取消後續辨識，當前原生呼叫需先返回。
+- 核對窗更新不搶焦點；「精簡狀態」可收成置頂小窗。啟動前會避開 A／B，無可用空間則提示移開；運行時本工具視窗擋住區域會暫停。
+- 核對不自動複製、不保存截圖或歷史，只在使用者開始後掃描。位置保留在本次執行中，退出後需重框。來源視窗移動、捲動、縮放或顯示器設定改變後應重新框選。
 
-螢幕擷取仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
+### 複製時移除所有標點
+- 在「設定 → 剪貼簿」啟用「複製時移除所有標點符號」，預設關閉。`「您好，世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
+- 保留文字、數字、空格與換行；數學／貨幣符號不屬於此標點選項。小數點與連字號會移除，例如 `1.23` 變為 `123`，請按用途選擇。
+- 原有單獨移除逗號、撇號與換行的設定仍保留，只影響一般 OCR／歷史的複製輸出，不修改原始資料、手寫候選或文件套版模板。A／B 核對使用自己視窗的比較規則。
 
-### 文件套版：PDF／圖片批次辨識
-- 點浮動窗「文件套版」，匯入 PDF 或 PNG／JPG／BMP／TIFF／WebP；預設每個檔案最多 100 MB，可在文件視窗調整。整批最多 500 頁、每次最多 32 個欄位。
-- 在第一頁框選並命名欄位，例如「姓名」「金額」。後續頁預設沿用第一頁的相對位置；版型不同的頁面可單獨調整，未調整的欄位仍繼承第一頁。
-- 模板可輸入 `收件人：{{姓名}}，金額：{{金額}}`，也支援全形大括號。每頁產生一段文字，以空行分隔；辨識結果可先核對與修正，再按「複製」或匯出 UTF-8 TXT。
-- PDFium 與 OCR 模型已包在 EXE，匯入檔案在本機唯讀處理，不上傳、不改寫原始文件，也不自動複製套版結果。
-- 加密 PDF、XFA 動態表單或過大頁面會拒絕匯入；請先解密或列印／另存為一般 PDF。相對位置套用不等於版面自動對齊，第二頁以後仍應核對。
+螢幕 OCR 仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。PDF／圖片套版、手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
+
+### 文件套版
+- 匯入 PDF／圖片，預設每個檔案 100 MB，可調整；每批最多 500 頁、32 個命名欄位。第一頁框選後，其他頁沿用位置，也可逐頁重選。
+- 模板例如 `收件人：{{姓名}}，金額：{{金額}}`；逐頁核對後可複製或匯出 TXT。PDFium 已內含，原檔只讀；加密 PDF 先解密，XFA 動態表單請先另存為一般 PDF。
+- 「清除框選」可清共用位置或只清當頁；「清空文件」保留欄位名稱與模板。預覽支援縮放及拖曳移動，詳細操作見同版離線說明。
 
 ### 下載與使用
 - 適用 Windows 64 位元。建議下載可攜版 ZIP、解壓後執行；也可直接使用本頁的 EXE。
 - 已內附執行環境、兩組 OCR 模型與手寫引擎，不會在首次啟動下載模型，也不需安裝 Windows 手寫語言套件。
-- ZIP 內附 README.md、OFFLINE_README.txt、README.txt、文件套版圖文操作指南與六張示範介面圖，另含第三方授權說明及手寫模型來源。也可單獨下載 `{README_NAME}` 帶到離線電腦；其位元組與 ZIP 內的離線說明相同，並列入 SHA256SUMS。
+- ZIP 內附 README.md、OFFLINE_README.txt、README.txt、文件套版圖文操作指南與示範介面圖，另含第三方授權說明及手寫模型來源。也可單獨下載 `{README_NAME}` 帶到離線電腦；其位元組與 ZIP 內的離線說明相同，並列入 SHA256SUMS。
 - 使用選取模式時，辨識完成不會先動剪貼簿；按「複製」才寫入所選內容，取消不改剪貼簿，完整辨識結果仍保存在歷史。
 - 手寫候選字只有點選後才會複製，不會自動輸入其他程式；較早開始的 OCR 不會蓋掉之後在拾字筆選字或手動複製的文字。
-- 原有三項複製清理選項預設皆關閉，只影響複製內容。移除換行會把同一筆紀錄的多行文字接在一起，請按需要開啟。
+- 複製清理選項預設皆關閉，只影響複製內容。移除換行會把同一筆紀錄的多行文字接在一起，請按需要開啟。
 
 ### 請先知道的限制
 - 手寫字表有 11,853 字，包含「龘」，不含「尞、𠮷、𠀋」。剪貼簿能保留擴充字，不代表模型能辨識；候選排序分數也不是正確率。
@@ -168,12 +171,12 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 
 ### 技術驗證與來源
 發布檢查綁定下列同一組檔案雜湊與來源版本：Windows 原生測試、EXE 內的 OCR／資料庫／手寫／啟閉測試，以及主程式和同次解壓的手寫引擎都被阻擋對外連線時的測試。
-兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
+發布關卡要求兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
 GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立手寫程序有逾時終止與父程序退出檢查；既有 QThread 內的 OCR 卡住限制仍在。完整第三方授權審查尚未完成。
 另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫及文件套版探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
 
 來源版本：`{context.source_commit}`
-套件與背景工作範圍見 [資安檢查](https://github.com/maotai11/desktop-ocr-tool/blob/{context.source_commit}/docs/SECURITY_REVIEW.md)。Linux 五組合成操作未觀察到網際網路系統呼叫；這不代表所有 GUI 路徑或原生 DLL 已完成漏洞認證。
+套件與背景工作範圍見 [資安檢查](https://github.com/maotai11/desktop-ocr-tool/blob/{context.source_commit}/docs/SECURITY_REVIEW.md)。Linux 的合成探針會追蹤程序樹網路系統呼叫；這不代表所有 GUI 路徑或原生 DLL 已完成漏洞認證。
 同次建置的測試報告與檔案對應，請見 validation metadata ZIP。
 
 ### 檔案 SHA256
@@ -486,6 +489,30 @@ def _check_document_probe(report: dict, manifest: dict, frozen: bool) -> None:
             'Document lifecycle includes a failure diagnostic')
 
 
+def _check_comparison_probe(report: dict, manifest: dict, frozen: bool) -> None:
+    """Require fixed paired-capture/queue checks without claiming OCR accuracy."""
+    expected = {
+        'schema': 1, 'probe': 'comparison_lifecycle', 'passed': True,
+        'version': manifest['version'], 'frozen': frozen, 'platform': 'win32',
+        'qt_platform': 'windows',
+        'executable_sha256': manifest['executable_sha256'] if frozen else None,
+        'clean_machine_verified': False, 'fixture_kind': 'SYNTHETIC_COMPARISON_PAIRS',
+        'ocr_accuracy_tested': False, 'model_inference_tested': False,
+    }
+    require(type(report) is dict and all(type(report.get(key)) is type(value)
+            and report.get(key) == value for key, value in expected.items()),
+            'Incomplete comparison lifecycle identity')
+    required = {'fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
+                'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
+                'cancelled_results_ignored', 'workers_stopped'}
+    checks = report.get('checks')
+    require(type(checks) is dict and set(checks) == required
+            and all(value is True for value in checks.values()),
+            'Incomplete comparison lifecycle checks')
+    require(not any(key in report for key in ('error', 'error_code', 'traceback')),
+            'Comparison lifecycle includes a failure diagnostic')
+
+
 def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> None:
     """Bind standalone/empty-profile probes to the exact candidate EXE."""
     from scripts.prepare_public_validation import strict_json
@@ -512,6 +539,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
             ('isolated-handwriting.json', check_handwriting_probe),
             ('isolated-handwriting-image.json', check_handwriting_image_probe),
             ('isolated-documents.json', _check_document_probe),
+            ('isolated-comparison.json', _check_comparison_probe),
         ):
             raw = snapshots[prefix + name]
             report = strict_json(raw)
@@ -549,7 +577,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-comparison.json", "test-results.xml",
                       "artifacts/security-audit.json", "artifacts/dependency-inventory.json",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
@@ -558,12 +586,14 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/firewall-validation/frozen-handwriting-image.json",
                       "artifacts/firewall-validation/handwriting-firewall-gate.json",
                       "artifacts/firewall-validation/frozen-runtime-stress.json",
+                      "artifacts/firewall-validation/frozen-comparison.json",
                       "artifacts/portable-validation/isolated-profile-gate.json",
                       "artifacts/portable-validation/isolated-selftest.json",
                       "artifacts/portable-validation/isolated-app-smoke.json",
                       "artifacts/portable-validation/isolated-handwriting.json",
                       "artifacts/portable-validation/isolated-handwriting-image.json",
-                      "artifacts/portable-validation/isolated-documents.json"]
+                      "artifacts/portable-validation/isolated-documents.json",
+                      "artifacts/portable-validation/isolated-comparison.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
@@ -632,6 +662,13 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     if 'dependency_inventory' in manifest:
         require(manifest['dependency_inventory'].get('sha256') == inventory_hash,
                 'Security audit inventory differs from candidate')
+    for name, frozen in (
+            ('source-comparison.json', False),
+            ('artifacts/firewall-validation/frozen-comparison.json', True)):
+        comparison = json.loads(snapshots[name])
+        _check_comparison_probe(comparison, manifest, frozen)
+        require(comparison.get('source_commit') == context.source_commit,
+                'Comparison probe source differs from candidate')
     check_portable_profile(snapshots, manifest)
     require(source.get("dirty") is False
             and COMMIT_RE.fullmatch(source.get("head_tree", "")) is not None

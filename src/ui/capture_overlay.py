@@ -25,6 +25,7 @@ class CaptureOverlay(QWidget):
         self._monitor_idx = 1
         self._monitor_offset_x = 0
         self._monitor_offset_y = 0
+        self.selection_prompt = ''
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -53,6 +54,11 @@ class CaptureOverlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(0, 0, 0, 60))
+        if self.selection_prompt:
+            painter.fillRect(20, 20, 300, 44, QColor('#17202b'))
+            painter.setPen(QColor('#ffffff'))
+            painter.drawText(QRect(32, 20, 276, 44), Qt.AlignmentFlag.AlignVCenter,
+                             self.selection_prompt)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

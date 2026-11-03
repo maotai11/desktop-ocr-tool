@@ -270,10 +270,9 @@ class SettingsDialog(QDialog):
             self._copy_cleanup_checks[key] = check
             clf.addRow('複製清理：', check)
         cleanup_note = QLabel(
-            '全部預設不勾；只改複製輸出，原始辨識、候選與人工校正不變。\n'
-            '一般文字的逗號／撇號也會移除；負號、小數點、其他符號與空格保留。\n'
-            '移除換行會把 123 與下一行 456 拼成 123456，請確認是同一個數字。\n'
-            '批量複製仍保留不同記錄的分隔。儲存後，複製清理立即生效。')
+            '只改複製內容，原始文字不變；預設皆關閉。\n'
+            '所有標點包含小數點、百分號與連字號：-1.23 → 123。\n'
+            '移除換行會合併同筆文字；批量紀錄仍以空行分隔。儲存後立即生效。')
         cleanup_note.setWordWrap(True)
         clf.addRow('', cleanup_note)
 
