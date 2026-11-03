@@ -30,6 +30,39 @@ def ready(**kwargs):
     return engine
 
 
+@pytest.mark.parametrize('primary_error', [False, True])
+@pytest.mark.parametrize('size', [(80, 200), (1400, 1400)])
+def test_cancellation_after_native_call_skips_retries_and_fallback(monkeypatch, primary_error, caplog, size):
+    from threading import Event
+    event = Event()
+    engine = ready(max_ocr_passes=3)
+    calls = []
+    def recognize(image):
+        calls.append('native')
+        event.set()
+        if primary_error:
+            raise RuntimeError('native stopped')
+        return [raw(conf=.1)]
+    monkeypatch.setattr(engine, '_do_ocr_array', recognize)
+    monkeypatch.setattr(engine, '_should_use_secondary', lambda *args: calls.append('fallback') or True)
+    monkeypatch.setattr('src.ocr.engine.enhance_for_ocr', lambda *args, **kwargs: calls.append('retry'))
+    pixels = np.arange(size[0] * size[1] * 3, dtype=np.uint8).reshape(*size, 3)
+    result = engine.run_cancellable_ocr(pixels, 'screen', event)
+    assert result['status'] == 'cancelled' and result['text'] == ''
+    assert calls == ['native'] and not caplog.records
+
+
+def test_cancelled_input_never_enters_inference(monkeypatch):
+    from threading import Event
+    event = Event()
+    event.set()
+    engine = ready()
+    calls = []
+    monkeypatch.setattr(engine, '_do_ocr_array', lambda *args: calls.append('native'))
+    result = engine.run_cancellable_ocr(np.zeros((80, 200, 3), np.uint8), 'screen', event)
+    assert result['status'] == 'cancelled' and not calls
+
+
 def test_weak_region_is_not_hidden_by_page_average():
     engine = ready()
     rows = [raw(conf=.99)] * 20 + [raw('𠮷', conf=.4)]

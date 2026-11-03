@@ -9,6 +9,7 @@ from src.comparison.capture import (
     ComparisonCaptureError,
     ComparisonCaptureWorker,
     capture_pair,
+    fingerprint_pair,
 )
 from src.comparison.controller import (
     ComparisonController,
@@ -101,7 +102,7 @@ def test_invalid_capture_positions_never_grab(monkeypatch, a, b):
 
 
 class FakeCapture(QObject):
-    completed = Signal(str, object, object)
+    completed = Signal(str, object, object, object)
     failed = Signal(str, str, bool)
     finished = Signal()
 
@@ -118,10 +119,11 @@ class FakeCapture(QObject):
     def stop(self):
         pass
 
-    def finish(self, index=-1):
+    def finish(self, index=-1, values=(1, 2)):
         token = self.requests[index][0]
-        self.completed.emit(token, {'A': np.full((5, 5, 3), 1, dtype=np.uint8),
-                                    'B': np.full((5, 5, 3), 2, dtype=np.uint8)}, ((0, 0, 100, 100),))
+        images = {name: np.full((5, 5, 3), value, dtype=np.uint8)
+                  for name, value in zip(('A', 'B'), values)}
+        self.completed.emit(token, images, ((0, 0, 100, 100),), fingerprint_pair(images))
 
 
 class FakeOcr(QObject):
@@ -410,3 +412,105 @@ def test_restart_waiting_for_cancelled_grab_keeps_original_deadline(monkeypatch,
     assert not controller._cycle_timer.isActive()
     capture.finish(0)
     assert not ocr.requests and len(capture.requests) == 1
+
+
+@pytest.mark.parametrize('changed', [(3, 2), (1, 3), (3, 4)])
+def test_unchanged_pixels_skip_ocr_and_either_region_change_resumes(controlled, changed):
+    controller, ocr, capture = controlled
+    updates, states = [], []
+    controller.updated.connect(updates.append)
+    controller.state_changed.connect(states.append)
+    controller.start()
+    capture.finish()
+    ocr.finish('甲123')
+    ocr.finish('甲123')
+    first = dict(updates[0])
+    for _ in range(10):
+        controller._cycle_timer.stop()
+        controller._begin_cycle()
+        capture.finish()
+        assert states[-1] == 'unchanged'
+        assert len(ocr.requests) == 2 and updates == [first]
+        assert not controller._images and not controller._results
+        assert not controller._deadline.isActive() and not controller._retry.isActive()
+    controller._cycle_timer.stop()
+    controller._begin_cycle()
+    capture.finish(values=changed)
+    assert len(ocr.requests) == 3
+    ocr.finish('新文字')
+    ocr.finish('另一段')
+    assert updates[-1]['cycle'] == 2 and updates[-1]['verdict'] == 'mismatch'
+    controller.pause()
+    assert controller._last_fingerprint is None and controller._pending_fingerprint is None
+    # Explicit resume forces a fresh reading even on the same image.
+    controller.start()
+    capture.finish(values=changed)
+    assert len(ocr.requests) == 5
+
+
+def test_exact_fingerprint_detects_one_pixel_and_region_geometry():
+    images = {'A': np.zeros((5, 10, 3), np.uint8), 'B': np.zeros((5, 5, 3), np.uint8)}
+    original = fingerprint_pair(images)
+    images['B'][2, 2, 0] = 1
+    assert fingerprint_pair(images) != original
+    images['B'][2, 2, 0] = 0
+    images['A'] = images['A'].reshape(10, 5, 3)
+    assert fingerprint_pair(images) != original
+
+
+def test_close_during_real_worker_ocr_stops_followups_and_releases_pixels(qapp, qtbot):
+    import gc
+    import weakref
+    from src.ui.comparison_window import ComparisonWindow
+    entered, release = Event(), Event()
+    pixels = []
+    cancellation_events = []
+    class SlowEngine(Engine):
+        def run_cancellable_ocr(self, array, mode, event):
+            cancellation_events.append(event)
+            return self.run_ocr(array, mode)
+
+        def run_ocr(self, array, mode):
+            self.calls.append(int(array[0, 0, 0]))
+            entered.set()
+            assert release.wait(5)
+            return {'text': '舊結果', 'status': 'done'}
+    def snapshot(regions, layout):
+        images = {'A': np.ones((5, 5, 3), np.uint8), 'B': np.ones((5, 5, 3), np.uint8)}
+        pixels.extend(weakref.ref(image) for image in images.values())
+        return images, ((0, 0, 100, 100),)
+    engine = SlowEngine()
+    ocr = OcrWorker(engine)
+    capture = ComparisonCaptureWorker(capture=snapshot)
+    controller = ComparisonController(ocr, capture_worker=capture)
+    window = ComparisonWindow(controller)
+    qtbot.addWidget(window)
+    updates = []
+    controller.updated.connect(updates.append)
+    try:
+        window.set_region('A', (0, 0, 5, 5, 1))
+        window.set_region('B', (10, 0, 5, 5, 1))
+        window.show()
+        controller.before_capture = lambda: True
+        assert controller.start()
+        qtbot.waitUntil(entered.is_set)
+        # UI closure must not wait for the native inference to finish.
+        window._close_button.click()
+        assert not window.isVisible() and not controller.running
+        assert controller._event.is_set()
+        assert len(cancellation_events) == 1 and cancellation_events[0].is_set()
+        assert not any(timer.isActive() for timer in
+                       (controller._cycle_timer, controller._retry, controller._deadline))
+        release.set()
+        qtbot.waitUntil(lambda: not ocr._document_pending)
+        qtbot.wait(100)
+        gc.collect()
+        assert all(reference() is None for reference in pixels)
+        assert engine.calls == [1] and not updates
+        assert not window.isVisible() and not controller._images
+    finally:
+        release.set()
+        window.shutdown()
+        assert capture.wait(5000)
+        ocr.stop()
+        assert ocr.wait(5000)

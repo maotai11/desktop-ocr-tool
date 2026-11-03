@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.6'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.7'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
@@ -37,6 +37,7 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
     'fixed_regions_reused same_snapshot_pairs normalized_match mismatch_detected uncertain_not_match '
     'clipboard_unchanged cancelled_results_ignored workers_stopped '
+    'unchanged_frames_skipped changed_frames_resumed close_stops_polling pin_toggle_available '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
@@ -260,7 +261,8 @@ def observed_result(value):
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
              'page_override','template_merge','source_unchanged','temporary_files_cleaned',
              'fixed_regions_reused','same_snapshot_pairs','normalized_match','mismatch_detected',
-             'uncertain_not_match','clipboard_unchanged','cancelled_results_ignored','workers_stopped')))
+             'uncertain_not_match','clipboard_unchanged','cancelled_results_ignored','workers_stopped',
+             'unchanged_frames_skipped','changed_frames_resumed','close_stops_polling','pin_toggle_available')))
         for r in records)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'

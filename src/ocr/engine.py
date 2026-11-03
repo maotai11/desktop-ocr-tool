@@ -16,6 +16,19 @@ from .model_validator import DEFAULT_MODEL_PROFILE
 
 logger = logging.getLogger(__name__)
 
+
+class _OcrCancelled(Exception):
+    """Cooperative boundary between native calls, never a logged OCR failure."""
+
+
+def _check_cancelled(event):
+    if event is not None and event.is_set():
+        raise _OcrCancelled()
+
+
+def _cancelled_result():
+    return dict(text='', confidence=0., status='cancelled', detail=[], elapsed_ms=0)
+
 try:
     import zhconv as _zhconv
     def _s2t(text: str) -> str:
@@ -165,12 +178,16 @@ class OcrEngine:
         if 'secondary_confidence_threshold' in kwargs:
             self._secondary_confidence_threshold = float(kwargs['secondary_confidence_threshold'])
 
-    def run_ocr(self, image: np.ndarray, mode: str = 'screen') -> dict:
+    def run_cancellable_ocr(self, image, mode, cancel_event):
+        return self.run_ocr(image, mode, cancel_event=cancel_event)
+
+    def run_ocr(self, image: np.ndarray, mode: str = 'screen', *, cancel_event=None) -> dict:
         started = time.monotonic()
         recognizer = getattr(self._engine, 'text_rec', None)
         if hasattr(recognizer, 'reset_budget'):
             recognizer.reset_budget()
         try:
+            _check_cancelled(cancel_event)
             if not isinstance(image, np.ndarray):
                 raise ValueError('OCR input must be a NumPy image')
             validate_image_shape(image.shape)
@@ -179,12 +196,14 @@ class OcrEngine:
             if not self._ready:
                 raise ValueError('OCR 引擎未就緒')
             tiles = plan_ocr_tiles(image.shape, self._max_short_side)
+            cancel_args = {'cancel_event': cancel_event} if cancel_event is not None else {}
             if not tiles:
-                result = self._run_single_ocr(image, mode)
+                result = self._run_single_ocr(image, mode, **cancel_args)
                 result['preprocessing'] = {'strategy': 'whole_image', 'source_hw': list(image.shape[:2])}
                 return result
             merged, tile_evidence, warnings, tile_hypotheses = [], [], [], []
             for index, tile in enumerate(tiles):
+                _check_cancelled(cancel_event)
                 if self._progress_callback:
                     self._progress_callback(10 + int(75 * index / len(tiles)),
                                             f'切片辨識 {index + 1}/{len(tiles)}')
@@ -200,8 +219,9 @@ class OcrEngine:
                 else:
                     # At most one inference tile and its enhancement are alive.
                     prepared = prepare_ocr_tile(image, tile)
-                    result = self._run_single_ocr(prepared, mode, preprocessed=True)
+                    result = self._run_single_ocr(prepared, mode, preprocessed=True, **cancel_args)
                     del prepared
+                _check_cancelled(cancel_event)
                 if result['status'] == 'failed':
                     raise RuntimeError(f'切片 {index + 1}/{len(tiles)} 失敗: {result.get("error", "unknown")}')
                 if result['text'] and not result.get('detail'):
@@ -233,19 +253,22 @@ class OcrEngine:
                          preprocessing={'strategy': 'bounded_small_region' if small_region else 'overlapping_tiles',
                                         'source_hw': list(image.shape[:2]), 'tiles': tile_evidence})
             return final
+        except _OcrCancelled:
+            return _cancelled_result()
         except Exception as exc:
             logger.error('OCR input/tiling failed: %s', exc, exc_info=True)
             return dict(text='', confidence=0., status='failed', detail=[],
                         elapsed_ms=int((time.monotonic() - started) * 1000), error=str(exc))
 
     def _run_single_ocr(self, image: np.ndarray, mode: str = 'screen',
-                        preprocessed: bool = False) -> dict:
+                        preprocessed: bool = False, *, cancel_event=None) -> dict:
         if not self._ready:
             return {'text': '', 'confidence': 0, 'status': 'failed',
                     'detail': [], 'elapsed_ms': 0, 'error': 'OCR 引擎未就緒'}
         t0 = time.time()
         original_hw = image.shape[:2]
         try:
+            _check_cancelled(cancel_event)
             # Step 1: upscale 小圖 (10%)
             if self._progress_callback and not preprocessed:
                 self._progress_callback(10, "圖片處理中...")
@@ -262,11 +285,17 @@ class OcrEngine:
                 self._progress_callback(30, "文字辨識中...")
             first_started = time.monotonic()
             try:
+                _check_cancelled(cancel_event)
                 results = self._do_ocr_array(image)
+                _check_cancelled(cancel_event)
+            except _OcrCancelled:
+                raise
             except Exception as primary_error:
+                _check_cancelled(cancel_event)
                 failed = dict(text='', confidence=0., status='failed', error=str(primary_error))
                 if self._should_use_secondary(failed, mode):
                     candidate = self._secondary.recognize(image, mode)
+                    _check_cancelled(cancel_event)
                     if self._is_better(candidate, failed):
                         candidate.update(engine=self._secondary.name,
                                          elapsed_ms=int((time.time()-t0)*1000))
@@ -286,6 +315,7 @@ class OcrEngine:
             # variant keeps the same bounded image shape and recognition budget.
             seen_images = {self._image_fingerprint(image)}
             for pass_number in range(2, pass_limit + 1):
+                _check_cancelled(cancel_event)
                 reasons = self._retry_reasons(results)
                 if conflicts:
                     reasons.append('conflicting_text')
@@ -308,7 +338,9 @@ class OcrEngine:
                         metadata[pass_name]['outcome'] = 'skipped_identical_image'
                         continue
                     seen_images.add(fingerprint)
+                    _check_cancelled(cancel_event)
                     candidate = self._do_ocr_array(enhanced)
+                    _check_cancelled(cancel_event)
                     hypotheses[pass_name] = self._snapshot_results(candidate)
                     disagree = has_text_conflicts(results, candidate)
                     conflicts = conflicts or disagree
@@ -321,6 +353,8 @@ class OcrEngine:
                         warnings.append(f'{pass_name}: overlapping text disagrees; prior text retained for review')
                     else:
                         results = self._merge_results(results, candidate)
+                except _OcrCancelled:
+                    raise
                 except Exception as retry_error:
                     last_retry_error = retry_error
                     metadata[pass_name].update(outcome='failed', error=str(retry_error))
@@ -354,10 +388,14 @@ class OcrEngine:
 
             # Step 4 (Patch H1): 第二引擎 fallback routing
             # 僅在開關開啟、第二引擎可用、且主引擎結果不佳時觸發
+            _check_cancelled(cancel_event)
             if self._should_use_secondary(primary_result, mode):
                 logger.debug("觸發第二引擎 fallback [%s], mode=%s", self._secondary.name, mode)
                 try:
                     secondary_result = self._secondary.recognize(image, mode)
+                    _check_cancelled(cancel_event)
+                except _OcrCancelled:
+                    raise
                 except Exception:
                     logger.exception('第二引擎失敗，保留第一引擎結果')
                     secondary_result = {'text':'', 'status':'failed'}
@@ -383,6 +421,8 @@ class OcrEngine:
             primary_result["elapsed_ms"] = int((time.time() - t0) * 1000)
             primary_result.update(engine="rapidocr_onnxruntime", model_version=self._model_version)
             return self._original_coordinates(primary_result, original_hw, image.shape[:2])
+        except _OcrCancelled:
+            return _cancelled_result()
         except Exception as e:
             elapsed_ms = int((time.time() - t0) * 1000)
             logger.error(f"OCR 執行失敗: {e}", exc_info=True)
