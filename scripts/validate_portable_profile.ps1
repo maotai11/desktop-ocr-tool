@@ -24,8 +24,8 @@ try {
     $bundle = (Resolve-Path -LiteralPath $BundleDirectory).Path
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or
-        $manifest.version -cne '1.8.0-rc.6' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.6.exe') {
+        $manifest.version -cne '1.8.0-rc.7' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.7.exe') {
         throw 'Unexpected portable candidate identity'
     }
     $original = Join-Path $bundle $manifest.executable_name
@@ -159,7 +159,8 @@ try {
         } elseif ($probe.kind -ceq 'comparison_lifecycle') {
             $checkNames = @('fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
                 'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
-                'cancelled_results_ignored', 'workers_stopped')
+                'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
+                'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available')
             if (($result.schema -isnot [int64] -and $result.schema -isnot [int]) -or
                 $result.schema -ne 1 -or $result.qt_platform -cne 'windows' -or
                 $result.fixture_kind -cne 'SYNTHETIC_COMPARISON_PAIRS' -or

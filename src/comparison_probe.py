@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from threading import Event
+from time import monotonic
 
 from .core.validation_report import executable_sha256, write_validation_report
 from .core.version import APP_VERSION
@@ -13,6 +14,7 @@ CHECK_NAMES = (
     'fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
     'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
     'cancelled_results_ignored', 'workers_stopped',
+    'unchanged_frames_skipped', 'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
 )
 
 
@@ -24,12 +26,13 @@ def run_comparison_probe(report_path):
     and this must never be described as model accuracy or inference evidence.
     """
     import numpy as np
-    from PySide6.QtCore import QEventLoop, QTimer
+    from PySide6.QtCore import QEventLoop, QTimer, Qt
     from PySide6.QtWidgets import QApplication
 
     from .comparison import capture as capture_module
     from .comparison.controller import ComparisonController
     from .workers.ocr_worker import OcrWorker
+    from .ui.comparison_window import ComparisonWindow
 
     app = QApplication.instance() or QApplication([])
     report = {
@@ -71,13 +74,16 @@ def run_comparison_probe(report_path):
             expected = {'left': 0, 'top': 0, 'width': 20, 'height': 8}
             if rectangle != expected:
                 raise ValueError('Unexpected synthetic capture bounds')
-            cycle = len(captures) + 1
+            grab = len(captures) + 1
             captures.append(dict(rectangle))
-            if cycle == 5:
+            if grab == 6:
                 cancelled_grab_started.set()
                 if not release_cancelled_grab.wait(2):
                     raise ValueError('Cancellation handshake timeout')
+            cycle = (1, 1, 2, 3, 4, 5)[grab - 1]
             pixels = np.zeros((8, 20, 4), dtype=np.uint8)
+            # Irrelevant pixels outside A/B change even on the duplicate pair.
+            pixels[:, 8:12, :3] = grab
             pixels[:, :8, :3] = cycle * 10 + 1
             pixels[:, 12:, :3] = cycle * 10 + 2
             return pixels
@@ -103,13 +109,14 @@ def run_comparison_probe(report_path):
             return {'text': text, 'status': status}
 
     original_screen = capture_module.mss.mss
-    worker = controller = None
+    worker = controller = window = None
     loop = QEventLoop()
     deadline, poll = QTimer(), QTimer()
     deadline.setSingleShot(True)
     poll.setInterval(10)
     stage = 'recognize'
     failed = False
+    closed_at = None
     before_clipboard = app.clipboard().text()
 
     def stop_workers():
@@ -134,14 +141,21 @@ def run_comparison_probe(report_path):
             stage = 'start_cancel'
             controller.pause()
 
+    def state_changed(state):
+        if state == 'unchanged':
+            report['checks']['unchanged_frames_skipped'] = (
+                len(captures) == 2 and len(results) == 1 and recognized_pixels == [11, 12])
+
     def check_progress():
-        nonlocal stage
+        nonlocal stage, closed_at
         if stage == 'start_cancel':
             stage = 'wait_cancel'
             if not controller.start():
                 abort()
         elif stage == 'wait_cancel' and cancelled_grab_started.is_set():
-            controller.pause()
+            window.show()
+            window._close_button.click()
+            closed_at = monotonic()
             release_cancelled_grab.set()
             stage = 'cancelled'
         elif stage == 'cancelled' and controller._capture_token is None:
@@ -151,6 +165,12 @@ def run_comparison_probe(report_path):
                 and not controller._retry.isActive()
                 and not controller._images and not controller._results
                 and recognized_pixels == [11, 12, 21, 22, 31, 32, 41, 42])
+            stage = 'closed_wait'
+        elif stage == 'closed_wait' and monotonic() - closed_at > 1.1:
+            report['checks']['close_stops_polling'] = (
+                not window.isVisible() and not controller.running and len(captures) == 6
+                and not controller._deadline.isActive() and controller._last_fingerprint is None
+                and controller._pending_fingerprint is None and len(results) == 4)
             stage = 'stopping'
             stop_workers()
         elif stage == 'stopping' and controller.is_stopped and not worker.isRunning():
@@ -169,6 +189,17 @@ def run_comparison_probe(report_path):
         capture_worker = capture_module.ComparisonCaptureWorker(capture=paired_capture)
         worker = OcrWorker(PixelOracle())
         controller = ComparisonController(worker, capture_worker=capture_worker)
+        window = ComparisonWindow(controller)
+        controller.state_changed.connect(state_changed)
+        pin_ok = True
+        for compact in (False, True):
+            window.set_compact(compact)
+            for pinned in (False, True):
+                window.set_pinned(pinned)
+                flags = window.windowFlags()
+                pin_ok = pin_ok and bool(flags & Qt.WindowType.WindowStaysOnTopHint) == pinned
+                pin_ok = pin_ok and bool(flags & Qt.WindowType.WindowCloseButtonHint)
+        report['checks']['pin_toggle_available'] = pin_ok and window._close_button.isEnabled()
         controller.updated.connect(updated)
         controller.failed.connect(abort)
         worker.engine_failed.connect(abort)
@@ -178,18 +209,20 @@ def run_comparison_probe(report_path):
         poll.timeout.connect(check_progress)
         deadline.timeout.connect(abort)
         poll.start()
-        deadline.start(12000)
+        deadline.start(14000)
         if not controller.start():
             raise ValueError('Synthetic comparison did not start')
         loop.exec()
         verdicts = [result['verdict'] for result in results]
         report['checks'].update(
-            fixed_regions_reused=(len(observed_regions) == 5
+            fixed_regions_reused=(len(observed_regions) == 6
                                   and all(item == regions for item in observed_regions)),
-            same_snapshot_pairs=(len(captures) == 5
+            same_snapshot_pairs=(len(captures) == 6
                                  and recognized_pixels == [11, 12, 21, 22, 31, 32, 41, 42]),
             normalized_match=bool(verdicts and verdicts[0] == 'match'),
             mismatch_detected=bool(len(verdicts) > 1 and verdicts[1] == 'mismatch'),
+            changed_frames_resumed=(len(results) == 4
+                                    and [result['cycle'] for result in results] == [1, 2, 3, 4]),
             uncertain_not_match=verdicts[2:] == ['uncertain', 'uncertain'],
             clipboard_unchanged=app.clipboard().text() == before_clipboard,
         )
@@ -207,6 +240,9 @@ def run_comparison_probe(report_path):
             controller._capture.wait(3000)
         if worker is not None:
             worker.wait(3000)
+        if window is not None:
+            window.shutdown()
+            window.deleteLater()
         capture_module.mss.mss = original_screen
     if not report['passed']:
         report['error_code'] = 'COMPARISON_PROBE_CHECK_FAILED'

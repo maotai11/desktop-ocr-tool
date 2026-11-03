@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import blake2b
 from threading import Event
 
 import mss
@@ -12,6 +13,16 @@ from ..workers.queue_worker import QueueWorker
 
 MAX_REGION_PIXELS = 16_000_000
 MAX_CAPTURE_PIXELS = 36_000_000
+
+
+def fingerprint_pair(images):
+    """Hash exact target pixels off the UI thread, retaining no image cache."""
+    digest = blake2b(digest_size=32)
+    for name in ('A', 'B'):
+        pixels = np.ascontiguousarray(images[name])
+        digest.update(str((name, pixels.shape, pixels.dtype.str)).encode('ascii'))
+        digest.update(memoryview(pixels).cast('B'))
+    return digest.digest()
 
 
 class ComparisonCaptureError(ValueError):
@@ -86,7 +97,7 @@ class CaptureTask:
 
 
 class ComparisonCaptureWorker(QueueWorker):
-    completed = Signal(str, object, object)
+    completed = Signal(str, object, object, object)
     failed = Signal(str, str, bool)
 
     def __init__(self, parent=None, *, capture=capture_pair):
@@ -98,19 +109,21 @@ class ComparisonCaptureWorker(QueueWorker):
 
     def run(self):
         for task in self.tasks():
-            images = layout = None
+            images = layout = fingerprint = None
             try:
                 if not task.cancelled.is_set():
                     images, layout = self._capture(task.regions, task.layout)
+                    if not task.cancelled.is_set():
+                        fingerprint = fingerprint_pair(images)
                 if task.cancelled.is_set():
-                    images = layout = None
-                self.completed.emit(task.token, images, layout)
+                    images = layout = fingerprint = None
+                self.completed.emit(task.token, images, layout, fingerprint)
             except Exception as exc:  # noqa: BLE001 - native capture errors must not leak paths or pixels
                 if task.cancelled.is_set():
-                    self.completed.emit(task.token, None, None)
+                    self.completed.emit(task.token, None, None, None)
                 else:
                     message = str(exc) if isinstance(exc, ComparisonCaptureError) else '未能擷取畫面，請重新框選後再試。'
                     changed = isinstance(exc, ComparisonCaptureError) and exc.layout_changed
                     self.failed.emit(task.token, message, changed)
             finally:
-                images = layout = None
+                images = layout = fingerprint = None

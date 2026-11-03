@@ -93,12 +93,13 @@ def test_configure_once_and_resume_reuses_fixed_regions(window, qtbot):
     window._start_button.click()
     assert window.controller.starts == 2
     assert window.controller.regions == original
-    assert '0, 0' in window._region_labels['A'].text()
+    assert '0, 0' in window._region_labels['A'].toolTip()
+    assert window._region_labels['A'].text() == '範圍已選取'
 
 
 @pytest.mark.parametrize('verdict,label,color', [
-    ('match', '相同', _SUCCESS), ('mismatch', '不同', _ERROR),
-    ('uncertain', '待確認', _WARNING),
+    ('match', '內容一致', _SUCCESS), ('mismatch', '發現差異', _ERROR),
+    ('uncertain', '需要確認', _WARNING),
 ])
 def test_result_has_text_color_raw_previews_count_and_time(window, verdict, label, color):
     window.controller.updated.emit(result(verdict))
@@ -161,9 +162,13 @@ def test_modes_intervals_and_compact_controls(window, qapp):
     qapp.processEvents()
     assert window._details.isHidden()
     assert window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
-    assert window._compact_button.text() == '展開設定'
+    assert window._compact_button.text() == '展開視窗'
     window.set_compact(False)
     assert not window._details.isHidden()
+    assert window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window._pin_button.click()
+    assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window.set_compact(True)
     assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
 
 
@@ -223,3 +228,61 @@ def test_shutdown_discards_late_results_and_stops_controller(window):
     before = window._status.text()
     window.controller.updated.emit(result('mismatch'))
     assert window._status.text() == before
+
+
+def test_unchanged_check_keeps_result_color_timestamp_and_count(window):
+    window.controller.updated.emit(result('mismatch'))
+    title, timestamp, style = window._status.text(), window._activity.text(), window._status.styleSheet()
+    for state in ('watching', 'checking', 'unchanged'):
+        window.controller.state_changed.emit(state)
+        assert (window._status.text(), window._activity.text(), window._status.styleSheet()) == (title, timestamp, style)
+    assert window._note.text() == '畫面未變，等待變化。'
+
+
+@pytest.mark.parametrize('compact', [False, True])
+def test_pinning_is_optional_keeps_position_and_close_is_always_available(window, qapp, compact):
+    configure(window)
+    window.show()
+    window.set_compact(compact)
+    window.controller.running = True
+    qapp.processEvents()
+    for pinned in (False, True):
+        window.move(123, 135)
+        position = window.pos()
+        window.set_pinned(pinned)
+        qapp.processEvents()
+        assert window.pos() == position
+        assert bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == pinned
+        assert window.windowFlags() & Qt.WindowType.WindowCloseButtonHint
+        assert window._close_button.isEnabled()
+        assert window.controller.running
+    window._close_button.click()
+    assert not window.isVisible() and not window.controller.running
+    # Late overlay completion / result delivery must not reopen a closed window.
+    window.set_selection_active(False)
+    window.controller.updated.emit(result())
+    assert not window.isVisible() and window._texts['A'].toPlainText() == ''
+    window.open()
+    assert window.isVisible() and not window.controller.running
+
+
+def test_windows_native_close_command_is_enabled_while_running(window, qapp):
+    import sys
+    if sys.platform != 'win32':
+        pytest.skip('Native Windows caption')
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    user32.GetSystemMenu.argtypes = [wintypes.HWND, wintypes.BOOL]
+    user32.GetSystemMenu.restype = wintypes.HMENU
+    user32.GetMenuState.argtypes = [wintypes.HMENU, wintypes.UINT, wintypes.UINT]
+    user32.GetMenuState.restype = wintypes.UINT
+    window.show()
+    window.controller.running = True
+    for compact in (False, True):
+        window.set_compact(compact)
+        qapp.processEvents()
+        menu = user32.GetSystemMenu(int(window.winId()), False)
+        assert menu
+        close_state = user32.GetMenuState(menu, 0xF060, 0)  # SC_CLOSE, MF_BYCOMMAND
+        assert close_state != 0xFFFFFFFF and close_state & 3 == 0

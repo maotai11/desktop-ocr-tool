@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.6. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.7. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.6"
+TAG = "v1.8.0-rc.7"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,15 +133,18 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版新增固定 A／B 區域連續核對，以及複製時移除所有標點符號的選項。
+本版修正 A／B 核對關閉問題，畫面不變時不再重跑 OCR，並加入可切換的置頂與較精簡的介面。
 
 ### A／B 連續核對
-- 點浮動窗「A／B 核對」，在主螢幕分別「框選 A」「框選 B」，按「開始核對」。每輪從同一張快照取得兩區，再依序辨識；下一輪沿用原位置，不需重框。
-- 預設只比較文字與數字，忽略空白、標點及其他符號；可改為「逐字完全相同」。因此 `1.23` 與 `123` 在預設規則可能相同，金額或標點有意義時請用逐字模式。
-- 綠色顯示相同，紅色顯示不同，琥珀色顯示待確認；同時列出 A／B 原文、輪次與更新時間。空白、失敗及待核對結果不會顯示已確認相同。
-- 每輪完成後預設等 2 秒，可調為 1–60 秒；共用既有 OCR 引擎，忙碌時等待，不累積輪次。按「暫停」、重新框選或關閉視窗會取消後續辨識，當前原生呼叫需先返回。
-- 核對窗更新不搶焦點；「精簡狀態」可收成置頂小窗。啟動前會避開 A／B，無可用空間則提示移開；運行時本工具視窗擋住區域會暫停。
-- 核對不自動複製、不保存截圖或歷史，只在使用者開始後掃描。位置保留在本次執行中，退出後需重框。來源視窗移動、捲動、縮放或顯示器設定改變後應重新框選。
+- 點浮動窗「A／B 核對」，按 A 區、B 區的「選取範圍」，再按「開始核對」。從同一張快照取得兩區，再依序辨識；下一輪沿用原位置，不需重框。
+- 預設「忽略空白與標點」只比較文字與數字，也忽略其他符號；可改為「逐字比對」。因此 `1.23` 與 `123` 在預設規則可能相同，金額或標點有意義時請用逐字模式。
+- 綠色「內容一致」、紅色「發現差異」、琥珀色「需要確認」；同時列出 A／B 原文、辨識次數與更新時間。空白、失敗及待核對結果不會顯示已確認相同。
+- 每輪完成後預設等 2 秒檢查畫面，可調為 1–60 秒。A／B 像素都不變時跳過 OCR，顯示「畫面未變，等待變化」，保留上次結果、時間與次數；任一區改變才重新辨識。框外變化不觸發；框內動畫或游標閃爍也算變化。想手動重讀可暫停後再開始。
+- 「保持置頂」預設開啟，完整與精簡窗都能隨時取消、拖移與調整大小。「縮小視窗／展開視窗」不更改置頂設定；更新結果不搶焦點。啟動前會避開 A／B，空間不足則提示移開；運行時本工具視窗擋住區域會暫停。
+- 右上角 × 或「關閉」立即停止核對並關窗，不需等辨識返回。暫停或關窗會停止計時器、清掉摘要與待處理影像；當前原生呼叫仍需返回，但不再補辨、處理後續切片或下一區。關窗後不再檢查畫面，最小化則繼續已啟動的監看。
+- 核對不自動複製、不保存截圖或歷史。位置保留在本次執行中，退出後需重框。來源視窗移動、捲動、縮放或顯示器設定改變後應重新框選。
+
+螢幕 OCR、PDF／圖片套版、手寫、歷史及檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 
 ### 複製時移除所有標點
 - 在「設定 → 剪貼簿」啟用「複製時移除所有標點符號」，預設關閉。`「您好，世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
@@ -504,7 +507,8 @@ def _check_comparison_probe(report: dict, manifest: dict, frozen: bool) -> None:
             'Incomplete comparison lifecycle identity')
     required = {'fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
                 'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
-                'cancelled_results_ignored', 'workers_stopped'}
+                'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
+                'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available'}
     checks = report.get('checks')
     require(type(checks) is dict and set(checks) == required
             and all(value is True for value in checks.values()),

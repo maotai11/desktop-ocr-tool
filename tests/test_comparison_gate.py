@@ -1,10 +1,30 @@
 """Public evidence must retain failures without exporting compared content."""
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts import prepare_public_validation as public
 from scripts.audit_runtime_network import MODES
+
+
+@pytest.mark.parametrize('name', ['unchanged_frames_skipped', 'changed_frames_resumed',
+                                  'close_stops_polling', 'pin_toggle_available'])
+def test_new_idle_and_window_checks_cannot_be_missing_or_false(name):
+    from scripts import publish_prerelease as publisher
+    from handwriting_release_fixtures import comparison_probe
+    manifest = {'version': publisher.VERSION, 'executable_sha256': 'a' * 64}
+    for value in (False, None):
+        report = comparison_probe(publisher.VERSION, manifest['executable_sha256'])
+        if value is None:
+            del report['checks'][name]
+        else:
+            report['checks'][name] = value
+            safe = public.safe_fields(report)
+            assert safe['checks'][name] is False
+            assert public.observed_result(safe) == 'INCONSISTENT_AS_RECORDED'
+        with pytest.raises(publisher.PublicationError, match='checks'):
+            publisher._check_comparison_probe(report, manifest, True)
 
 
 def test_comparison_failure_is_visible_in_public_summary():

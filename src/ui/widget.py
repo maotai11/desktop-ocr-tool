@@ -510,6 +510,7 @@ class FloatingWidget(QWidget):
             window.select_requested.connect(self._select_comparison_region)
             window.screen_invalidated.connect(
                 lambda: overlay._cancel() if window._selection_active else None)
+            window.closed.connect(lambda: overlay._cancel() if window._selection_active else None)
             overlay.cancelled.connect(lambda: window.set_selection_active(False)
                                       if not self._comparison_closing else None)
             controller.updated.connect(lambda result: self.comparison_status.emit(result['verdict']))
@@ -517,9 +518,7 @@ class FloatingWidget(QWidget):
             controller.failed.connect(lambda message: self.comparison_status.emit('uncertain'))
             controller.before_capture = self._comparison_can_capture
         self.hide()
-        self._comparison.show()
-        self._comparison.raise_()
-        self._comparison.activateWindow()
+        self._comparison.open()
 
     def _comparison_state_changed(self, state):
         if state in ('idle', 'paused'):
@@ -535,7 +534,7 @@ class FloatingWidget(QWidget):
         self._comparison_overlay.selection_prompt = f'框選 {name} 區域 · Esc 取消'
 
         def selected(x, y, width, height, monitor):
-            if self._comparison_closing:
+            if self._comparison_closing or self._comparison._closed_by_user:
                 return
             self._comparison.set_region(name, (x, y, width, height, monitor))
             self._comparison.set_selection_active(False)

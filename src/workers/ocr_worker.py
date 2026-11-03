@@ -118,7 +118,9 @@ class OcrWorker(QueueWorker):
             if not task.cancel_event.is_set():
                 if not self._engine.is_ready():
                     raise RuntimeError('辨識引擎尚未就緒，請稍後重試。')
-                result = dict(self._engine.run_ocr(task.image, 'screen'))
+                cancellable = getattr(self._engine, 'run_cancellable_ocr', None)
+                result = dict(cancellable(task.image, 'screen', task.cancel_event)
+                              if cancellable is not None else self._engine.run_ocr(task.image, 'screen'))
                 if task.cancel_event.is_set():
                     result = {'text': '', 'status': 'cancelled'}
         except Exception as exc:  # noqa: BLE001 - native inference errors become controlled transient results

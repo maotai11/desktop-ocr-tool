@@ -64,7 +64,8 @@ def comparison_probe(version, executable_hash, frozen=True):
         model_inference_tested=False,
         checks=dict.fromkeys(('fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
             'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
-            'cancelled_results_ignored', 'workers_stopped'), True))
+            'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
+            'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available'), True))
 
 
 def extra_evidence(root, manifest):

@@ -68,6 +68,8 @@ class ComparisonController(QObject):
         self._event = Event()
         self._images = {}
         self._results = {}
+        self._last_fingerprint = None
+        self._pending_fingerprint = None
         self._pending_name = None
         self._inflight_name = None
         self._cycle = 0
@@ -153,6 +155,7 @@ class ComparisonController(QObject):
         self._token = None
         self._images.clear()
         self._results.clear()
+        self._last_fingerprint = self._pending_fingerprint = None
         self._pending_name = self._inflight_name = None
         self.state_changed.emit('paused')
 
@@ -183,7 +186,7 @@ class ComparisonController(QObject):
         self._event = Event()
         self._results = {}
         self._cycle_timestamp = datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
-        self.state_changed.emit('running')
+        self.state_changed.emit('checking')
         if not self.running or self._closing:
             self._capture_token = None
             return
@@ -208,7 +211,7 @@ class ComparisonController(QObject):
             return True
         return False
 
-    def _captured(self, token, images, layout):
+    def _captured(self, token, images, layout, fingerprint):
         if token != self._capture_token:
             return
         self._capture_token = None
@@ -220,9 +223,21 @@ class ComparisonController(QObject):
             self.pause()
             return
         self._layout = layout
+        if fingerprint is not None and fingerprint == self._last_fingerprint:
+            # Only the two selected regions matter. Changes elsewhere on the
+            # desktop must not trigger inference, replace a result or advance
+            # its timestamp. No raster is kept between polling intervals.
+            self._deadline.stop()
+            self._cycle_started = self._cycle_timestamp = None
+            self.state_changed.emit('unchanged')
+            if self.running and not self._closing and token == self._token:
+                self._cycle_timer.start(self.interval * 1000)
+            return
+        self._pending_fingerprint = fingerprint
         self._images = images
         self._pending_name = 'A'
         self._retry_count = 0
+        self.state_changed.emit('running')
         self._submit_crop()
 
     def _capture_failed(self, token, message, layout_changed):
@@ -281,6 +296,8 @@ class ComparisonController(QObject):
         self._deadline.stop()
         timestamp = self._cycle_timestamp
         self._cycle_started = self._cycle_timestamp = None
+        self._last_fingerprint = self._pending_fingerprint
+        self._pending_fingerprint = None
         first, second = self._results['A'], self._results['B']
         self.updated.emit({'a': first['text'], 'b': second['text'],
                            'verdict': compare_results(first, second, self.mode),
@@ -288,7 +305,7 @@ class ComparisonController(QObject):
         self._images.clear()
         self._results.clear()
         if self.running and not self._closing and token == self._token:
-            self.state_changed.emit('waiting')
+            self.state_changed.emit('watching')
             self._cycle_timer.start(self.interval * 1000)
 
     def shutdown(self):
