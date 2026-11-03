@@ -120,3 +120,4 @@ models/handwriting/source/*.xml
 /source-app-smoke.json
 /source-handwriting.json
 /source-handwriting-image.json
+/source-comparison.json

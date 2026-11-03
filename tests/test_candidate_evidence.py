@@ -186,29 +186,74 @@ def test_payload_inspector_checks_actual_runtime_and_both_profile_bytes(monkeypa
             inspect_frozen_payload('unused-fixture.exe', profiles, validation_fixtures=fixture_validation()[0])
 
 
-def test_source_manifest_excludes_only_untracked_generated_probe_outputs(tmp_path, monkeypatch):
+def workflow_root_probe_outputs():
+    """Discover actual workflow outputs so adding a probe exercises this guard."""
+    import shlex
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load((root / '.github/workflows/validate.yml').read_text(encoding='utf-8'),
+                         Loader=yaml.BaseLoader)
+    outputs = []
+    for step in workflow['jobs']['validate']['steps']:
+        command = shlex.split(step.get('run', ''))
+        if command[:2] == ['python', 'src/main.py']:
+            assert len(command) == 4
+            path = Path(command[-1])
+            if len(path.parts) == 1:
+                outputs.append(path.name)
+    assert outputs
+    return outputs
+
+
+def test_workflow_root_probe_outputs_are_ignored_and_explicitly_allowlisted():
+    import subprocess
+    from pathlib import Path
+
+    from scripts import build
+
+    root = Path(__file__).resolve().parents[1]
+    outputs = workflow_root_probe_outputs()
+    assert set(outputs) <= build.GENERATED_VALIDATION_FILES
+    ignored = subprocess.check_output(['git', 'check-ignore', '--no-index', '--', *outputs],
+                                      cwd=root, timeout=30).decode().splitlines()
+    assert set(ignored) == set(outputs)
+
+
+@pytest.mark.parametrize('generated_name', workflow_root_probe_outputs())
+def test_source_manifest_excludes_only_untracked_generated_probe_outputs(tmp_path, monkeypatch, generated_name):
     from scripts import build
     (tmp_path / 'source.py').write_text('code')
-    (tmp_path / 'source-selftest.json').write_text('{}')
+    (tmp_path / generated_name).write_text('{}')
     (tmp_path / 'unexpected.py').write_text('unknown code')
     unexpected = False
+    tracked_report = False
 
     def git(args, **kwargs):
         command = args[1:]
         if command == ['rev-parse', 'HEAD']: return b'a' * 40 + b'\n'
         if command == ['rev-parse', 'HEAD^{tree}']: return b'b' * 40 + b'\n'
-        if command == ['ls-files', '-z', '--cached']: return b'source.py\0'
+        if command == ['ls-files', '-z', '--cached']:
+            return b'source.py\0' + ((generated_name + '\0').encode() if tracked_report else b'')
         if command[0] == 'ls-files':
-            return b'source.py\0source-selftest.json\0' + (b'unexpected.py\0' if unexpected else b'')
-        return b'?? source-selftest.json\n' + (b'?? unexpected.py\n' if unexpected else b'')
+            return ('source.py\0' + generated_name + '\0').encode() + (b'unexpected.py\0' if unexpected else b'')
+        report_status = (' M ' if tracked_report else '?? ') + generated_name + '\n'
+        return report_status.encode() + (b'?? unexpected.py\n' if unexpected else b'')
 
     monkeypatch.setattr(build.subprocess, 'check_output', git)
     before = build.source_manifest(tmp_path)
-    assert before['dirty'] is False and 'source-selftest.json' not in before['files']
-    assert before['excluded_generated_validation_files'] == ['source-selftest.json']
+    assert before['dirty'] is False and generated_name not in before['files']
+    assert before['excluded_generated_validation_files'] == [generated_name]
     unexpected = True
     after = build.source_manifest(tmp_path)
     assert after['dirty'] is True and 'unexpected.py' in after['files']
+    unexpected = False
+    tracked_report = True
+    tracked = build.source_manifest(tmp_path)
+    assert tracked['dirty'] is True and generated_name in tracked['files']
+    assert tracked['excluded_generated_validation_files'] == []
 
 
 @pytest.mark.parametrize('stage', ['embedded', 'firewall', 'source'])

@@ -44,6 +44,13 @@ RELEASE_DOCUMENTATION = {
     "docs/ui/comparison-compact.png": "docs/ui/comparison-compact.png",
 }
 
+# Exact root-level outputs written by the validation workflow. Tracked files
+# with these names still remain source inputs and must pass the dirty check.
+GENERATED_VALIDATION_FILES = frozenset({
+    'test-results.xml', 'source-selftest.json', 'source-app-smoke.json',
+    'source-handwriting.json', 'source-handwriting-image.json', 'source-comparison.json',
+})
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -88,8 +95,7 @@ def source_manifest(root: Path):
     names = sorted(set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
                        .decode('utf-8').split('\0')) - {''})
     tracked = set(git('ls-files', '-z', '--cached').decode('utf-8').split('\0'))
-    generated = {'test-results.xml', 'source-selftest.json', 'source-app-smoke.json', 'source-handwriting.json', 'source-handwriting-image.json'}
-    excluded = set(names) & generated - tracked
+    excluded = set(names) & GENERATED_VALIDATION_FILES - tracked
     names = [name for name in names if name not in excluded]
     files = {}
     for name in names:
