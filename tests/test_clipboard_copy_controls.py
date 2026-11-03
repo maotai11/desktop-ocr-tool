@@ -313,7 +313,58 @@ def test_settings_cleanup_save_reload_roundtrip(qtbot, tmp_path, monkeypatch):
     assert all(reloaded.get('clipboard', key) is True for key, _, _ in COPY_CLEANUP_OPTIONS)
     assert reloaded.get('clipboard', 'monitor_clipboard') is False
     assert reloaded.get('hotkeys', 'paste_last') == 'Alt+V'
-    assert prepare_copy_text("-1,234.50'\n567", reloaded) == '-1234.50567'
+    assert prepare_copy_text("-1,234.50'\n567", reloaded) == '123450567'
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('「中文」，『全形』。！？；：（測試）【123】', '中文全形測試123'),
+    ('_A—B(C)[D]{E}“F”‘G’…؟؛', 'ABCDEFG'),
+    ('甲。𠮷！ＡＢＣ１２３，e\u0301 🙂 +−×÷=￥$€\t\n乙',
+     '甲𠮷ＡＢＣ１２３e\u0301 🙂 +−×÷=￥$€\t\n乙'),
+    ('-1,234.50％ / 2:30', '123450  230'),
+])
+def test_all_punctuation_removes_unicode_punctuation_and_preserves_text_symbols(source, expected):
+    assert prepare_copy_text(source, Config(copy_remove_punctuation=True)) == expected
+    assert prepare_copy_text(source, Config()) == source
+
+
+def test_all_punctuation_and_newline_options_remain_independent(qapp):
+    text = '甲，\n乙。\t丙！'
+    cfg = Config(copy_remove_punctuation=True)
+    assert copy_text(text, cfg)
+    assert qapp.clipboard().text() == '甲\n乙\t丙'
+    cfg.set('clipboard', 'copy_remove_newlines', True)
+    assert copy_text_batch([text, '丁（戊）'], cfg)
+    assert qapp.clipboard().text() == '甲乙\t丙\n\n丁戊'
+
+
+def test_punctuation_only_output_keeps_clipboard_and_manual_epoch(qapp):
+    cfg = Config(copy_remove_punctuation=True)
+    copy_text('保留內容')
+    previous = get_last_write_id(), get_clipboard_epoch()
+    assert not copy_text('！？「」\n', cfg)
+    assert qapp.clipboard().text() == '保留內容'
+    assert (get_last_write_id(), get_clipboard_epoch()) == previous
+
+
+@pytest.mark.parametrize('mode', ['all', 'select'])
+def test_punctuation_cleanup_at_ocr_copy_boundary_preserves_saved_original(
+        qapp, item_repo, make_image_dto, mode):
+    text = '甲（A）… -1,234.50％\nＢ：乙'
+    item_id = item_repo.insert(make_image_dto())
+    dto = persist(item_repo, item_id, text, 'needs_review')
+    before = item_repo.get_by_id(item_id)
+    attempts = item_repo.get_ocr_attempts(item_id)
+    cfg = Config(ocr_copy_mode=mode, copy_remove_punctuation=True)
+    owner, _ = pipeline(item_repo, cfg)
+    copy_text('原剪貼簿')
+    Pipeline.persisted(owner, item_id, dto)
+    if mode == 'select':
+        assert qapp.clipboard().text() == '原剪貼簿'
+        Pipeline.copy_ocr_selection(owner, item_id, dto, text)
+    assert qapp.clipboard().text() == '甲A 123450\nＢ乙'
+    assert item_repo.get_by_id(item_id) == before
+    assert item_repo.get_ocr_attempts(item_id) == attempts
 
 
 @pytest.mark.parametrize('status', ['done', 'needs_review', 'confirmed'])

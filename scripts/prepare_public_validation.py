@@ -17,13 +17,13 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.5'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.6'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'source_documents', 'network_audit', 'build', 'firewall', 'portable_profile', 'bundle_verify')
+    'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'network_audit', 'build', 'firewall', 'portable_profile', 'bundle_verify')
 WINDOWS_ONLY = {'build', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
@@ -35,6 +35,8 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'implicit_pytest_addopts_cleared qt models ocr database dirty verified phase_a engine_ready shutdown_clean capture hotkeys '
     'profile_empty copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
     'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
+    'fixed_regions_reused same_snapshot_pairs normalized_match mismatch_detected uncertain_not_match '
+    'clipboard_unchanged cancelled_results_ignored workers_stopped '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
@@ -49,11 +51,11 @@ ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle', 'dependency_vulnerabilities', 'runtime_network'},
+              'document_template_lifecycle', 'comparison_lifecycle', 'dependency_vulnerabilities', 'runtime_network'},
     'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
     'scanner': {'pip-audit'},
     'scanner_version': {'2.10.1'},
-    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES'},
+    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS'},
     'phase': {'completed', 'waiting_firewall', 'starting', 'shutdown'},
     'status': {'PASSED', 'FAILED', 'NOT_RUN', 'RECORDED_NOT_A_TRUSTED_LOCK'},
     'source_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
@@ -72,7 +74,7 @@ CONTAINERS = {'checks', 'phases', 'collection', 'execution', 'model_profiles', '
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
     'frozen-handwriting-image.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'probes', 'candidate_probes',
+    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'probes', 'candidate_probes',
     'threads_stopped', 'dependency_inventory', 'job_before_cleanup', 'job_after_cleanup'}
 STATUSES = {'PASSED', 'FAILED', 'NOT_RUN'}
 
@@ -256,7 +258,9 @@ def observed_result(value):
         ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls')) or
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
-             'page_override','template_merge','source_unchanged','temporary_files_cleaned')))
+             'page_override','template_merge','source_unchanged','temporary_files_cleaned',
+             'fixed_regions_reused','same_snapshot_pairs','normalized_match','mismatch_detected',
+             'uncertain_not_match','clipboard_unchanged','cancelled_results_ignored','workers_stopped')))
         for r in records)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'
@@ -269,6 +273,8 @@ def sources():
         ('source-selftest.json', 'json', False), ('source-app-smoke.json', 'json', False),
         ('source-handwriting.json', 'json', False), ('source-handwriting-image.json', 'json', False),
         ('artifacts/source-documents.json', 'json', False),
+        ('source-comparison.json', 'json', False),
+        ('artifacts/firewall-validation/frozen-comparison.json', 'json', True),
         ('artifacts/security-audit.json', 'json', False),
         ('artifacts/runtime-network-audit.json', 'json', False),
         ('artifacts/document-validation/frozen-documents.json', 'json', True),
@@ -286,7 +292,7 @@ def sources():
     for name in ('candidate-gate.json', 'handwriting-firewall-gate.json', 'frozen-runtime-stress.json'):
         result.append((f'artifacts/firewall-validation/{name}', 'json', True))
     for name in ('isolated-profile-gate.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json'):
+                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json'):
         result.append((f'artifacts/portable-validation/{name}', 'json', True))
     result.extend([
         (f'artifacts/release-v{VERSION}/BUILD_MANIFEST.json', 'json', True),
@@ -303,6 +309,7 @@ def source_step(relative):
         'source-app-smoke.json':'source_app', 'source-handwriting.json':'source_handwriting',
         'source-handwriting-image.json':'source_image',
         'artifacts/source-documents.json':'source_documents',
+        'source-comparison.json':'source_comparison',
         'artifacts/security-audit.json':'security_audit',
         'artifacts/runtime-network-audit.json':'network_audit',
         'artifacts/document-validation/frozen-documents.json':'firewall',

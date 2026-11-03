@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 MODES = ('--self-test', '--smoke-app', '--self-test-handwriting',
-         '--self-test-handwriting-image', '--self-test-documents')
+         '--self-test-handwriting-image', '--self-test-documents', '--self-test-comparison')
 
 
 def internet_calls(trace):

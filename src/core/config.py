@@ -66,7 +66,8 @@ DEFAULT_SETTINGS = {
         "ocr_copy_mode": "all",
         "copy_remove_commas": False,
         "copy_remove_apostrophes": False,
-        "copy_remove_newlines": False
+        "copy_remove_newlines": False,
+        "copy_remove_punctuation": False
     },
     "documents": {
         "max_file_size_mb": 100

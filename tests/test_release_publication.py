@@ -462,7 +462,7 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     assert 'InkPick 拾字筆' in prepared.body and '11,853' in prepared.body
     assert '不能當作未見過的真人筆跡準確率' in prepared.body
     assert '主程式和同次解壓的手寫引擎都被阻擋對外連線' in prepared.body
-    assert '三項複製清理選項預設皆關閉，只影響複製內容' in prepared.body
+    assert '複製清理選項預設皆關閉，只影響複製內容' in prepared.body
     assert '移除換行會把同一筆紀錄的多行文字接在一起' in prepared.body
     assert '### 下載與使用' in prepared.body and '### 請先知道的限制' in prepared.body
     assert 'SHA256SUMS' in prepared.body and 'Windows 雲端剪貼簿同步' in prepared.body
@@ -602,11 +602,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.6'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.7'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.5'
+    assert publisher.VERSION == '1.8.0-rc.6'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -614,7 +614,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.6'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.7'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
@@ -834,3 +834,81 @@ def test_portable_document_lifecycle_and_digest_reach_metadata_without_document_
         assert public['model_inference_tested'] is False
         public_gate = json.loads(archive.read('artifacts/portable-validation/isolated-profile-gate.json'))
         assert public_gate['probes']['isolated-documents.json']['sha256'] == publisher.sha256_file(document_path)
+
+
+@pytest.mark.parametrize('relative', [
+    'source-comparison.json',
+    'artifacts/firewall-validation/frozen-comparison.json',
+    'artifacts/portable-validation/isolated-comparison.json',
+])
+@pytest.mark.parametrize('defect', [
+    'missing', 'wrong_executable', 'wrong_version', 'wrong_platform', 'wrong_qt',
+    'false_check', 'missing_check', 'string_check', 'schema_bool',
+    'claims_model_inference', 'failure_diagnostic',
+])
+def test_comparison_evidence_requires_complete_current_candidate_contract(candidate, tmp_path, relative, defect):
+    root, report_path, _, _, _ = candidate
+    path = root / relative
+    report = json.loads(path.read_bytes())
+    if defect == 'missing':
+        path.unlink()
+    else:
+        if defect == 'wrong_executable': report['executable_sha256'] = '0' * 64
+        elif defect == 'wrong_version': report['version'] = '1.0.0'
+        elif defect == 'wrong_platform': report['platform'] = 'linux'
+        elif defect == 'wrong_qt': report['qt_platform'] = 'offscreen'
+        elif defect == 'false_check': report['checks']['same_snapshot_pairs'] = False
+        elif defect == 'missing_check': report['checks'].pop('cancelled_results_ignored')
+        elif defect == 'string_check': report['checks']['workers_stopped'] = 'true'
+        elif defect == 'schema_bool': report['schema'] = True
+        elif defect == 'claims_model_inference': report['model_inference_tested'] = True
+        elif defect == 'failure_diagnostic': report['error_code'] = 'COMPARISON_PROBE_CHECK_FAILED'
+        path.write_text(json.dumps(report), encoding='utf-8')
+        if path.name == 'isolated-comparison.json':
+            gate_path = path.parent / 'isolated-profile-gate.json'
+            gate = json.loads(gate_path.read_bytes())
+            gate['probes'][path.name]['sha256'] = publisher.sha256_file(path)
+            gate_path.write_text(json.dumps(gate), encoding='utf-8')
+    output = tmp_path / 'comparison-refused'
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, report_path, output, CONTEXT)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('relative', ['source-comparison.json',
+    'artifacts/firewall-validation/frozen-comparison.json'])
+def test_comparison_source_commit_must_match_the_current_build(candidate, tmp_path, relative):
+    root, report_path, _, _, _ = candidate
+    path = root / relative
+    report = json.loads(path.read_bytes())
+    report['source_commit'] = '0' * 40
+    path.write_text(json.dumps(report), encoding='utf-8')
+    with pytest.raises(publisher.PublicationError, match='Comparison probe source'):
+        publisher.prepare_release(root, report_path, tmp_path / 'wrong-comparison-source', CONTEXT)
+
+
+def test_comparison_reports_publish_fixed_checks_without_captured_text(candidate, tmp_path):
+    root, report_path, _, _, _ = candidate
+    paths = ('source-comparison.json', 'artifacts/firewall-validation/frozen-comparison.json',
+             'artifacts/portable-validation/isolated-comparison.json')
+    for relative in paths:
+        path = root / relative
+        report = json.loads(path.read_bytes())
+        report.update(a='PRIVATE_COMPARISON_A', b='PRIVATE_COMPARISON_B',
+                      image_path='PRIVATE_COMPARISON_PATH')
+        path.write_text(json.dumps(report), encoding='utf-8')
+    gate_path = root / 'artifacts/portable-validation/isolated-profile-gate.json'
+    gate = json.loads(gate_path.read_bytes())
+    gate['probes']['isolated-comparison.json']['sha256'] = publisher.sha256_file(root / paths[-1])
+    gate_path.write_text(json.dumps(gate), encoding='utf-8')
+    prepared = publisher.prepare_release(root, report_path, tmp_path / 'comparison-public', CONTEXT)
+    metadata = next(asset for asset in prepared.assets if asset.name == publisher.METADATA_NAME)
+    with zipfile.ZipFile(metadata.path) as archive:
+        for relative in paths:
+            raw = archive.read(relative)
+            assert b'PRIVATE_COMPARISON' not in raw
+            public = json.loads(raw)
+            assert public['probe'] == 'comparison_lifecycle'
+            assert public['checks']['same_snapshot_pairs'] is True
+            assert public['checks']['workers_stopped'] is True
+            assert public['model_inference_tested'] is False

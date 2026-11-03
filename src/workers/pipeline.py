@@ -207,6 +207,8 @@ class Pipeline(QObject):
             self.widget.shutdown_handwriting()
         if hasattr(self.widget, 'shutdown_documents'):
             self.widget.shutdown_documents()
+        if hasattr(self.widget, 'shutdown_comparison'):
+            self.widget.shutdown_comparison()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
             self.clipboard.pause(True)
@@ -271,6 +273,10 @@ class Pipeline(QObject):
             return
         if (hasattr(self.widget, 'documents_is_stopped') and
                 not self.widget.documents_is_stopped()):
+            self._tools_poll.start()
+            return
+        if (hasattr(self.widget, 'comparison_is_stopped') and
+                not self.widget.comparison_is_stopped()):
             self._tools_poll.start()
             return
         self._tools_poll.stop()
