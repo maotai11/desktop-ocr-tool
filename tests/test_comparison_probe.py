@@ -14,6 +14,7 @@ def test_actual_comparison_lifecycle_uses_fixed_regions_and_preserves_clipboard(
     report = json.loads(path.read_text())
     assert report['passed'] is True
     assert report['checks'] == dict.fromkeys(comparison_probe.CHECK_NAMES, True)
+    assert all(report['checks'][name] for name in comparison_probe.BATCH_CHECK_NAMES)
     assert report['probe'] == 'comparison_lifecycle'
     assert report['model_inference_tested'] is False
     assert report['ocr_accuracy_tested'] is False
@@ -50,3 +51,26 @@ def test_cli_dispatches_comparison_before_starting_normal_application(tmp_path, 
     path = tmp_path / 'comparison.json'
     assert main.run(['--self-test-comparison', str(path)]) == 0
     assert called == [str(path)]
+
+
+def test_batch_probe_failure_blocks_overall_pass_and_uses_fixed_error(qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr(comparison_probe, '_run_batch_checks',
+                        lambda app: dict.fromkeys(comparison_probe.BATCH_CHECK_NAMES, False))
+    path = tmp_path / 'comparison.json'
+    assert comparison_probe.run_comparison_probe(path) == 1
+    report = json.loads(path.read_text())
+    assert report['passed'] is False
+    assert report['error_code'] == 'COMPARISON_PROBE_CHECK_FAILED'
+    assert not any(report['checks'][name] for name in comparison_probe.BATCH_CHECK_NAMES)
+
+
+def test_batch_capture_failure_stops_workers_and_restores_provider(qapp, monkeypatch):
+    from src.comparison import capture
+    factory = capture.mss.mss
+    def unavailable(*args):
+        raise OSError('C:/Users/PRIVATE_BATCH/SECRET_SCREEN.png')
+    monkeypatch.setattr(capture, 'capture_pair', unavailable)
+    checks = comparison_probe._run_batch_checks(qapp)
+    assert checks == dict.fromkeys(comparison_probe.BATCH_CHECK_NAMES, False)
+    assert capture.mss.mss is factory
+    assert 'PRIVATE_BATCH' not in json.dumps(checks)

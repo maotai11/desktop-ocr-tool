@@ -65,7 +65,8 @@ def comparison_probe(version, executable_hash, frozen=True):
         checks=dict.fromkeys(('fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
             'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
             'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
-            'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available'), True))
+            'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
+            'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'), True))
 
 
 def extra_evidence(root, manifest):

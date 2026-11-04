@@ -106,6 +106,10 @@ def test_result_has_text_color_raw_previews_count_and_time(window, verdict, labe
     window.controller.state_changed.emit('waiting')
     assert window._status.text() == label
     assert color in window._status.styleSheet()
+    assert window._details.isHidden()
+    assert window._previews['A'].toolTip() == '<qt>&lt;tag&gt; A，123</qt>'
+    assert window._texts['A'].toPlainText() == ''
+    window.set_compact(False)
     assert window._texts['A'].toPlainText() == '<tag> A，123'
     assert window._texts['B'].toPlainText() == 'A123'
     assert '7' in window._activity.text() and '12:34:56' in window._activity.text()
@@ -162,7 +166,7 @@ def test_modes_intervals_and_compact_controls(window, qapp):
     qapp.processEvents()
     assert window._details.isHidden()
     assert window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
-    assert window._compact_button.text() == '展開視窗'
+    assert window._compact_button.text() == '查看全文'
     window.set_compact(False)
     assert not window._details.isHidden()
     assert window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
@@ -201,7 +205,13 @@ def test_start_moves_status_clear_of_targets_or_refuses_if_no_space(window, qapp
                                  'B': (int(physical.x()) + 30, int(physical.y()), 20, 20, 1)}
     assert not window.can_capture()
     window._start()
-    assert window.controller.running and window.can_capture()
+    available = QApplication.primaryScreen().availableGeometry()
+    if available.height() >= window.frameGeometry().height() and available.width() >= window.frameGeometry().width():
+        assert window.controller.running and window.can_capture()
+    else:
+        # A 2× offscreen screen can be shorter than the launcher's 480px
+        # minimum. Refuse a covered selection rather than hiding the tool.
+        assert not window.controller.running and '移開' in window._note.text()
     window.controller.pause()
     screen = QApplication.primaryScreen()
     size = screen.geometry().size() * screen.devicePixelRatio()
@@ -286,3 +296,104 @@ def test_windows_native_close_command_is_enabled_while_running(window, qapp):
         assert menu
         close_state = user32.GetMenuState(menu, 0xF060, 0)  # SC_CLOSE, MF_BYCOMMAND
         assert close_state != 0xFFFFFFFF and close_state & 3 == 0
+
+
+def test_default_footprint_matches_launcher_and_details_do_not_resize(window, qapp):
+    window.show()
+    qapp.processEvents()
+    assert (window.width(), window.height()) == (348, 560)
+    assert (window.minimumWidth(), window.minimumHeight()) == (320, 480)
+    assert window._details.isHidden()
+    before = window.geometry()
+    window.controller.updated.emit(dict(result(), a='A' * 100_000))
+    qapp.processEvents()
+    assert window.geometry() == before
+    assert len(window._previews['A'].text()) < 100
+    assert '查看全文' in window._previews['A'].toolTip()
+    assert len(window._previews['A'].toolTip()) < 1000
+    assert window._texts['A'].toPlainText() == ''
+    window.set_compact(False)
+    qapp.processEvents()
+    assert window.geometry() == before
+    assert len(window._texts['A'].toPlainText()) == 100_000
+    window.set_compact(True)
+    assert window._texts['A'].toPlainText() == ''
+
+
+def test_ocr_tooltips_escape_html_and_preserve_plain_full_text(window):
+    raw = '<img src="https://example.invalid/private.png"> & <b>OCR</b>'
+    window.controller.updated.emit(dict(result(), a=raw))
+    tooltip = window._previews['A'].toolTip()
+    assert '<img' not in tooltip and '<b>' not in tooltip
+    assert '&lt;img' in tooltip and '&amp;' in tooltip
+    window.set_compact(False)
+    assert window._texts['A'].toPlainText() == raw
+
+
+@pytest.fixture
+def group_window(qapp, qtbot):
+    from src.comparison.controller import ComparisonController
+    from test_comparison_controller import FakeCapture, FakeOcr
+    controller = ComparisonController(FakeOcr(), capture_worker=FakeCapture())
+    window = ComparisonWindow(controller)
+    qtbot.addWidget(window)
+    yield window
+    window.shutdown()
+
+
+def test_group_actions_switch_without_losing_regions_or_resuming(group_window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    window, controller = group_window, group_window.controller
+    configure(window)
+    first = controller.active_group_id
+    window._add_group_button.click()
+    second = controller.active_group_id
+    assert second != first and len(controller.groups) == 2
+    assert not controller.regions and not window._start_button.isEnabled()
+    assert window._group_list.count() == 2 and not window._group_list.isHidden()
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ('<b>訂單</b>', True))
+    window._rename_action.trigger()
+    assert window._group_combo.currentText() == '<b>訂單</b>'
+    assert '&lt;b&gt;' in window._group_list.currentItem().toolTip()
+    configure(window)
+    assert window._start_button.isEnabled()
+    controller.running = True
+    window._group_combo.setCurrentIndex(0)
+    assert controller.active_group_id == first and controller.running
+    assert controller.regions == {'A': (0, 0, 30, 30, 1), 'B': (40, 0, 30, 30, 1)}
+    window._group_combo.setCurrentIndex(1)
+    window._remove_action.trigger()
+    assert not controller.running and len(controller.groups) == 1
+    assert controller.active_group_id == first
+    assert not window._remove_action.isEnabled()
+
+
+def test_foreign_group_results_do_not_replace_selected_preview_or_focus(group_window, monkeypatch):
+    window, controller = group_window, group_window.controller
+    first = controller.active_group_id
+    configure(window)
+    second = controller.add_group('金額')
+    configure(window)
+    controller.select_group(first)
+    shown = dict(result('mismatch'), group_id=first, group_name='第 1 組')
+    window._updated(shown)
+    title = window._status.text()
+    calls = []
+    for method in ('show', 'raise_', 'activateWindow'):
+        monkeypatch.setattr(window, method, lambda name=method: calls.append(name))
+    window._updated(dict(result(), group_id=second, group_name='金額', a='OTHER GROUP'))
+    assert window._status.text() == title
+    assert 'OTHER GROUP' not in window._previews['A'].toolTip()
+    assert not calls and controller.active_group_id == first
+
+
+def test_overlap_guard_checks_unselected_group_targets(group_window, monkeypatch):
+    window, controller = group_window, group_window.controller
+    window.show()
+    frame = window._physical_window_rect()
+    controller.set_region('A', (int(frame.x()), int(frame.y()), 20, 20, 1))
+    controller.set_region('B', (int(frame.x()) + 30, int(frame.y()), 20, 20, 1))
+    controller.add_group('第二組')
+    controller.set_region('A', (1000, 1000, 20, 20, 1))
+    controller.set_region('B', (1100, 1000, 20, 20, 1))
+    assert not window.can_capture()

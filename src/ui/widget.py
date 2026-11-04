@@ -511,9 +511,12 @@ class FloatingWidget(QWidget):
             window.screen_invalidated.connect(
                 lambda: overlay._cancel() if window._selection_active else None)
             window.closed.connect(lambda: overlay._cancel() if window._selection_active else None)
+            controller.group_changed.connect(
+                lambda: overlay._cancel() if window._selection_active else None)
             overlay.cancelled.connect(lambda: window.set_selection_active(False)
                                       if not self._comparison_closing else None)
-            controller.updated.connect(lambda result: self.comparison_status.emit(result['verdict']))
+            controller.updated.connect(self._comparison_results_changed)
+            controller.groups_changed.connect(self._comparison_results_changed)
             controller.state_changed.connect(self._comparison_state_changed)
             controller.failed.connect(lambda message: self.comparison_status.emit('uncertain'))
             controller.before_capture = self._comparison_can_capture
@@ -524,17 +527,35 @@ class FloatingWidget(QWidget):
         if state in ('idle', 'paused'):
             self.comparison_status.emit('paused')
         elif state == 'running':
-            self.comparison_status.emit('running')
+            self._comparison_results_changed()
+
+    def _comparison_results_changed(self, *_):
+        controller = self._comparison_controller
+        if controller is None:
+            return
+        if not controller.running:
+            self.comparison_status.emit('paused')
+            return
+        results = [group['result'] for group in controller.groups]
+        verdicts = [result.get('verdict') if result else None for result in results]
+        status = ('mismatch' if 'mismatch' in verdicts else
+                  'running' if not any(verdicts) else
+                  'uncertain' if any(verdict not in ('match', 'mismatch') for verdict in verdicts) else 'match')
+        self.comparison_status.emit(status)
 
     def _select_comparison_region(self, name):
         if self._comparison_closing:
             return
         self.hide()
+        group_id = self._comparison_controller.active_group_id
         self._comparison.set_selection_active(True)
         self._comparison_overlay.selection_prompt = f'框選 {name} 區域 · Esc 取消'
 
         def selected(x, y, width, height, monitor):
             if self._comparison_closing or self._comparison._closed_by_user:
+                return
+            if self._comparison_controller.active_group_id != group_id:
+                self._comparison.set_selection_active(False)
                 return
             self._comparison.set_region(name, (x, y, width, height, monitor))
             self._comparison.set_selection_active(False)
@@ -551,7 +572,7 @@ class FloatingWidget(QWidget):
         if screen is None:
             return False
         origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
-        regions = [QRect(*rect[:4]) for rect in self._comparison_controller.regions.values()]
+        regions = [QRect(*rect[:4]) for rect in self._comparison_controller.target_regions]
         for window in QApplication.topLevelWidgets():
             if window is self._comparison or not window.isVisible() or window.isMinimized():
                 continue

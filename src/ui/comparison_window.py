@@ -1,36 +1,20 @@
-"""A quiet, session-only status window for repeated two-region comparison."""
+"""A launcher-sized, quiet panel for session-only comparison groups."""
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 
-from PySide6.QtCore import QRectF, QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QRectF, QSize, QSignalBlocker, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QApplication,
-    QComboBox,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QPlainTextEdit,
-    QPushButton,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel,
+    QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QPushButton,
+    QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from .theme import (
-    _ACCENT,
-    _ACCENT_T,
-    _BG,
-    _BG_HOVER,
-    _BG_RAISE,
-    _BORDER,
-    _ERROR,
-    _SUCCESS,
-    _TEXT_PRI,
-    _TEXT_SEC,
-    _WARNING,
-    apply_combo_box_theme,
+    _ACCENT, _ACCENT_T, _BG, _BG_HOVER, _BG_RAISE, _BORDER, _BORDER_L,
+    _ERROR, _SUCCESS, _TEXT_PRI, _TEXT_SEC, _WARNING, apply_combo_box_theme,
 )
 
 
@@ -40,9 +24,39 @@ def _label(text=''):
     return result
 
 
-class ComparisonWindow(QWidget):
-    """User actions can show the window; incoming OCR never raises or focuses it."""
+def _plain_tooltip(text):
+    # Qt auto-detects rich text in tooltips. OCR and group names are plain data.
+    return '<qt>' + escape(text).replace('\n', '<br>') + '</qt>' if text else ''
 
+
+class _PreviewLabel(QLabel):
+    """One result line, with full plain text in the tooltip and detail view."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._full_text = ''
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(22)
+
+    def set_preview(self, text):
+        self._full_text = text
+        self.setToolTip(_plain_tooltip(text[:800] + ('…\n按「查看全文」閱讀完整內容' if len(text) > 800 else '')))
+        self._elide()
+
+    def _elide(self):
+        line = ' '.join(self._full_text[:512].splitlines()) or '等待辨識…'
+        if len(self._full_text) > 512:
+            line += '…'
+        self.setText(self.fontMetrics().elidedText(line, Qt.TextElideMode.ElideRight, max(0, self.width())))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+
+class ComparisonWindow(QWidget):
+    """Incoming results never show, resize, raise or focus the panel."""
     select_requested = Signal(str)
     screen_invalidated = Signal()
     closed = Signal()
@@ -52,158 +66,331 @@ class ComparisonWindow(QWidget):
                          | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowCloseButtonHint
                          | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowStaysOnTopHint)
         self.controller = controller
-        self._compact = False
-        self._selection_active = False
-        self._closing = False
-        self._closed_by_user = False
-        self._screen = None
-        self._last_result = None
+        self._compact = True
+        self._selection_active = self._closing = self._closed_by_user = False
+        self._screen = self._last_result = None
         self._cycle_result_visible = False
         self.setWindowTitle('A／B 核對')
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
-        self.resize(660, 470)
-        self.setMinimumSize(540, 400)
+        # Match the desktop launcher, including its minimum supported footprint.
+        self.setMinimumSize(320, 480)
+        self.resize(348, 560)
         self.setStyleSheet(f'''
-            QWidget {{ background: {_BG}; color: {_TEXT_PRI}; font-size: 13px; }}
+            QWidget {{ background: {_BG}; color: {_TEXT_PRI}; font-size: 12px; }}
             QLabel#muted {{ color: {_TEXT_SEC}; }}
-            QPushButton {{ background: {_BG_RAISE}; color: {_TEXT_PRI};
-                border: 1px solid {_BORDER}; border-radius: 6px; padding: 7px 12px; }}
+            QLabel {{ border: none; background: transparent; }}
+            QPushButton {{ background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid transparent;
+                border-radius: 7px; padding: 5px 9px; }}
             QPushButton:hover {{ background: {_BG_HOVER}; }}
             QPushButton:focus {{ border-color: {_ACCENT}; }}
-            QPushButton:checked {{ border-color: {_ACCENT}; color: {_ACCENT}; }}
+            QPushButton:checked {{ color: {_ACCENT}; border-color: {_BORDER_L}; }}
             QPushButton:disabled {{ color: {_TEXT_SEC}; }}
-            QPushButton#startComparison {{ background: {_ACCENT}; color: {_ACCENT_T}; }}
+            QPushButton#startComparison {{ background: {_ACCENT}; color: {_ACCENT_T}; font-weight: 600; }}
             QPushButton#startComparison:disabled {{ background: {_BG_RAISE}; color: {_TEXT_SEC}; }}
+            QFrame#statusCard, QFrame#comparisonPane {{ background: {_BG_RAISE}; border: 1px solid {_BORDER}; border-radius: 9px; }}
             QPlainTextEdit, QSpinBox {{ background: {_BG_RAISE}; color: {_TEXT_PRI};
-                border: 1px solid {_BORDER}; border-radius: 6px; padding: 6px; }}
-            QFrame#statusCard, QFrame#comparisonPane {{ border: 1px solid {_BORDER}; border-radius: 10px; }}
+                border: 1px solid {_BORDER}; border-radius: 6px; padding: 4px; }}
+            QScrollArea {{ border: none; }}
+            QScrollBar:vertical {{ background: transparent; width: 4px; margin: 0; }}
+            QScrollBar::handle:vertical {{ background: {_BORDER_L}; border-radius: 2px; min-height: 22px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+            QListWidget {{ background: transparent; border: none; outline: none; }}
+            QListWidget::item {{ border-radius: 4px; padding: 3px 7px; }}
+            QListWidget::item:selected {{ background: {_BG_RAISE}; }}
+            QMenu {{ background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid {_BORDER_L}; }}
+            QMenu::item {{ padding: 6px 16px; }}
+            QMenu::item:selected {{ background: {_BG_HOVER}; }}
         ''')
-
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 14, 16, 14)
-        outer.setSpacing(12)
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(9)
         heading = QHBoxLayout()
-        self._title = _label('文字核對')
-        self._title.setStyleSheet('font-size: 16px; font-weight: 600;')
-        heading.addWidget(self._title, 1)
-        self._pin_button = QPushButton('保持置頂')
+        badge = _label('A/B')
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setFixedSize(32, 30)
+        badge.setStyleSheet(f'color: {_ACCENT}; background: {_BG_RAISE}; border-radius: 7px; font-weight: 600;')
+        heading.addWidget(badge)
+        title = _label('文字核對')
+        title.setStyleSheet('font-size: 15px; font-weight: 600;')
+        heading.addWidget(title, 1)
+        self._pin_button = QPushButton('置頂')
         self._pin_button.setObjectName('pinComparison')
         self._pin_button.setCheckable(True)
         self._pin_button.setChecked(True)
-        self._pin_button.setToolTip('切換到其他軟體時仍顯示；可取消置頂，也可自由移動視窗。')
+        self._pin_button.setToolTip('保持置頂；可隨時取消並自由移動視窗')
         self._pin_button.toggled.connect(self.set_pinned)
         heading.addWidget(self._pin_button)
-        self._close_button = QPushButton('關閉')
+        self._close_button = QPushButton('×')
+        self._close_button.setAccessibleName('停止核對並關閉')
         self._close_button.setObjectName('closeComparison')
-        self._close_button.setToolTip('停止核對並關閉視窗')
+        self._close_button.setFixedSize(28, 28)
+        self._close_button.setToolTip('停止核對並關閉')
         self._close_button.clicked.connect(self.close)
         heading.addWidget(self._close_button)
         outer.addLayout(heading)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(9)
+        group_heading = QHBoxLayout()
+        group_heading.addWidget(_label('核對組別'))
+        group_heading.addStretch()
+        self._group_summary = _label('1 組')
+        self._group_summary.setObjectName('muted')
+        group_heading.addWidget(self._group_summary)
+        layout.addLayout(group_heading)
+        group_bar = QHBoxLayout()
+        group_bar.setSpacing(5)
+        self._group_combo = QComboBox()
+        self._group_combo.setObjectName('comparisonGroups')
+        self._group_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self._group_combo.setMinimumWidth(0)
+        apply_combo_box_theme(self._group_combo)
+        self._group_combo.currentIndexChanged.connect(self._select_group)
+        group_bar.addWidget(self._group_combo, 1)
+        self._add_group_button = QPushButton('＋')
+        self._add_group_button.setObjectName('addComparisonGroup')
+        self._add_group_button.setAccessibleName('新增核對組別')
+        self._add_group_button.setFixedSize(29, 29)
+        self._add_group_button.setToolTip('新增一組 A／B')
+        self._add_group_button.clicked.connect(self._add_group)
+        group_bar.addWidget(self._add_group_button)
+        self._group_menu_button = QPushButton('⋯')
+        self._group_menu_button.setObjectName('manageComparisonGroup')
+        self._group_menu_button.setAccessibleName('管理目前組別')
+        self._group_menu_button.setFixedSize(29, 29)
+        menu = QMenu(self._group_menu_button)
+        self._rename_action = menu.addAction('更改組名', self._rename_group)
+        self._remove_action = menu.addAction('移除此組', self._remove_group)
+        self._group_menu_button.setMenu(menu)
+        group_bar.addWidget(self._group_menu_button)
+        layout.addLayout(group_bar)
+        self._group_list = QListWidget()
+        self._group_list.setObjectName('comparisonGroupResults')
+        self._group_list.setAccessibleName('各組核對狀態')
+        self._group_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._group_list.setFixedHeight(72)
+        self._group_list.currentItemChanged.connect(self._list_group_selected)
+        layout.addWidget(self._group_list)
+
         self._status_card = QFrame()
         self._status_card.setObjectName('statusCard')
         status_layout = QVBoxLayout(self._status_card)
-        status_layout.setContentsMargins(16, 12, 16, 12)
-        status_layout.setSpacing(4)
+        status_layout.setContentsMargins(12, 10, 12, 10)
+        status_layout.setSpacing(3)
         self._status = _label('準備核對')
         self._status.setObjectName('comparisonStatus')
-        self._status.setAccessibleName('核對結果')
+        self._status.setAccessibleName('目前組別核對結果')
         status_layout.addWidget(self._status)
-        self._activity = _label('選取 A、B 兩處文字即可開始')
+        self._activity = _label('選好 A、B，即可開始')
         self._activity.setObjectName('muted')
         status_layout.addWidget(self._activity)
-        outer.addWidget(self._status_card)
+        layout.addWidget(self._status_card)
 
-        self._details = QWidget()
-        details = QVBoxLayout(self._details)
-        details.setContentsMargins(0, 0, 0, 0)
-        details.setSpacing(12)
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(12)
-        self._region_labels = {}
-        self._select_buttons = {}
-        self._texts = {}
-        for column, name in enumerate(('A', 'B')):
+        self._region_labels, self._select_buttons, self._texts, self._previews = {}, {}, {}, {}
+        for name in ('A', 'B'):
             pane = QFrame()
             pane.setObjectName('comparisonPane')
             pane_layout = QVBoxLayout(pane)
-            pane_layout.setContentsMargins(12, 10, 12, 12)
-            pane_heading = QHBoxLayout()
-            title = _label(f'{name} 區')
-            title.setStyleSheet('font-size: 15px; font-weight: 600;')
-            pane_heading.addWidget(title, 1)
-            button = QPushButton('選取範圍')
-            button.setObjectName(f'selectComparison{name}')
-            button.clicked.connect(lambda checked=False, key=name: self._select(key))
-            button.setToolTip('請框選主螢幕上的文字；位置會保留到本次程式結束。')
-            self._select_buttons[name] = button
-            pane_heading.addWidget(button)
-            pane_layout.addLayout(pane_heading)
+            pane_layout.setContentsMargins(10, 7, 10, 7)
+            pane_layout.setSpacing(3)
+            row = QHBoxLayout()
+            row.setSpacing(5)
+            label = _label(f'{name} 區')
+            label.setStyleSheet('font-weight: 600;')
+            row.addWidget(label)
             region = _label('尚未選取')
             region.setObjectName('muted')
-            region.setWordWrap(True)
+            row.addWidget(region, 1)
             self._region_labels[name] = region
-            pane_layout.addWidget(region)
-            text = QPlainTextEdit()
-            text.setObjectName(f'comparisonText{name}')
-            text.setAccessibleName(f'{name} 區域辨識文字')
-            text.setReadOnly(True)
-            text.setPlaceholderText('辨識結果會顯示在這裡')
-            text.setMinimumHeight(90)
-            self._texts[name] = text
-            pane_layout.addWidget(text, 1)
-            grid.addWidget(pane, 0, column)
-        details.addLayout(grid, 1)
+            button = QPushButton('框選')
+            button.setObjectName(f'selectComparison{name}')
+            button.setToolTip(f'框選目前組別的 {name} 區，位置保留至程式結束')
+            button.clicked.connect(lambda checked=False, key=name: self._select(key))
+            self._select_buttons[name] = button
+            row.addWidget(button)
+            pane_layout.addLayout(row)
+            preview = _PreviewLabel()
+            preview.setObjectName(f'comparisonPreview{name}')
+            preview.setAccessibleName(f'{name} 區辨識文字摘要')
+            preview.set_preview('')
+            self._previews[name] = preview
+            pane_layout.addWidget(preview)
+            layout.addWidget(pane)
 
         options = QHBoxLayout()
+        options.setSpacing(6)
         self._mode = QComboBox()
         self._mode.setObjectName('comparisonMode')
         self._mode.addItem('忽略空白與標點', 'normalized')
         self._mode.addItem('逐字比對', 'exact')
-        self._mode.setToolTip('只比文字與數字會忽略空白、標點及符號，例如 -1.23 與 123 視為相同。金額可改用逐字核對。')
+        self._mode.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self._mode.setMinimumWidth(0)
+        self._mode.setToolTip('只比文字與數字，也忽略符號；-1.23 與 123 可能相同。金額請用逐字比對。')
         apply_combo_box_theme(self._mode)
         self._mode.currentIndexChanged.connect(self._mode_changed)
         options.addWidget(self._mode, 1)
-        options.addWidget(_label('檢查間隔'))
         self._interval = QSpinBox()
         self._interval.setObjectName('comparisonInterval')
         self._interval.setRange(1, 60)
-        self._interval.setValue(2)
+        self._interval.setValue(controller.interval)
         self._interval.setSuffix(' 秒')
+        self._interval.setToolTip('每批完成後，等待多久再檢查全部組別')
+        self._interval.setFixedWidth(70)
         self._interval.valueChanged.connect(controller.set_interval)
         options.addWidget(self._interval)
-        details.addLayout(options)
-        outer.addWidget(self._details, 1)
+        layout.addLayout(options)
+        self._details = QWidget()
+        details = QVBoxLayout(self._details)
+        details.setContentsMargins(0, 0, 0, 0)
+        details.setSpacing(4)
+        for name in ('A', 'B'):
+            details.addWidget(_label(f'{name} 區全文'))
+            text = QPlainTextEdit()
+            text.setObjectName(f'comparisonText{name}')
+            text.setAccessibleName(f'{name} 區域辨識全文')
+            text.setReadOnly(True)
+            text.setFixedHeight(66)
+            self._texts[name] = text
+            details.addWidget(text)
+        self._details.hide()
+        layout.addWidget(self._details)
+        layout.addStretch(1)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
 
-        self._note = _label('畫面有變化才重新辨識。')
+        self._note = _label('各組依序核對，畫面未變就略過。')
         self._note.setObjectName('muted')
         self._note.setWordWrap(True)
+        self._note.setMinimumHeight(30)
         outer.addWidget(self._note)
         buttons = QHBoxLayout()
-        self._start_button = QPushButton('開始核對')
+        buttons.setSpacing(5)
+        self._start_button = QPushButton('開始全部')
         self._start_button.setObjectName('startComparison')
+        self._start_button.setToolTip('依序核對所有組別；每組都需選好 A、B')
         self._start_button.clicked.connect(self._start)
         self._pause_button = QPushButton('暫停')
         self._pause_button.clicked.connect(controller.pause)
-        self._compact_button = QPushButton('縮小視窗')
+        self._compact_button = QPushButton('查看全文')
         self._compact_button.setCheckable(True)
+        self._compact_button.setChecked(True)
         self._compact_button.toggled.connect(self.set_compact)
-        buttons.addWidget(self._start_button)
+        buttons.addWidget(self._start_button, 1)
         buttons.addWidget(self._pause_button)
-        buttons.addStretch()
         buttons.addWidget(self._compact_button)
         outer.addLayout(buttons)
-
         controller.updated.connect(self._updated)
         controller.state_changed.connect(self._state_changed)
         controller.failed.connect(self._failed)
+        if hasattr(controller, 'groups_changed'):
+            controller.groups_changed.connect(self._groups_changed)
+            controller.group_changed.connect(self._group_changed)
         controller.before_capture = self.can_capture
         app = QApplication.instance()
         app.primaryScreenChanged.connect(self._bind_screen)
         self._bind_screen(app.primaryScreen(), initial=True)
+        self._refresh_groups()
         self._refresh_regions()
         self._sync_buttons()
         self._set_status('準備核對', _TEXT_SEC)
+
+    def _groups(self):
+        return getattr(self.controller, 'groups', [{'id': 'default', 'name': '第 1 組',
+                    'regions': self.controller.regions, 'result': None}])
+
+    def _active_group_id(self):
+        return getattr(self.controller, 'active_group_id', 'default')
+
+    def _current_group(self):
+        return next((group for group in self._groups() if group['id'] == self._active_group_id()), None)
+
+    def _refresh_groups(self):
+        groups, active = self._groups(), self._active_group_id()
+        labels = {'match': ('一致', _SUCCESS), 'mismatch': ('不同', _ERROR), 'uncertain': ('待確認', _WARNING)}
+        different = sum((group.get('result') or {}).get('verdict') == 'mismatch' for group in groups)
+        self._group_summary.setText(f'{len(groups)} 組' + (f' · {different} 組不同' if different else ''))
+        with QSignalBlocker(self._group_combo), QSignalBlocker(self._group_list):
+            self._group_combo.clear()
+            self._group_list.clear()
+            for index, group in enumerate(groups):
+                self._group_combo.addItem(group['name'], group['id'])
+                result = group.get('result') or {}
+                configured = set(group['regions']) == {'A', 'B'}
+                status, color = labels.get(result.get('verdict'), ('待核對' if configured else '未設定', _TEXT_SEC))
+                item = QListWidgetItem(f'●  {group["name"]}    {status}')
+                item.setData(Qt.ItemDataRole.UserRole, group['id'])
+                item.setToolTip(_plain_tooltip(f'{group["name"]} · {status}'))
+                item.setForeground(QColor(color))
+                item.setSizeHint(QSize(0, 23))
+                self._group_list.addItem(item)
+                if group['id'] == active:
+                    self._group_combo.setCurrentIndex(index)
+                    self._group_list.setCurrentItem(item)
+        self._group_list.setVisible(len(groups) > 1)
+        editable = hasattr(self.controller, 'add_group') and not self._closing
+        self._add_group_button.setEnabled(editable and len(groups) < 20)
+        self._group_menu_button.setEnabled(editable)
+        self._remove_action.setEnabled(editable and len(groups) > 1)
+
+    def _groups_changed(self):
+        self._refresh_groups()
+        current = self._current_group()
+        result = current.get('result') if current else None
+        if not self._closing and not self._closed_by_user and not self._selection_active:
+            if result and result != self._last_result:
+                self._render_result(result)
+            elif result is None and self._last_result is not None:
+                self._group_changed()
+        self._sync_buttons()
+
+    def _group_changed(self):
+        self._refresh_groups()
+        self._refresh_regions()
+        current = self._current_group()
+        result = current.get('result') if current else None
+        self._last_result = None
+        self._cycle_result_visible = False
+        for side in ('A', 'B'):
+            self._texts[side].clear()
+            self._previews[side].set_preview('')
+        if result:
+            self._render_result(result)
+        else:
+            self._set_status('準備核對', _TEXT_SEC)
+            self._activity.setText('選好 A、B，即可開始' if not current or len(current['regions']) < 2 else '尚未產生結果')
+        self._sync_buttons()
+
+    def _select_group(self):
+        group_id = self._group_combo.currentData()
+        if group_id is not None and hasattr(self.controller, 'select_group'):
+            self.controller.select_group(group_id)
+
+    def _list_group_selected(self, current, previous):
+        if current is not None and hasattr(self.controller, 'select_group'):
+            self.controller.select_group(current.data(Qt.ItemDataRole.UserRole))
+
+    def _add_group(self):
+        if hasattr(self.controller, 'add_group'):
+            self.controller.add_group()
+
+    def _rename_group(self):
+        group = self._current_group()
+        if group is None or not hasattr(self.controller, 'rename_group'):
+            return
+        name, accepted = QInputDialog.getText(self, '更改組名', '組別名稱', text=group['name'])
+        if accepted:
+            self.controller.rename_group(group['id'], name)
+
+    def _remove_group(self):
+        if hasattr(self.controller, 'remove_group'):
+            self.controller.remove_group(self._active_group_id())
 
     def _bind_screen(self, screen, initial=False):
         if self._screen is not None:
@@ -223,7 +410,7 @@ class ComparisonWindow(QWidget):
         if self._closing:
             return
         self.screen_invalidated.emit()
-        self.controller.invalidate_regions('螢幕配置已變更，請重新框選 A 與 B。')
+        self.controller.invalidate_regions('螢幕配置已變更，請重新框選各組 A、B。')
         self._refresh_regions()
         self._sync_buttons()
 
@@ -238,15 +425,16 @@ class ComparisonWindow(QWidget):
         if active:
             self.controller.pause()
             self.hide()
-        elif not self._closing:
+        else:
             self.show()
 
     def set_region(self, name, region):
         accepted = self.controller.set_region(name, region)
         self._refresh_regions()
+        self._refresh_groups()
         self._sync_buttons()
         if accepted:
-            self._note.setText('範圍已選好，按「開始核對」。')
+            self._note.setText('選好各組 A、B，按「開始全部」。')
         return accepted
 
     def _refresh_regions(self):
@@ -255,22 +443,22 @@ class ComparisonWindow(QWidget):
             if region is None:
                 label.setText('尚未選取')
                 label.setToolTip('')
-                self._select_buttons[name].setText('選取範圍')
+                self._select_buttons[name].setText('框選')
             else:
                 x, y, width, height, _monitor = region
                 label.setText('範圍已選取')
                 label.setToolTip(f'位置 {x}, {y} · {width} × {height}')
-                self._select_buttons[name].setText('重新選取')
+                self._select_buttons[name].setText('重選')
 
     def _sync_buttons(self):
-        running = self.controller.running
-        configured = all(self.controller.regions.get(name) is not None for name in ('A', 'B'))
-        self._start_button.setEnabled(configured and not running and not self._closing)
-        self._pause_button.setEnabled(running and not self._closing)
+        groups = self._groups()
+        configured = bool(groups) and all(set(group['regions']) == {'A', 'B'} for group in groups)
+        self._start_button.setEnabled(configured and not self.controller.running and not self._closing)
+        self._pause_button.setEnabled(self.controller.running and not self._closing)
 
     def _mode_changed(self):
         self.controller.set_mode(self._mode.currentData())
-        self._note.setText('規則已更新，再按「開始核對」。')
+        self._note.setText('規則已更新，按「開始全部」。')
 
     def _start(self):
         if self._closing or self._closed_by_user or self._selection_active:
@@ -281,68 +469,78 @@ class ComparisonWindow(QWidget):
 
     def _set_status(self, text, color):
         self._status.setText(text)
-        self._status.setStyleSheet(f'color: {color}; font-size: 21px; font-weight: 600; border: none;')
+        self._status.setStyleSheet(f'color: {color}; font-size: 19px; font-weight: 600; border: none;')
         self._status_card.setStyleSheet(f'QFrame#statusCard {{ border: 1px solid {_BORDER}; '
-                                       f'border-left: 4px solid {color}; border-radius: 10px; }}')
+                                       f'border-left: 3px solid {color}; border-radius: 9px; }}')
 
     def _state_changed(self, state):
         self._refresh_regions()
         self._sync_buttons()
         if state == 'running':
-            self._cycle_result_visible = False
-            self._set_status('核對中', _WARNING)
-            self._activity.setText('正在讀取兩區文字…')
-            self._note.setText('可切換到其他軟體，結果會在此更新。')
+            if not self._cycle_result_visible:
+                self._set_status('核對中', _WARNING)
+                self._activity.setText('正在讀取各組文字…')
+            self._note.setText('各組依序核對，畫面未變就略過。')
         elif state in ('checking', 'watching', 'unchanged'):
             if self._cycle_result_visible:
-                self._note.setText('畫面未變，等待變化。' if state == 'unchanged'
-                                   else '持續留意畫面變化。')
+                self._note.setText('畫面未變，等待變化。' if state == 'unchanged' else '持續留意各組畫面。')
         elif state == 'waiting':
-            if not self._cycle_result_visible:
-                self._activity.setText('等待上一項辨識完成…')
+            self._note.setText('等待上一項辨識完成…')
         elif state in ('paused', 'idle'):
-            self._set_status('已暫停' if state == 'paused' else '準備核對', _TEXT_SEC)
-            self._activity.setText('按「開始核對」即可繼續')
-            self._note.setText('暫停期間不擷取畫面。')
+            if not self._cycle_result_visible:
+                self._set_status('已暫停' if state == 'paused' else '準備核對', _TEXT_SEC)
+                self._activity.setText('選好 A、B，即可開始')
+            self._note.setText('已暫停，不擷取畫面。' if state == 'paused' else '各組依序核對，畫面未變就略過。')
 
     def _updated(self, result):
         if self._closing or self._closed_by_user or self._selection_active:
             return
+        self._refresh_groups()
+        if result.get('group_id', self._active_group_id()) != self._active_group_id():
+            return
+        self._render_result(result)
+
+    def _render_result(self, result):
         self._last_result = dict(result)
         self._cycle_result_visible = True
-        self._texts['A'].setPlainText(result.get('a', ''))
-        self._texts['B'].setPlainText(result.get('b', ''))
-        verdict = result.get('verdict')
+        for name, key in (('A', 'a'), ('B', 'b')):
+            value = result.get(key, '')
+            if not self._compact:
+                self._texts[name].setPlainText(value)
+            else:
+                self._texts[name].clear()
+            self._previews[name].set_preview(value)
         title, color, note = {
             'match': ('內容一致', _SUCCESS, '兩區文字相同。'),
-            'mismatch': ('發現差異', _ERROR, '請查看 A、B 兩區文字。'),
-        }.get(verdict, ('需要確認', _WARNING, '文字不完整，請確認原畫面。'))
+            'mismatch': ('發現差異', _ERROR, '查看目前組別的 A、B 文字。'),
+        }.get(result.get('verdict'), ('需要確認', _WARNING, '文字不完整，請查看原畫面。'))
         self._set_status(title, color)
         stamp = result.get('timestamp', '')
         try:
             stamp = datetime.fromisoformat(stamp).strftime('%H:%M:%S')
         except (TypeError, ValueError):
             stamp = ''
-        self._activity.setText(f'更新於 {stamp} · 已核對 {result.get("cycle", 0)} 次')
+        self._activity.setText(f'{stamp} · 第 {result.get("cycle", 0)} 次核對')
         self._note.setText(note)
         self._sync_buttons()
 
     def _failed(self, message):
         self._set_status('需要確認', _WARNING)
-        self._activity.setText('請檢查後再開始')
         self._note.setText(message)
+        self._refresh_groups()
         self._refresh_regions()
         self._sync_buttons()
+
+    def _target_regions(self):
+        return getattr(self.controller, 'target_regions', tuple(self.controller.regions.values()))
 
     def _physical_window_rect(self):
         screen = QApplication.primaryScreen()
         if screen is None:
             return None
-        geometry = screen.geometry()
-        frame = self.frameGeometry()
+        geometry, frame = screen.geometry(), self.frameGeometry()
         scale = screen.devicePixelRatio()
-        return QRectF((frame.x() - geometry.x()) * scale,
-                      (frame.y() - geometry.y()) * scale,
+        return QRectF((frame.x() - geometry.x()) * scale, (frame.y() - geometry.y()) * scale,
                       frame.width() * scale, frame.height() * scale)
 
     def can_capture(self):
@@ -351,33 +549,26 @@ class ComparisonWindow(QWidget):
         if not self.isVisible() or self.isMinimized():
             return True
         frame = self._physical_window_rect()
-        if frame is None:
-            return False
-        return not any(frame.intersects(QRectF(*region[:4]))
-                       for region in self.controller.regions.values() if region is not None)
+        return frame is not None and not any(frame.intersects(QRectF(*region[:4]))
+                                            for region in self._target_regions() if region is not None)
 
     def avoid_regions(self):
-        """Try free edges before starting; never hide a running status silently."""
         if self.can_capture() or not self.isVisible():
             return self.can_capture()
         screen = QApplication.primaryScreen()
         if screen is None:
             return False
-        available = screen.availableGeometry()
-        frame = self.frameGeometry()
+        available, frame = screen.availableGeometry(), self.frameGeometry()
         width, height = frame.width(), frame.height()
         x_candidates = {available.left(), available.right() - width + 1}
         y_candidates = {available.top(), available.bottom() - height + 1}
-        scale = screen.devicePixelRatio()
-        origin = screen.geometry().topLeft()
-        for region in self.controller.regions.values():
+        scale, origin = screen.devicePixelRatio(), screen.geometry().topLeft()
+        for region in self._target_regions():
             if region is None:
                 continue
             x, y, w, h, _ = region
-            x_candidates.update((round(origin.x() + x / scale) - width - 8,
-                                 round(origin.x() + (x + w) / scale) + 8))
-            y_candidates.update((round(origin.y() + y / scale) - height - 8,
-                                 round(origin.y() + (y + h) / scale) + 8))
+            x_candidates.update((round(origin.x() + x / scale) - width - 8, round(origin.x() + (x + w) / scale) + 8))
+            y_candidates.update((round(origin.y() + y / scale) - height - 8, round(origin.y() + (y + h) / scale) + 8))
         original = self.pos()
         for y in sorted(y_candidates):
             for x in sorted(x_candidates):
@@ -392,24 +583,14 @@ class ComparisonWindow(QWidget):
     def set_compact(self, compact):
         self._compact = bool(compact)
         self._details.setVisible(not compact)
-        self._compact_button.setText('展開視窗' if compact else '縮小視窗')
+        self._compact_button.setText('查看全文' if compact else '收合全文')
         with QSignalBlocker(self._compact_button):
             self._compact_button.setChecked(compact)
-        if compact:
-            self.setMinimumSize(350, 225)
-        else:
-            self.setMinimumSize(540, 400)
-        visible = self.isVisible()
-        if compact:
-            self.resize(380, 245)
-        else:
-            self.resize(660, 470)
-        if visible:
-            self.show()
-            self.avoid_regions()
+        for name, key in (('A', 'a'), ('B', 'b')):
+            self._texts[name].setPlainText((self._last_result or {}).get(key, '') if not compact else '')
+        # The result update and detail toggle never grow or reposition the tool.
 
     def set_pinned(self, pinned):
-        """A user-controlled z-order, independent of size, position or scanning."""
         visible, position = self.isVisible(), self.pos()
         with QSignalBlocker(self._pin_button):
             self._pin_button.setChecked(bool(pinned))
