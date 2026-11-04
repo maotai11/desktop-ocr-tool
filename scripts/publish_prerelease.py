@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.7. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.8. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.7"
+TAG = "v1.8.0-rc.8"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,18 +133,20 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版修正 A／B 核對關閉問題，畫面不變時不再重跑 OCR，並加入可切換的置頂與較精簡的介面。
+本版將 A／B 核對調整為與桌面浮動工具一致的 348 × 560 主窗，並新增最多 20 組獨立核對位置。
 
-### A／B 連續核對
-- 點浮動窗「A／B 核對」，按 A 區、B 區的「選取範圍」，再按「開始核對」。從同一張快照取得兩區，再依序辨識；下一輪沿用原位置，不需重框。
-- 預設「忽略空白與標點」只比較文字與數字，也忽略其他符號；可改為「逐字比對」。因此 `1.23` 與 `123` 在預設規則可能相同，金額或標點有意義時請用逐字模式。
-- 綠色「內容一致」、紅色「發現差異」、琥珀色「需要確認」；同時列出 A／B 原文、辨識次數與更新時間。空白、失敗及待核對結果不會顯示已確認相同。
-- 每輪完成後預設等 2 秒檢查畫面，可調為 1–60 秒。A／B 像素都不變時跳過 OCR，顯示「畫面未變，等待變化」，保留上次結果、時間與次數；任一區改變才重新辨識。框外變化不觸發；框內動畫或游標閃爍也算變化。想手動重讀可暫停後再開始。
-- 「保持置頂」預設開啟，完整與精簡窗都能隨時取消、拖移與調整大小。「縮小視窗／展開視窗」不更改置頂設定；更新結果不搶焦點。啟動前會避開 A／B，空間不足則提示移開；運行時本工具視窗擋住區域會暫停。
-- 右上角 × 或「關閉」立即停止核對並關窗，不需等辨識返回。暫停或關窗會停止計時器、清掉摘要與待處理影像；當前原生呼叫仍需返回，但不再補辨、處理後續切片或下一區。關窗後不再檢查畫面，最小化則繼續已啟動的監看。
-- 核對不自動複製、不保存截圖或歷史。位置保留在本次執行中，退出後需重框。來源視窗移動、捲動、縮放或顯示器設定改變後應重新框選。
+### 浮動核對與批量組別
+- 預設每區只顯示一行結果，長文字省略；滑鼠停留可預覽，按「查看全文」才展開詳細文字，視窗不會自動放大。
+- 以組別下拉選單切換，新增組別後分別選取 A、B，可更名或移除。每組獨立保存本次位置、結果、辨識次數與更新時間；至少保留一組，最多20組。
+- 「開始全部」依建立順序逐組核對，所有組別的 A／B 都選好才能啟動。各組共用一個擷取工作及 OCR 佇列，整輪完成後預設等2秒，可調為1–60秒；不同組別不保證在同一時刻擷取。
+- 各組只在畫面像素變動時重跑 OCR；未變的組別保留原結果與時間。切換組別只切換查看內容；新增、更名、移除、重選範圍或更改規則會暫停全部。
+- 預設忽略空白與標點，只比較文字與數字，也忽略其他符號；可改逐字比對。`1.23` 與 `123` 在預設規則可能相同，核對金額請用逐字模式。
+- 綠色表示內容一致，紅色表示發現差異，琥珀色表示需要確認；空白、失敗及待核對結果不會算一致。系統匣以全部組別中最需注意的結果顯示狀態。
+- 「置頂」可隨時切換，自由拖移及調整大小。來源內容須保持可見，核對窗及其他本工具視窗必須避開所有組別的框選範圍，必要時可最小化核對窗繼續監看。
+- 視窗的 ×停止全部組別並關窗；最小化則繼續監看。暫停會停止計時器、清掉摘要與待處理影像；原生呼叫需返回，但不再接著補辨、下一區或下一組。
+- 組別、位置與結果僅留在本次執行記憶體，退出後需重設；不自動複製、不新增歷史或截圖檔。尚未導入表格結構辨識或更換 OCR 模型。
 
-螢幕 OCR、PDF／圖片套版、手寫、歷史及檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
+螢幕 OCR、PDF／圖片套版、手寫、歷史及檔案位置功能保留。
 
 ### 複製時移除所有標點
 - 在「設定 → 剪貼簿」啟用「複製時移除所有標點符號」，預設關閉。`「您好，世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
@@ -508,7 +510,8 @@ def _check_comparison_probe(report: dict, manifest: dict, frozen: bool) -> None:
     required = {'fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
                 'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
                 'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
-                'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available'}
+                'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
+                'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'}
     checks = report.get('checks')
     require(type(checks) is dict and set(checks) == required
             and all(value is True for value in checks.values()),

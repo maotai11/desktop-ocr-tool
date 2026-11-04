@@ -87,3 +87,45 @@ def test_tray_status_is_visible_without_copy_or_notifications(qtbot, tmp_path, m
     widget.comparison_status.emit('paused')
     assert '已暫停' in tray._tray.toolTip()
     assert QApplication.clipboard().text() == 'unchanged' and not notices
+
+
+def test_switching_groups_during_selection_cancels_old_callback(qtbot, tmp_path, monkeypatch):
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    widget.open_comparison()
+    window, controller = widget._comparison, widget._comparison_controller
+    qtbot.addWidget(window)
+    first = controller.active_group_id
+    second = controller.add_group('第二組')
+    controller.select_group(first)
+    callbacks = []
+    monkeypatch.setattr(widget._comparison_overlay, 'start_capture', callbacks.append)
+    widget._select_comparison_region('A')
+    controller.select_group(second)
+    callbacks.pop()(10, 10, 30, 20, 1)
+    assert not controller.regions
+    assert not window._selection_active
+    widget.shutdown_comparison()
+
+
+def test_tray_batch_status_reports_worst_group_without_stealing_selection(qtbot, tmp_path):
+    from types import SimpleNamespace
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    states = []
+    widget.comparison_status.connect(states.append)
+    controller = SimpleNamespace(running=True, groups=[{'result': {'verdict': 'match'}},
+                                                    {'result': {'verdict': 'mismatch'}}])
+    widget._comparison_controller = controller
+    widget._comparison_results_changed()
+    assert states[-1] == 'mismatch'
+    controller.groups[1]['result'] = None
+    widget._comparison_results_changed()
+    assert states[-1] == 'uncertain'
+    controller.groups[1]['result'] = {'verdict': 'match'}
+    widget._comparison_results_changed()
+    assert states[-1] == 'match'
+    controller.running = False
+    widget._comparison_results_changed()
+    assert states[-1] == 'paused'
+    widget._comparison_controller = None

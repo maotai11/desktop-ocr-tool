@@ -15,7 +15,9 @@ CHECK_NAMES = (
     'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
     'cancelled_results_ignored', 'workers_stopped',
     'unchanged_frames_skipped', 'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
+    'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all',
 )
+BATCH_CHECK_NAMES = CHECK_NAMES[-4:]
 
 
 def run_comparison_probe(report_path):
@@ -226,7 +228,8 @@ def run_comparison_probe(report_path):
             uncertain_not_match=verdicts[2:] == ['uncertain', 'uncertain'],
             clipboard_unchanged=app.clipboard().text() == before_clipboard,
         )
-        report['passed'] = not failed and all(report['checks'].values())
+        report['passed'] = not failed and all(report['checks'][name]
+                                             for name in CHECK_NAMES if name not in BATCH_CHECK_NAMES)
     except Exception:  # noqa: BLE001 - publish a fixed failure code, never private diagnostics
         report['passed'] = False
     finally:
@@ -244,6 +247,9 @@ def run_comparison_probe(report_path):
             window.shutdown()
             window.deleteLater()
         capture_module.mss.mss = original_screen
+    if report['passed']:
+        report['checks'].update(_run_batch_checks(app))
+        report['passed'] = all(report['checks'].values())
     if not report['passed']:
         report['error_code'] = 'COMPARISON_PROBE_CHECK_FAILED'
     try:
@@ -251,3 +257,179 @@ def run_comparison_probe(report_path):
     except (OSError, ValueError, TypeError):
         return 1
     return 0 if report['passed'] else 1
+
+
+def _run_batch_checks(app):
+    """Two independent pairs, exact unchanged skipping and batch cancellation.
+
+    Like the single-pair scenario, this drives the actual cropper, controller
+    and serialized OCR queue. Pixel labels are synthetic, never real content.
+    """
+    import numpy as np
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    from .comparison import capture as capture_module
+    from .comparison.controller import ComparisonController
+    from .workers.ocr_worker import OcrWorker
+
+    checks = dict.fromkeys(BATCH_CHECK_NAMES, False)
+    calls, captures, events, results, unchanged = [], [], [], [], []
+    counts = {1: 0, 2: 0}
+    entered, release = Event(), Event()
+    before_clipboard = app.clipboard().text()
+    region_sets = {
+        1: {'A': (0, 20, 8, 8, 1), 'B': (12, 20, 8, 8, 1)},
+        2: {'A': (0, 40, 8, 8, 1), 'B': (12, 40, 8, 8, 1)},
+    }
+
+    class BatchScreen:
+        monitors = (
+            {'left': 0, 'top': 0, 'width': 100, 'height': 100},
+            {'left': 0, 'top': 0, 'width': 100, 'height': 100},
+        )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def grab(self, rectangle):
+            group = {20: 1, 40: 2}.get(rectangle.get('top'))
+            if (group is None or rectangle != {'left': 0, 'top': group * 20,
+                                               'width': 20, 'height': 8}):
+                raise ValueError('Unexpected batch synthetic bounds')
+            counts[group] += 1
+            captures.append(group)
+            events.append(('capture', group))
+            count = counts[group]
+            base = (100 if count < 3 else 110 if count == 3 else 120) if group == 1 else 200
+            pixels = np.zeros((8, 20, 4), dtype=np.uint8)
+            pixels[:, :8, :3], pixels[:, 12:, :3] = base + 1, base + 2
+            pixels[:, 8:12, :3] = len(captures)  # Outside both selected crops.
+            return pixels
+
+    class BatchOracle:
+        def set_progress_callback(self, callback):
+            pass
+
+        def is_ready(self):
+            return True
+
+        def run_ocr(self, image, mode):
+            value = int(image[0, 0, 0])
+            if image.shape != (8, 8, 3) or not np.all(image == value):
+                raise ValueError('Invalid batch synthetic crop')
+            calls.append(value)
+            events.append(('ocr', value))
+            if value == 121:
+                entered.set()
+                if not release.wait(3):
+                    raise ValueError('Batch cancellation handshake timeout')
+            text = {101: '甲 12，', 102: '甲12', 201: '乙12', 202: '乙13',
+                    111: '新資料', 112: '新資料', 121: '過期結果'}[value]
+            return {'text': text, 'status': 'done'}
+
+    original_screen = capture_module.mss.mss
+    worker = controller = None
+    loop = QEventLoop()
+    poll, deadline = QTimer(), QTimer()
+    poll.setInterval(10)
+    deadline.setSingleShot(True)
+    stage, cancelled_at, failed = 'running', None, False
+
+    def stop():
+        if controller is not None:
+            controller.shutdown()
+        if worker is not None:
+            worker.stop()
+
+    def abort(*args):
+        nonlocal failed, stage
+        failed, stage = True, 'stopping'
+        release.set()
+        stop()
+
+    def state_changed(state):
+        if state == 'unchanged':
+            unchanged.append(controller.scanning_group_id)
+
+    def progress():
+        nonlocal stage, cancelled_at
+        if stage == 'running' and entered.is_set():
+            controller.pause()
+            cancelled_at = monotonic()
+            release.set()
+            stage = 'cancelled'
+        elif (stage == 'cancelled' and not worker._document_pending
+              and monotonic() - cancelled_at > 1.1):
+            checks['batch_cancel_stops_all'] = (
+                not controller.running and len(captures) == 7 and len(results) == 3
+                and calls == [101, 102, 201, 202, 111, 112, 121]
+                and not any(timer.isActive() for timer in
+                            (controller._cycle_timer, controller._retry, controller._deadline))
+                and not controller._images and not controller._results
+                and all(group['fingerprint'] is None for group in controller._groups.values())
+                and app.clipboard().text() == before_clipboard)
+            stage = 'stopping'
+            stop()
+        elif stage == 'stopping' and controller.is_stopped and not worker.isRunning():
+            deadline.stop()
+            poll.stop()
+            loop.quit()
+
+    try:
+        capture_module.mss.mss = BatchScreen
+        capture_worker = capture_module.ComparisonCaptureWorker(capture=capture_module.capture_pair)
+        worker = OcrWorker(BatchOracle())
+        controller = ComparisonController(worker, capture_worker=capture_worker)
+        first = controller.active_group_id
+        if not all(controller.set_region(name, value) for name, value in region_sets[1].items()):
+            raise ValueError('First synthetic pair refused')
+        second = controller.add_group('第二組')
+        if second is None or not all(controller.set_region(name, value)
+                                     for name, value in region_sets[2].items()):
+            raise ValueError('Second synthetic pair refused')
+        controller.updated.connect(lambda result: results.append(dict(result)))
+        controller.failed.connect(abort)
+        controller.state_changed.connect(state_changed)
+        worker.engine_failed.connect(abort)
+        controller.set_interval(1)
+        poll.timeout.connect(progress)
+        deadline.timeout.connect(abort)
+        poll.start()
+        deadline.start(16000)
+        if not controller.start():
+            raise ValueError('Synthetic batch refused')
+        loop.exec()
+        summaries = {group['id']: group['result'] for group in controller.groups}
+        checks['batch_groups_isolated'] = (
+            [result['group_id'] for result in results] == [first, second, first]
+            and [result['verdict'] for result in results] == ['match', 'mismatch', 'match']
+            and summaries[first]['a'] == '新資料' and summaries[first]['b'] == '新資料'
+            and summaries[second]['a'] == '乙12' and summaries[second]['b'] == '乙13')
+        checks['batch_unchanged_skipped'] = (
+            unchanged == [first, second, second]
+            and [result['cycle'] for result in results] == [1, 1, 2]
+            and summaries[second]['timestamp'] == results[1]['timestamp'])
+        checks['batch_serialized'] = events == [
+            ('capture', 1), ('ocr', 101), ('ocr', 102),
+            ('capture', 2), ('ocr', 201), ('ocr', 202),
+            ('capture', 1), ('capture', 2),
+            ('capture', 1), ('ocr', 111), ('ocr', 112),
+            ('capture', 2), ('capture', 1), ('ocr', 121)]
+        if failed:
+            checks = dict.fromkeys(BATCH_CHECK_NAMES, False)
+    except Exception:  # noqa: BLE001 - fixed booleans only, no user/private diagnostics
+        checks = dict.fromkeys(BATCH_CHECK_NAMES, False)
+    finally:
+        poll.stop()
+        deadline.stop()
+        release.set()
+        stop()
+        if controller is not None:
+            controller._capture.wait(3000)
+        if worker is not None:
+            worker.wait(3000)
+        capture_module.mss.mss = original_screen
+    return checks
