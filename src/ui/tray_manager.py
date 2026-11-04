@@ -2,7 +2,7 @@
 import logging
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter, QBrush, QPen
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSignalBlocker
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ class TrayManager:
         self._tray.activated.connect(self._on_activated)
         if hasattr(widget, 'comparison_status'):
             widget.comparison_status.connect(self.set_comparison_status)
+        if hasattr(widget, 'clipboard_pause_changed'):
+            widget.clipboard_pause_changed.connect(self.set_clipboard_paused)
+        self.set_clipboard_paused(bool(getattr(widget, '_clip_paused', False)))
 
     def _build_menu(self):
         menu = QMenu()
@@ -79,6 +82,10 @@ class TrayManager:
 
     def set_tooltip(self, text: str):
         self._tray.setToolTip(text)
+
+    def set_clipboard_paused(self, paused):
+        with QSignalBlocker(self._act_pause):
+            self._act_pause.setChecked(bool(paused))
 
     def set_comparison_status(self, status):
         from ..core.version import APP_DISPLAY_NAME

@@ -95,6 +95,8 @@ def _line_icon(kind: str, color: str) -> QIcon:
 
 class FloatingWidget(QWidget):
     comparison_status = Signal(str)
+    settings_saved = Signal()
+    clipboard_pause_changed = Signal(bool)
 
     def __init__(self, item_repo, file_mgr, db_worker, ocr_worker,
                  cfg, data_dir, parent=None, tag_repo=None):
@@ -108,6 +110,7 @@ class FloatingWidget(QWidget):
         self.setWindowOpacity(max(0.3, min(1., float(cfg.get('ui', 'widget_opacity', default=0.95)))))
         self._data_dir = data_dir
         self._console = None
+        self._refreshing_history = False
         self._handwriting = None
         self._documents = None
         self._document_controller = None
@@ -130,6 +133,24 @@ class FloatingWidget(QWidget):
         self._setup_ui()
         self._position_widget()
         self.refresh_list()
+        # Worker mutations may originate from either window or maintenance.
+        # Connect once here so an already-open console and the launcher agree.
+        for name in ('items_soft_deleted', 'item_pinned', 'item_archived', 'purge_done', 'item_deleted'):
+            signal = getattr(self._db_worker, name, None)
+            if signal is not None:
+                signal.connect(self.refresh_history_views)
+
+    def refresh_history_views(self, *_):
+        """Invalidate both views without changing their filters or recursing."""
+        if self._refreshing_history:
+            return
+        self._refreshing_history = True
+        try:
+            self.refresh_list()
+            if self._console is not None:
+                self._console.refresh()
+        finally:
+            self._refreshing_history = False
 
     def _setup_ui(self):
         from ..core.version import APP_DISPLAY_NAME
@@ -754,7 +775,7 @@ class FloatingWidget(QWidget):
                 self._item_repo.soft_delete(item_id)
             self._selected_items.clear()
             self._update_batch_button_text()
-            self.refresh_list()
+            self.refresh_history_views()
 
     def _select_all(self):
         for item in self._items:
@@ -849,6 +870,11 @@ class FloatingWidget(QWidget):
                 items = self._item_repo.list_recent(limit=max_items)
 
             self._items = items
+            present_ids = {item.id for item in items}
+            self._selected_items.intersection_update(present_ids)
+            if self._selected_item_id not in present_ids:
+                self._selected_item_id = None
+            self._update_batch_button_text()
 
             if not items:
                 lbl = QLabel("尚無紀錄")
@@ -923,7 +949,7 @@ class FloatingWidget(QWidget):
         pin_text = "取消釘選" if item.is_pinned else "釘選"
         menu.addAction(pin_text).triggered.connect(
             lambda: (self._item_repo.set_pinned(item.id, not item.is_pinned),
-                     self.refresh_list())
+                     self.refresh_history_views())
         )
 
         act_ocr = menu.addAction("重新執行 OCR")
@@ -936,7 +962,7 @@ class FloatingWidget(QWidget):
 
     def _soft_delete(self, item_id: int):
         self._item_repo.soft_delete(item_id)
-        self.refresh_list()
+        self.refresh_history_views()
 
     def _copy_item_image(self, item):
         if not item.raw_image_path:
@@ -975,7 +1001,7 @@ class FloatingWidget(QWidget):
             ocr_worker=self._ocr_worker,
         )
         editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        editor.item_updated.connect(lambda _: self.refresh_list())
+        editor.item_updated.connect(self.refresh_history_views)
         editor.destroyed.connect(
             lambda: self._editor_windows.pop(item.id, None)
         )
@@ -986,7 +1012,7 @@ class FloatingWidget(QWidget):
         if item.raw_image_path:
             abs_path = self._file_mgr.get_abs_path(item.raw_image_path)
             self._ocr_worker.queue_ocr(item.id, abs_path, 'screen')
-            self.refresh_list()
+            self.refresh_history_views()
 
     # --- Visibility ---
     def toggle_visibility(self):
@@ -1009,6 +1035,8 @@ class FloatingWidget(QWidget):
                 cfg=self._cfg,
                 data_dir=self._data_dir,
             )
+            self._console.use_shared_history_refresh()
+            self._console.history_changed.connect(self.refresh_history_views)
             self._console.destroyed.connect(
                 lambda: setattr(self, '_console', None)
             )
@@ -1018,11 +1046,15 @@ class FloatingWidget(QWidget):
 
     def open_settings(self):
         from .settings_dialog import SettingsDialog
+        from PySide6.QtWidgets import QDialog
         ocr_engine = getattr(self, '_ocr_engine', None)
         tag_repo = getattr(self, '_tag_repo', None)
         dlg = SettingsDialog(self._cfg, self, ocr_engine=ocr_engine, tag_repo=tag_repo)
+        dlg.history_changed.connect(self.refresh_history_views)
         try:
-            dlg.exec()
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                self.settings_saved.emit()
+                self.refresh_history_views()
         finally:
             dlg.deleteLater()
 
@@ -1054,6 +1086,7 @@ class FloatingWidget(QWidget):
         self._btn_pause.setAccessibleName(label)
         self._btn_pause.setToolTip(label)
         self._btn_pause.setIcon(_line_icon('play' if self._clip_paused else 'pause', _TEXT_SEC))
+        self.clipboard_pause_changed.emit(self._clip_paused)
 
     def paste_last_item(self):
         items = self._item_repo.list_recent(limit=1)

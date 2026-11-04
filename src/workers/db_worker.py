@@ -24,6 +24,7 @@ class DbWorker(QObject):
     purge_done = Signal(int)            # count of hard-deleted records
     ocr_persisted = Signal(int, object)
     barrier_reached = Signal(str)
+    history_maintenance_done = Signal(object)
 
     def __init__(self, repo: ItemRepository, file_manager: FileManager,
                  enable_dedup: bool = True, save_raw_image: bool = True):
@@ -36,6 +37,29 @@ class DbWorker(QObject):
     @Slot(str)
     def barrier(self, token):
         self.barrier_reached.emit(token)
+
+    @Slot(object)
+    def archive_inactive(self, request):
+        """One cancellable, bounded archive transaction on the DB owner thread."""
+        request = request if isinstance(request, dict) else {}
+        response = {'request_id': request.get('request_id'),
+                    'generation': request.get('generation'),
+                    'archived_ids': [], 'has_more': False, 'cancelled': False,
+                    'error': False}
+        try:
+            if (not isinstance(request.get('request_id'), str) or not request['request_id']
+                    or type(request.get('generation')) is not int
+                    or request['generation'] < 0):
+                raise ValueError('Invalid maintenance request')
+            response.update(self._repo.archive_inactive_batch(
+                request.get('days'), now=request.get('now'),
+                limit=request.get('limit', 200), cancelled=request.get('cancelled')))
+        except Exception as exc:
+            # Do not put paths, item contents or arbitrary native error text in
+            # a public-facing maintenance result.
+            logger.warning('自動封存未完成 (%s)', type(exc).__name__)
+            response['error'] = True
+        self.history_maintenance_done.emit(response)
 
     @Slot(object)
     def save_item(self, dto: ItemCreateDTO):

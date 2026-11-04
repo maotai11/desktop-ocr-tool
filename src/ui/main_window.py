@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QStatusBar, QTabWidget, QMessageBox, QScrollArea,
     QMenu, QFileDialog
 )
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QSignalBlocker, QItemSelectionModel
 from PySide6.QtGui import QPixmap, QKeyEvent
 
 from .theme import (
@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
     request_set_pinned = Signal(int, bool)
     request_set_archived = Signal(int, bool)
     request_purge = Signal()
+    history_changed = Signal()
 
     def __init__(self, item_repo, tag_repo, file_mgr, db_worker,
                  ocr_worker, cfg, data_dir, parent=None):
@@ -133,6 +134,7 @@ class MainWindow(QMainWindow):
         self._selected_item = None
         self._current_items = []
         self._batch_mode = False
+        self._shared_history_refresh = False
 
         from ..core.version import APP_DISPLAY_NAME
         from ..core.branding import application_icon
@@ -461,8 +463,8 @@ class MainWindow(QMainWindow):
         self.request_set_archived.connect(self._db_worker.set_archived)
         self.request_purge.connect(self._db_worker.purge_soft_deleted)
         self._db_worker.items_soft_deleted.connect(self._on_items_soft_deleted)
-        self._db_worker.item_pinned.connect(lambda *_: self._refresh_current())
-        self._db_worker.item_archived.connect(lambda *_: self._refresh_current())
+        self._db_worker.item_pinned.connect(self._worker_history_changed)
+        self._db_worker.item_archived.connect(self._worker_history_changed)
         self._db_worker.purge_done.connect(self._on_purge_done)
 
     def _on_items_soft_deleted(self, ids: list):
@@ -470,14 +472,27 @@ class MainWindow(QMainWindow):
         if self._selected_item and self._selected_item.id in deleted_set:
             self._selected_item = None
             self._clear_detail_panel()
-        self._refresh_current()
+        self._worker_history_changed()
         n = len(ids)
         self._status_lbl.setText(f"已刪除 {n} 筆")
-        QTimer.singleShot(2000, lambda: self._status_lbl.setText("就緒"))
+        QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _on_purge_done(self, n: int):
-        self._refresh_current()
+        self._worker_history_changed()
         QMessageBox.information(self, "完成", f"已清理 {n} 筆紀錄。")
+
+    def use_shared_history_refresh(self):
+        """The launcher owns worker invalidation while this window is hosted."""
+        self._shared_history_refresh = True
+
+    def _worker_history_changed(self, *_):
+        if not self._shared_history_refresh:
+            self._refresh_current()
+
+    def _local_history_changed(self, *_):
+        if not self._shared_history_refresh:
+            self._refresh_current()
+        self.history_changed.emit()
 
     def _load_items(self, category: str = 'all', search: str = ''):
         self._table.setRowCount(0)
@@ -489,7 +504,7 @@ class MainWindow(QMainWindow):
             elif category == 'needs_review':
                 items = self._item_repo.list_recent(limit=200, needs_review_only=True)
             elif category == 'archived':
-                items = self._item_repo.list_recent(limit=200, show_archived=True)
+                items = self._item_repo.list_recent(limit=200, archived_only=True)
             elif category in ('text', 'image', 'mixed'):
                 items = self._item_repo.list_recent(limit=200, item_type=category)
             else:
@@ -764,13 +779,35 @@ class MainWindow(QMainWindow):
 
     def _refresh_current(self):
         """依目前搜尋欄與 sidebar 分類重新載入列表（保持使用者上下文）。"""
+        selected_ids = {self._current_items[index.row()].id
+                        for index in self._table.selectionModel().selectedRows()
+                        if 0 <= index.row() < len(self._current_items)}
+        current_id = self._selected_item.id if self._selected_item is not None else None
+        vertical = self._table.verticalScrollBar().value()
+        horizontal = self._table.horizontalScrollBar().value()
         search = self._search.text().strip()
-        if search:
-            self._load_items(search=search)
-        else:
-            item = self._side_list.currentItem()
-            cat = item.data(Qt.ItemDataRole.UserRole) if item else 'all'
-            self._load_items(category=cat)
+        with QSignalBlocker(self._table), QSignalBlocker(self._table.selectionModel()):
+            if search:
+                self._load_items(search=search)
+            else:
+                item = self._side_list.currentItem()
+                cat = item.data(Qt.ItemDataRole.UserRole) if item else 'all'
+                self._load_items(category=cat)
+            for row, item in enumerate(self._current_items):
+                if item.id in selected_ids:
+                    self._table.selectionModel().select(
+                        self._table.model().index(row, 0),
+                        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                if item.id == current_id:
+                    self._table.setCurrentCell(row, 0, QItemSelectionModel.SelectionFlag.NoUpdate)
+        self._selected_item = next((item for item in self._current_items if item.id == current_id), None)
+        if self._selected_item is None:
+            self._clear_detail_panel()
+        elif not self._batch_mode:
+            self._update_detail()
+        self._on_selection_changed()
+        self._table.verticalScrollBar().setValue(vertical)
+        self._table.horizontalScrollBar().setValue(horizontal)
 
     def refresh(self):
         self._refresh_current()
@@ -867,7 +904,7 @@ class MainWindow(QMainWindow):
         from ..clipboard.writer import write_image_to_clipboard
         write_image_to_clipboard(abs_p)
         self._status_lbl.setText("已複製圖片到剪貼簿")
-        QTimer.singleShot(2000, lambda: self._status_lbl.setText("就緒"))
+        QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _save_item_image(self, item):
         if not item.raw_image_path:
@@ -897,7 +934,7 @@ class MainWindow(QMainWindow):
             ocr_worker=self._ocr_worker,
             parent=self,
         )
-        editor.item_updated.connect(lambda _: self._refresh_current())
+        editor.item_updated.connect(self._local_history_changed)
         editor.destroyed.connect(
             lambda: self._editor_windows.pop(item.id, None)
         )

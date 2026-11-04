@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QListWidgetItem, QTableWidgetItem, QHBoxLayout
 from PySide6.QtGui import QColor
 # -*- coding: utf-8 -*-
 import logging
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget,
     QWidget, QLabel, QCheckBox, QSpinBox, QDoubleSpinBox,
@@ -134,6 +134,7 @@ _DIALOG_QSS = f"""
 
 
 class SettingsDialog(QDialog):
+    history_changed = Signal()
     def __init__(self, cfg, parent=None, ocr_engine=None, tag_repo=None):
         super().__init__(parent)
         self._cfg = cfg
@@ -165,6 +166,17 @@ class SettingsDialog(QDialog):
             self._cfg.get('general', 'start_minimized', default=True)
         )
         gf.addRow("", self._cb_start_min)
+        self._sp_archive_days = QSpinBox()
+        self._sp_archive_days.setRange(0, 36500)
+        self._sp_archive_days.setSpecialValueText('停用')
+        self._sp_archive_days.setSuffix(' 天')
+        archive_days = self._cfg.get('history', 'auto_archive_days', default=90)
+        self._sp_archive_days.setValue(archive_days if type(archive_days) is int and 0 <= archive_days <= 36500 else 90)
+        gf.addRow('自動封存：', self._sp_archive_days)
+        archive_note = QLabel('最後修改已滿設定天數的紀錄會自動封存；釘選及辨識中的紀錄保留。\n'
+                              '封存可還原，文字與附件仍在；設為 0 可停用。')
+        archive_note.setWordWrap(True)
+        gf.addRow('', archive_note)
         tabs.addTab(gen, "一般")
 
         # ---- 擷取 ----
@@ -361,6 +373,7 @@ class SettingsDialog(QDialog):
 
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
+        self._cfg.set('history', 'auto_archive_days', self._sp_archive_days.value())
         self._cfg.set('capture', 'auto_ocr_on_capture', self._cb_auto_ocr.isChecked())
         self._cfg.set('ocr', 'enable_second_pass', self._cb_second_pass.isChecked())
         self._cfg.set('ocr', 'max_ocr_passes', self._sp_max_passes.value())
@@ -533,6 +546,7 @@ class SettingsDialog(QDialog):
 
         if tag:
             self._load_tags()
+            self.history_changed.emit()
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(self, "成功", f"已新增標籤 '{name}'。")
         else:
@@ -592,6 +606,7 @@ class SettingsDialog(QDialog):
         try:
             self._tag_repo.update(tag.id, new_name, self._edit_tag_color.text())
             self._load_tags()
+            self.history_changed.emit()
         except Exception as exc:
             QMessageBox.warning(self, '無法更新標籤', str(exc))
 
@@ -616,6 +631,7 @@ class SettingsDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             self._tag_repo.delete(tag.id)
             self._load_tags()
+            self.history_changed.emit()
             QMessageBox.information(self, "成功", f"已刪除標籤 '{tag.name}'。")
 
     def _pick_color(self):
@@ -645,3 +661,4 @@ class SettingsDialog(QDialog):
         for item_id in selected:
             self._tag_repo.add_to_item(item_id, tag_id)
         self._load_tags()
+        self.history_changed.emit()

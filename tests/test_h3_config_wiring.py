@@ -1,62 +1,87 @@
 # -*- coding: utf-8 -*-
-"""
-Patch H3 回歸測試：config / settings / diagnostics 接線
+"""Legacy optional-engine API tests and the core's explicit retirement contract.
 
-涵蓋：
-- DEFAULT_SETTINGS 包含 5 個新 H3 key
-- ConfigManager.get() 對新 key 回傳正確預設值
-- OcrEngine.configure() 接受 H3 新參數
-- OcrEngine.get_secondary_info() 結構正確
-- _should_use_secondary() 遵守 secondary_for_handwriting / secondary_for_low_confidence / threshold
-- SettingsDialog OCR tab 包含第二引擎區塊 widget
-- SettingsDialog._save() 寫入新 config key 並更新 engine（mock engine）
-- SettingsDialog._update_sec_diag() 顯示安裝狀態
-
-測試縫說明：
-- eng._ready / eng._engine 直接設定（無 public API 可替代）
-- SettingsDialog 依賴 qapp fixture（pytest-qt）
+Provider adapters can still be exercised directly; their settings do not imply
+that an offline core bundle loads or routes to an optional engine.
 """
 import pytest
 from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
-# A. DEFAULT_SETTINGS 包含 5 個新 H3 key
+# A. Unsupported old settings are absent from fresh profiles, preserved on load.
 # ---------------------------------------------------------------------------
 
 class TestConfigDefaults:
-    def test_enable_secondary_engine_default_false(self):
-        from src.core.config import DEFAULT_SETTINGS
-        assert DEFAULT_SETTINGS['ocr']['enable_secondary_engine'] is False
+    def test_fresh_profiles_do_not_advertise_retired_core_settings(self, tmp_path, monkeypatch):
+        from src.core.config import ConfigManager, DEFAULT_SETTINGS, RETIRED_CORE_SETTINGS
+        monkeypatch.setattr('src.core.config.get_project_root', lambda: str(tmp_path))
+        cfg = ConfigManager()
+        for dotted, reason in RETIRED_CORE_SETTINGS.items():
+            section, key = dotted.split('.')
+            assert reason and key not in DEFAULT_SETTINGS.get(section, {})
+            assert cfg.get(section, key) is None
+        assert cfg.get('history', 'auto_archive_days') == 90
+        assert cfg.get('clipboard', 'monitor_clipboard') is False
+        assert cfg.get('ocr', 'model_profile') == 'v6-small'
 
-    def test_secondary_engine_provider_default(self):
-        from src.core.config import DEFAULT_SETTINGS
-        assert DEFAULT_SETTINGS['ocr']['secondary_engine_provider'] == 'paddleocr_v5'
+    def test_old_profiles_keep_unsupported_choices_during_roundtrip(self, tmp_path, monkeypatch):
+        import json
+        from src.core.config import ConfigManager
+        monkeypatch.setattr('src.core.config.get_project_root', lambda: str(tmp_path))
+        legacy = {'ocr': {'enable_secondary_engine': True, 'secondary_engine_provider': 'cnocr',
+                          'model_rec': 'old-user-model.onnx'},
+                  'preprocessing': {'enable_shadow_removal': True},
+                  'history': {'max_items': 7, 'auto_delete_archived_days': 1}}
+        (tmp_path / 'config').mkdir()
+        path = tmp_path / 'config/settings.json'
+        path.write_text(json.dumps(legacy), encoding='utf-8')
+        cfg = ConfigManager()
+        cfg.set('general', 'start_minimized', False)
+        reloaded = ConfigManager()
+        for section, values in legacy.items():
+            for key, value in values.items():
+                assert reloaded.get(section, key) == value
 
-    def test_secondary_engine_for_handwriting_default_true(self):
+    def test_bundled_default_json_matches_supported_core_defaults(self):
+        import json
+        from pathlib import Path
         from src.core.config import DEFAULT_SETTINGS
-        assert DEFAULT_SETTINGS['ocr']['secondary_engine_for_handwriting'] is True
+        path = Path(__file__).resolve().parents[1] / 'config/default_settings.json'
+        assert json.loads(path.read_text(encoding='utf-8')) == DEFAULT_SETTINGS
 
-    def test_secondary_engine_for_low_confidence_default_true(self):
-        from src.core.config import DEFAULT_SETTINGS
-        assert DEFAULT_SETTINGS['ocr']['secondary_engine_for_low_confidence'] is True
-
-    def test_secondary_engine_confidence_threshold_default(self):
-        from src.core.config import DEFAULT_SETTINGS
-        assert DEFAULT_SETTINGS['ocr']['secondary_engine_confidence_threshold'] == pytest.approx(0.85)
-
-    def test_config_manager_get_returns_defaults(self, tmp_path):
-        """ConfigManager 在全新目錄下能正確讀取 5 個新 key 的預設值。"""
+    def test_old_engine_flags_do_not_load_optional_providers_at_core_startup(self, tmp_path):
+        import json
         import os
-        from unittest.mock import patch as _patch
-        with _patch('src.core.config.get_project_root', return_value=str(tmp_path)):
-            from src.core.config import ConfigManager
-            cfg = ConfigManager()
-        assert cfg.get('ocr', 'enable_secondary_engine') is False
-        assert cfg.get('ocr', 'secondary_engine_provider') == 'paddleocr_v5'
-        assert cfg.get('ocr', 'secondary_engine_for_handwriting') is True
-        assert cfg.get('ocr', 'secondary_engine_for_low_confidence') is True
-        assert cfg.get('ocr', 'secondary_engine_confidence_threshold') == pytest.approx(0.85)
+        from pathlib import Path
+        import subprocess
+        import sys
+        root = Path(__file__).resolve().parents[1]
+        if not (root / 'models/rec/pp-ocrv6_rec_small.onnx').is_file():
+            pytest.skip('Prepared pinned model assets required for core startup')
+        legacy = {'general': {'single_instance': False},
+                  'ocr': {'engine': 'old-provider', 'enable_secondary_engine': True,
+                          'secondary_engine_provider': 'cnocr',
+                          'model_det': 'does-not-exist.onnx', 'model_rec': 'does-not-exist.onnx'}}
+        (tmp_path / 'config').mkdir()
+        (tmp_path / 'config/settings.json').write_text(json.dumps(legacy), encoding='utf-8')
+        report = tmp_path / 'core-startup.json'
+        script = '''import importlib.abc, sys
+class NoOptionalProvider(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in ('paddleocr', 'cnocr'):
+            raise AssertionError('Optional provider imported by core startup')
+sys.meta_path.insert(0, NoOptionalProvider())
+from src.main import run
+raise SystemExit(run(['--smoke-app', sys.argv[1]]))
+'''
+        env = dict(os.environ, DESKTOP_OCR_HOME=str(tmp_path))
+        env.setdefault('QT_QPA_PLATFORM', 'offscreen')
+        result = subprocess.run([sys.executable, '-c', script, str(report)], cwd=root,
+                                env=env, capture_output=True, timeout=45)
+        assert result.returncode == 0, 'Core startup failed with a legacy provider profile'
+        outcome = json.loads(report.read_text(encoding='utf-8'))
+        assert outcome['passed'] and outcome['engine_ready'] and outcome['shutdown_clean']
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +212,7 @@ class TestShouldUseSecondaryH3:
 
 
 # ---------------------------------------------------------------------------
-# D. SettingsDialog OCR tab 包含第二引擎 widget
+# D. Core settings save restart choices without activating optional providers.
 # ---------------------------------------------------------------------------
 
 def test_settings_restart_contract(qapp, tmp_path, monkeypatch):

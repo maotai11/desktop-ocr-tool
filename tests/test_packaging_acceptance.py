@@ -100,12 +100,13 @@ def valid_reports(paths):
                             checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
         '--smoke-app': dict(common, probe='application_lifecycle', phase_a=True,
                             engine_ready=True, shutdown_clean=True,
-                            threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True}),
+                            threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True, 'history_maintenance': True}),
     }
 
 
 @pytest.mark.parametrize('defect', ['none', 'wrong_hash', 'not_frozen', 'wrong_version',
-                                  'offscreen', 'model_hash', 'thread_running', 'claimed_clean'])
+                                  'offscreen', 'model_hash', 'thread_running', 'claimed_clean',
+                                  'maintenance_missing', 'maintenance_running'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     from handwriting_release_fixtures import identity, image_probe, probe
 
@@ -123,6 +124,8 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     if defect == 'offscreen': reports['--smoke-app']['qt_platform'] = 'offscreen'
     if defect == 'model_hash': reports['--self-test']['models']['rec']['sha256'] = '0' * 64
     if defect == 'thread_running': reports['--smoke-app']['threads_stopped']['ocr'] = False
+    if defect == 'maintenance_missing': reports['--smoke-app']['threads_stopped'].pop('history_maintenance')
+    if defect == 'maintenance_running': reports['--smoke-app']['threads_stopped']['history_maintenance'] = False
     if defect == 'claimed_clean': reports['--smoke-app']['clean_machine_verified'] = True
     def run(executable, mode, report_path):
         write_validation_report(report_path, reports[mode])

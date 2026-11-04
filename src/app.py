@@ -150,35 +150,8 @@ def main(smoke_report=None) -> int:
         if not cfg.get("general", "start_minimized", default=True) or not tray.is_available():
             widget.show()
 
-        # 12. Clipboard watcher
+        # Clipboard collection is reconciled after Pipeline owns the save route.
         clip_watcher = None
-        if cfg.get('clipboard', 'monitor_clipboard', default=False):
-            from src.clipboard.watcher import ClipboardWatcher
-            clip_watcher = ClipboardWatcher(ignore_self=cfg.get('clipboard', 'ignore_self', default=True))
-            widget._clip_watcher = clip_watcher
-
-            if cfg.get('clipboard', 'auto_save_text', default=True):
-                from src.core.constants import (
-                    ITEM_TYPE_TEXT,
-                    SOURCE_MODE_CLIPBOARD_TEXT,
-                )
-                from src.data.hasher import sha256_text
-                from src.data.models import ItemCreateDTO
-
-                def on_clipboard_text(text: str):
-                    max_len = cfg.get('clipboard', 'max_text_length', default=50000)
-                    if len(text) > max_len:
-                        return
-                    dto = ItemCreateDTO(
-                        item_type=ITEM_TYPE_TEXT,
-                        source_mode=SOURCE_MODE_CLIPBOARD_TEXT,
-                        text_content=text,
-                        content_hash=sha256_text(text),
-                        ocr_status='none',
-                    )
-                    pipeline.save_requested.emit(dto)
-
-                clip_watcher.text_captured.connect(on_clipboard_text)
 
         # 13. Hotkeys
         from src.core.hotkey import HotkeyListener
@@ -239,6 +212,31 @@ def main(smoke_report=None) -> int:
         pipeline = Pipeline(capture_worker, ocr_worker, db_worker, db_thread,
                             db, item_repo, file_mgr, widget, cfg,
                             hotkey_listener, clip_watcher)
+        # Lifecycle owners are explicit: settings changes revoke old callbacks,
+        # and shutdown stops maintenance before draining database work.
+        from src.clipboard.monitoring import ClipboardMonitoringController
+        from src.workers.history_maintenance import HistoryMaintenanceController
+
+        def on_clipboard_text(text):
+            if pipeline.closing:
+                return
+            from src.core.constants import ITEM_TYPE_TEXT, SOURCE_MODE_CLIPBOARD_TEXT
+            from src.data.hasher import sha256_text
+            from src.data.models import ItemCreateDTO
+            pipeline.save_requested.emit(ItemCreateDTO(
+                item_type=ITEM_TYPE_TEXT, source_mode=SOURCE_MODE_CLIPBOARD_TEXT,
+                text_content=text, content_hash=sha256_text(text), ocr_status='none'))
+
+        clip_watcher = ClipboardMonitoringController(cfg, on_clipboard_text, parent=widget)
+        widget._clip_watcher = pipeline.clipboard = clip_watcher
+        widget.settings_saved.connect(clip_watcher.refresh)
+        history_maintenance = HistoryMaintenanceController(db_worker, cfg, parent=pipeline)
+        pipeline.set_history_maintenance(history_maintenance)
+        history_maintenance.archived.connect(widget.refresh_history_views)
+        history_maintenance.failed.connect(widget.set_ocr_status)
+        widget.settings_saved.connect(history_maintenance.refresh)
+        db_worker.item_saved.connect(history_maintenance.on_item_saved)
+        history_maintenance.start()
         pipeline.hotkey_actions = hotkey_actions
         pipeline.selection_requested.connect(pipeline.select_ocr_text)
         hotkey_listener.start()
@@ -269,6 +267,7 @@ def main(smoke_report=None) -> int:
                     'ocr': not ocr_worker.isRunning(),
                     'database': not db_thread.isRunning(),
                     'hotkeys': not hotkey_listener.isRunning(),
+                    'history_maintenance': history_maintenance.is_stopped,
                 }
                 smoke['shutdown_clean'] = (pipeline.closed and db._closed
                                            and all(smoke['threads_stopped'].values()))
@@ -318,6 +317,8 @@ def main(smoke_report=None) -> int:
             if 'pipeline' in locals():
                 pipeline.ensure_shutdown()
             else:
+                if 'clip_watcher' in locals() and clip_watcher is not None:
+                    clip_watcher.stop()
                 for owner in ('hotkey_listener', 'capture_worker', 'ocr_worker'):
                     worker = locals().get(owner)
                     if worker is not None:

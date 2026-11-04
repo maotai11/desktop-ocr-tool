@@ -459,11 +459,11 @@ def test_group_actions_switch_without_losing_regions_or_resuming(group_window, m
     second = controller.active_group_id
     assert second != first and len(controller.groups) == 2
     assert not controller.regions and not window._start_button.isEnabled()
-    assert window._group_list.count() == 2 and not window._group_list.isHidden()
+    assert set(window._group_result_cards) == {first, second}
     monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ('<b>訂單</b>', True))
     window._rename_action.trigger()
     assert window._group_combo.currentText() == '<b>訂單</b>'
-    assert '&lt;b&gt;' in window._group_list.currentItem().toolTip()
+    assert '&lt;b&gt;' in window._group_result_cards[second].name.toolTip()
     configure(window)
     assert window._start_button.isEnabled()
     controller.running = True
@@ -506,3 +506,103 @@ def test_overlap_guard_checks_unselected_group_targets(group_window, monkeypatch
     controller.set_region('A', (1000, 1000, 20, 20, 1))
     controller.set_region('B', (1100, 1000, 20, 20, 1))
     assert not window.can_capture()
+
+
+def _populate_result_groups(window, count=3):
+    controller = window.controller
+    ids = []
+    for index in range(count):
+        group_id = controller.active_group_id if index == 0 else controller.add_group(f'欄位 {index + 1}')
+        configure(window)
+        ids.append(group_id)
+        controller._groups[group_id]['result'] = dict(
+            result('mismatch' if index == 1 else 'match'), group_id=group_id,
+            a=f'A 組{index + 1}', b=f'B 組{index + 1}', cycle=index + 1)
+    controller.select_group(ids[0])
+    controller.groups_changed.emit()
+    return ids
+
+
+def _fully_inside_viewport(card, viewport):
+    from PySide6.QtCore import QPoint, QRect
+    return viewport.rect().contains(QRect(card.mapTo(viewport, QPoint()), card.size()))
+
+
+def test_all_group_results_visible_together_without_changing_selected_group(group_window, qapp):
+    window = group_window
+    ids = _populate_result_groups(window)
+    selected = window.controller.active_group_id
+    window.show()
+    qapp.processEvents()
+    assert (window.width(), window.height()) == (348, 560)
+    assert window._all_groups_panel.isVisible()
+    assert window._status_card.isHidden()
+    for index, group_id in enumerate(ids):
+        card = window._group_result_cards[group_id]
+        assert card.isVisible() and _fully_inside_viewport(card, window._scroll.viewport())
+        assert card.previews['A']._full_text == f'A 組{index + 1}'
+        assert card.previews['B']._full_text == f'B 組{index + 1}'
+        assert card.status.text().startswith('不同' if index == 1 else '一致')
+        assert card.activity.text() == '12:34:56'
+    assert window.controller.active_group_id == selected
+
+
+def test_mini_shows_multiple_live_group_pairs_without_selector_navigation(group_window, qapp, monkeypatch):
+    window, controller = group_window, group_window.controller
+    ids = _populate_result_groups(window)
+    window.show()
+    window.set_mini(True)
+    qapp.processEvents()
+    assert window._mini_group_combo.isHidden()
+    assert window._mini_groups_scroll.isVisible()
+    viewport = window._mini_groups_scroll.viewport()
+    for group_id in ids[:2]:
+        card = window._mini_group_result_cards[group_id]
+        assert card.isVisible() and _fully_inside_viewport(card, viewport)
+        assert card.previews['A']._full_text and card.previews['B']._full_text
+    first_card = window._mini_group_result_cards[ids[0]]
+    second_card = window._mini_group_result_cards[ids[1]]
+    original = first_card.previews['A']._full_text
+    before = window.geometry()
+    selected = controller.active_group_id
+    calls = []
+    for method in ('show', 'raise_', 'activateWindow', 'resize', 'move'):
+        monkeypatch.setattr(window, method, lambda *args, name=method: calls.append(name))
+    controller._groups[ids[1]]['result'] = dict(result('uncertain'), group_id=ids[1], a='新的 A', b='新的 B')
+    controller.groups_changed.emit()
+    qapp.processEvents()
+    assert window._mini_group_result_cards[ids[0]] is first_card
+    assert window._mini_group_result_cards[ids[1]] is second_card
+    assert first_card.previews['A']._full_text == original
+    assert second_card.previews['A']._full_text == '新的 A'
+    assert second_card.previews['B']._full_text == '新的 B'
+    assert second_card.status.text() == '待確認'
+    assert window.geometry() == before and not calls and controller.active_group_id == selected
+
+
+def test_all_group_cards_remove_reset_and_scrolling_are_independent(group_window, qapp):
+    window, controller = group_window, group_window.controller
+    ids = _populate_result_groups(window, 6)
+    window.show()
+    qapp.processEvents()
+    bar = window._scroll.verticalScrollBar()
+    bar.setValue(bar.maximum() // 2)
+    position = bar.value()
+    raw = '<img src="https://example.invalid/private"> & 新文字'
+    controller._groups[ids[-1]]['result'] = dict(result('mismatch'), group_id=ids[-1], a=raw)
+    controller.groups_changed.emit()
+    qapp.processEvents()
+    assert bar.value() == position
+    card = window._group_result_cards[ids[-1]]
+    assert '&lt;img' in card.previews['A'].toolTip() and '<img' not in card.previews['A'].toolTip()
+    controller.select_group(ids[-1])
+    controller.set_region('A', (1, 1, 20, 20, 1))
+    assert window._group_result_cards[ids[-1]].previews['A']._full_text == ''
+    assert window._mini_group_result_cards[ids[-1]].previews['B']._full_text == ''
+    assert controller.remove_group(ids[1])
+    assert ids[1] not in window._group_result_cards and ids[1] not in window._mini_group_result_cards
+    for group in list(controller.groups)[1:]:
+        controller.remove_group(group['id'])
+    qapp.processEvents()
+    assert len(window._group_result_cards) == 1
+    assert window._all_groups_panel.isHidden() and window._status_card.isVisible()

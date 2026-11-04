@@ -16,9 +16,10 @@ CHECK_NAMES = (
     'cancelled_results_ignored', 'workers_stopped',
     'unchanged_frames_skipped', 'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
     'mini_results_visible', 'mini_results_live_updated',
+    'all_groups_visible', 'all_groups_live_updated',
     'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all',
 )
-BATCH_CHECK_NAMES = CHECK_NAMES[-4:]
+BATCH_CHECK_NAMES = CHECK_NAMES[-6:]
 
 
 def run_comparison_probe(report_path):
@@ -284,11 +285,12 @@ def _run_batch_checks(app):
     and serialized OCR queue. Pixel labels are synthetic, never real content.
     """
     import numpy as np
-    from PySide6.QtCore import QEventLoop, QTimer
+    from PySide6.QtCore import QEventLoop, QTimer, QRect
 
     from .comparison import capture as capture_module
     from .comparison.controller import ComparisonController
     from .workers.ocr_worker import OcrWorker
+    from .ui.comparison_window import ComparisonWindow
 
     checks = dict.fromkeys(BATCH_CHECK_NAMES, False)
     calls, captures, events, results, unchanged = [], [], [], [], []
@@ -349,7 +351,7 @@ def _run_batch_checks(app):
             return {'text': text, 'status': 'done'}
 
     original_screen = capture_module.mss.mss
-    worker = controller = None
+    worker = controller = window = None
     loop = QEventLoop()
     poll, deadline = QTimer(), QTimer()
     poll.setInterval(10)
@@ -371,6 +373,31 @@ def _run_batch_checks(app):
     def state_changed(state):
         if state == 'unchanged':
             unchanged.append(controller.scanning_group_id)
+
+    def published(result):
+        results.append(dict(result))
+        if len(results) == 2:
+            window.move(120, 0)
+            window.show()
+            app.processEvents()
+            normal = all(card.isVisible() and window._scroll.viewport().rect().contains(
+                QRect(card.mapTo(window._scroll.viewport(), card.rect().topLeft()), card.size()))
+                for card in window._group_result_cards.values())
+            window.set_mini(True)
+            app.processEvents()
+            mini = all(card.isVisible() and window._mini_groups_scroll.viewport().rect().contains(
+                QRect(card.mapTo(window._mini_groups_scroll.viewport(), card.rect().topLeft()), card.size()))
+                for card in window._mini_group_result_cards.values())
+            checks['all_groups_visible'] = (
+                normal and mini and len(window._group_result_cards) == 2
+                and len(window._mini_group_result_cards) == 2)
+            window.hide()
+        elif len(results) == 3:
+            checks['all_groups_live_updated'] = all(
+                mapping[first].previews['A']._full_text == '新資料'
+                and mapping[second].previews['A']._full_text == '乙12'
+                and mapping[second].previews['B']._full_text == '乙13'
+                for mapping in (window._group_result_cards, window._mini_group_result_cards))
 
     def progress():
         nonlocal stage, cancelled_at
@@ -408,7 +435,8 @@ def _run_batch_checks(app):
         if second is None or not all(controller.set_region(name, value)
                                      for name, value in region_sets[2].items()):
             raise ValueError('Second synthetic pair refused')
-        controller.updated.connect(lambda result: results.append(dict(result)))
+        window = ComparisonWindow(controller)
+        controller.updated.connect(published)
         controller.failed.connect(abort)
         controller.state_changed.connect(state_changed)
         worker.engine_failed.connect(abort)
@@ -449,5 +477,8 @@ def _run_batch_checks(app):
             controller._capture.wait(3000)
         if worker is not None:
             worker.wait(3000)
+        if window is not None:
+            window.shutdown()
+            window.deleteLater()
         capture_module.mss.mss = original_screen
     return checks

@@ -189,7 +189,7 @@ try {
             if ($result.phase_a -ne $true -or $result.engine_ready -ne $true -or $result.shutdown_clean -ne $true) {
                 throw 'Application lifecycle incomplete'
             }
-            foreach ($key in @('capture', 'ocr', 'database', 'hotkeys')) {
+            foreach ($key in @('capture', 'ocr', 'database', 'hotkeys', 'history_maintenance')) {
                 if ($result.threads_stopped.$key -ne $true) { throw "Thread still running: $key" }
             }
         }

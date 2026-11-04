@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.9. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.10. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.9"
+TAG = "v1.8.0-rc.10"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,25 +133,23 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版修正縮小核對窗後看不到辨識結果的問題，新增迷你結果窗；「移除所有標點」也會移除空白與換行。
+本版補上90天自動封存，將多組 A／B 結果改為同時呈現，並修正掃描找到的設定與訊號漏接。
 
-### 縮小仍可查看結果
-- 迷你版面將 A／B 即時結果放在固定可見區，縮短視窗也不必捲動尋找結果。
-- 「迷你」可切成小結果窗，保留目前組別、核對狀態、A／B 文字、置頂、開始／暫停及關閉；還原後回到原視窗大小。手動縮短視窗也優先顯示結果。
-- 新結果在迷你窗即時更新；切換組別能查看各組結果，不會改掉正在辨識的位置。Windows 原生最小化仍會隱藏視窗，想保持結果可見請用「迷你」。
+### 90天整理與孤兒節點修正
+- 「設定 → 一般 → 自動封存」預設90天，設0可停用。依最後修改時間已滿設定天數整理；啟動時及程式開啟期間每日檢查，每批200筆，排除釘選、已刪除／已封存及辨識中的紀錄。
+- 封存保留文字、原圖及附件，可在「已歸檔」查看並「取消歸檔」。它不會永久刪除資料或釋出附件空間；複製紀錄不會延後最後修改日期。
+- 修正「已歸檔」混入一般紀錄、浮窗與主控台修改後畫面不同步，以及托盤暫停勾選不同步。資料刷新保留搜尋、篩選、選取及捲動。
+- 關閉剪貼簿監聽／文字收錄立即解除監聽；重新啟用只接收之後的變化，不補收既有剪貼簿。取消與退出會拒絕過期回呼。
+- 27個未生效的舊預設設定退出新設定；舊JSON值仍可載入儲存，但不會啟用未封裝的引擎。移除無使用者的舊訊號匯流排與已完成的rc.3一次性發布流程。
+- 旁支掃描以rc.9來源為基準，14個舊分支皆已在master祖先鏈，PR #1–#12全合併；沒有再次合併或刪除舊分支。選用引擎介面與舊審計快照保留其原本用途，不誤當本版已啟用功能。
 
-### 浮動核對與批量組別
-- 預設每區只顯示一行結果，長文字省略；滑鼠停留可預覽，按「查看全文」才展開詳細文字，視窗不會自動放大。
-- 以組別下拉選單切換，新增組別後分別選取 A、B，可更名或移除。每組獨立保存本次位置、結果、辨識次數與更新時間；至少保留一組，最多20組。
-- 「開始全部」依建立順序逐組核對，所有組別的 A／B 都選好才能啟動。各組共用一個擷取工作及 OCR 佇列，整輪完成後預設等2秒，可調為1–60秒；不同組別不保證在同一時刻擷取。
-- 各組只在畫面像素變動時重跑 OCR；未變的組別保留原結果與時間。切換組別只切換查看內容；新增、更名、移除、重選範圍或更改規則會暫停全部。
-- 預設忽略空白與標點，只比較文字與數字，也忽略其他符號；可改逐字比對。`1.23` 與 `123` 在預設規則可能相同，核對金額請用逐字模式。
-- 綠色表示內容一致，紅色表示發現差異，琥珀色表示需要確認；空白、失敗及待核對結果不會算一致。系統匣以全部組別中最需注意的結果顯示狀態。
-- 「置頂」可隨時切換，自由拖移及調整大小。來源內容須保持可見，核對窗及其他本工具視窗必須避開所有組別的框選範圍，必要時可最小化核對窗繼續監看。
-- 視窗的 ×停止全部組別並關窗；最小化則繼續監看。暫停會停止計時器、清掉摘要與待處理影像；原生呼叫需返回，但不再接著補辨、下一區或下一組。
-- 組別、位置與結果僅留在本次執行記憶體，退出後需重設；不自動複製、不新增歷史或截圖檔。尚未導入表格結構辨識或更換 OCR 模型。
+### A／B 多組結果同時呈現
+- 每組以一張卡片同時顯示名稱、差異狀態、A／B文字與時間，不必逐組切換才能看結果。一般348×560可完整看到3組，迷你320×300至少2組；最多20組，可直接捲動查看。
+- 「設定組別」只用於選取位置、更名、移除與全文；切換設定對象不隱藏其他組別結果。各組依序辨識，各自跳過未變畫面；更新不搶焦點、不自動放大或移動捲動位置。
+- 置頂、暫停、關閉與固定位置沿用；關閉停止整批，最小化繼續已啟動的監看。組別與結果只留本次記憶體，不新增歷史、截圖或自動貼上。
+- 預設忽略空白與標點，只比較文字及數字，金額、負號或標點有意義時請改逐字比對。
 
-螢幕 OCR、PDF／圖片套版、手寫、歷史及檔案位置功能保留。
+螢幕OCR、文件套版、手寫與複製清理維持原用法；沒有導入表格模型或新增確認貼上功能。
 
 ### 複製時移除所有標點與空白
 - 在「設定 → 剪貼簿」啟用「複製時移除所有標點與空白」，預設關閉。`「您好， 世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
@@ -517,6 +515,7 @@ def _check_comparison_probe(report: dict, manifest: dict, frozen: bool) -> None:
                 'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
                 'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
                 'mini_results_visible', 'mini_results_live_updated',
+                'all_groups_visible', 'all_groups_live_updated',
                 'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'}
     checks = report.get('checks')
     require(type(checks) is dict and set(checks) == required
