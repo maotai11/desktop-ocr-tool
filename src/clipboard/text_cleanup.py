@@ -5,7 +5,7 @@ COPY_CLEANUP_OPTIONS = (
     ('copy_remove_commas', '複製時移除逗號（,，）', ',，'),
     ('copy_remove_apostrophes', "複製時移除撇號（'‘’＇）", "'‘’＇"),
     ('copy_remove_newlines', '複製時移除換行（合併同筆文字）', '\r\n\u0085\u2028\u2029'),
-    ('copy_remove_punctuation', '複製時移除所有標點符號', ''),
+    ('copy_remove_punctuation', '複製時移除所有標點與空白', ''),
 )
 
 
@@ -14,9 +14,10 @@ def prepare_copy_text(text: str, cfg=None) -> str:
 
     This is literal formatting, not a numeric parser or an OCR correction. It
     also removes the selected characters from prose, as disclosed in the UI.
-    Newlines are separate opt-in because joining lines can join distinct values.
-    All-punctuation cleanup uses Unicode P categories, including hyphens and
-    decimal points. Symbols (math/currency/emoji), letters and spaces survive.
+    The individual newline option only joins lines when explicitly enabled.
+    All-punctuation cleanup removes Unicode P categories, including hyphens
+    and decimal points, plus Unicode whitespace (including tabs and newlines).
+    Symbols (math/currency/emoji), letters and format/combining marks survive.
     """
     if cfg is None:
         return text
@@ -25,5 +26,5 @@ def prepare_copy_text(text: str, cfg=None) -> str:
     prepared = text.translate(str.maketrans('', '', removed)) if removed else text
     if cfg.get('clipboard', 'copy_remove_punctuation', default=False) is True:
         prepared = ''.join(char for char in prepared
-                           if not unicodedata.category(char).startswith('P'))
+                           if not unicodedata.category(char).startswith('P') and not char.isspace())
     return prepared

@@ -26,10 +26,12 @@ def copy_text(text: str, cfg=None, *, automatic=False) -> str:
 
 
 def copy_text_batch(texts, cfg=None) -> str:
-    """Format each record separately, retaining boundaries between records."""
+    """Retain record boundaries unless all punctuation/whitespace is removed."""
     prepared = [prepare_copy_text(text, cfg) for text in texts]
     prepared = [text for text in prepared if text and text.strip()]
-    return write_text_to_clipboard('\n\n'.join(prepared)) if prepared else ''
+    separator = ('' if cfg is not None
+                 and cfg.get('clipboard', 'copy_remove_punctuation', default=False) is True else '\n\n')
+    return write_text_to_clipboard(separator.join(prepared)) if prepared else ''
 
 
 def write_text_to_clipboard(text: str, *, automatic=False) -> str:

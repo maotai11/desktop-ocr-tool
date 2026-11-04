@@ -267,12 +267,16 @@ class SettingsDialog(QDialog):
         for key, label, _ in COPY_CLEANUP_OPTIONS:
             check = QCheckBox(label)
             check.setChecked(self._cfg.get('clipboard', key, default=False) is True)
+            if key == 'copy_remove_punctuation':
+                check.setToolTip('移除 Unicode 標點及所有空白，包含半形／全形空格、Tab 與換行；原始文字不變。')
             self._copy_cleanup_checks[key] = check
             clf.addRow('複製清理：', check)
         cleanup_note = QLabel(
             '只改複製內容，原始文字不變；預設皆關閉。\n'
             '所有標點包含小數點、百分號與連字號：-1.23 → 123。\n'
-            '移除換行會合併同筆文字；批量紀錄仍以空行分隔。儲存後立即生效。')
+            '「所有標點與空白」也移除空格、全形空白、Tab 與換行。\n'
+            '開啟時多筆紀錄也直接接合；其他清理仍以空行分隔紀錄。\n'
+            '只選「移除換行」仍保留其他空白。儲存後立即生效。')
         cleanup_note.setWordWrap(True)
         clf.addRow('', cleanup_note)
 

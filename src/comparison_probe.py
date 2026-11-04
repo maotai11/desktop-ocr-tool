@@ -15,6 +15,7 @@ CHECK_NAMES = (
     'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
     'cancelled_results_ignored', 'workers_stopped',
     'unchanged_frames_skipped', 'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
+    'mini_results_visible', 'mini_results_live_updated',
     'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all',
 )
 BATCH_CHECK_NAMES = CHECK_NAMES[-4:]
@@ -28,7 +29,7 @@ def run_comparison_probe(report_path):
     and this must never be described as model accuracy or inference evidence.
     """
     import numpy as np
-    from PySide6.QtCore import QEventLoop, QTimer, Qt
+    from PySide6.QtCore import QEventLoop, QTimer, QRect, Qt
     from PySide6.QtWidgets import QApplication
 
     from .comparison import capture as capture_module
@@ -139,6 +140,23 @@ def run_comparison_probe(report_path):
             abort()
             return
         results.append(dict(result))
+        if len(results) == 1:
+            window.move(80, 80)
+            window.set_mini(True)
+            window.show()
+            app.processEvents()
+            report['checks']['mini_results_visible'] = (
+                window._mini_mode and window.width() <= 360 and window.height() <= 380
+                and all(preview.isVisible() and window.rect().contains(
+                    QRect(preview.mapTo(window, preview.rect().topLeft()), preview.size()))
+                        for preview in window._mini_previews.values()))
+        elif len(results) == 2:
+            report['checks']['mini_results_live_updated'] = (
+                window._mini_mode and window._mini_previews['A']._full_text == result['a']
+                and window._mini_previews['B']._full_text == result['b']
+                and result['a'] != result['b']
+                and all(preview.isVisible() for preview in window._mini_previews.values()))
+            window.hide()
         if len(results) == 4:
             stage = 'start_cancel'
             controller.pause()

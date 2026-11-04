@@ -320,29 +320,83 @@ def test_settings_cleanup_save_reload_roundtrip(qtbot, tmp_path, monkeypatch):
     ('「中文」，『全形』。！？；：（測試）【123】', '中文全形測試123'),
     ('_A—B(C)[D]{E}“F”‘G’…؟؛', 'ABCDEFG'),
     ('甲。𠮷！ＡＢＣ１２３，e\u0301 🙂 +−×÷=￥$€\t\n乙',
-     '甲𠮷ＡＢＣ１２３e\u0301 🙂 +−×÷=￥$€\t\n乙'),
-    ('-1,234.50％ / 2:30', '123450  230'),
+     '甲𠮷ＡＢＣ１２３e\u0301🙂+−×÷=￥$€乙'),
+    ('-1,234.50％ / 2:30', '123450230'),
 ])
 def test_all_punctuation_removes_unicode_punctuation_and_preserves_text_symbols(source, expected):
     assert prepare_copy_text(source, Config(copy_remove_punctuation=True)) == expected
     assert prepare_copy_text(source, Config()) == source
 
 
-def test_all_punctuation_and_newline_options_remain_independent(qapp):
+def test_all_punctuation_includes_whitespace_and_joins_batch_records(qapp):
     text = '甲，\n乙。\t丙！'
     cfg = Config(copy_remove_punctuation=True)
     assert copy_text(text, cfg)
-    assert qapp.clipboard().text() == '甲\n乙\t丙'
+    assert qapp.clipboard().text() == '甲乙丙'
     cfg.set('clipboard', 'copy_remove_newlines', True)
     assert copy_text_batch([text, '丁（戊）'], cfg)
-    assert qapp.clipboard().text() == '甲乙\t丙\n\n丁戊'
+    assert qapp.clipboard().text() == '甲乙丙丁戊'
+
+
+@pytest.mark.parametrize('remove_newlines', [False, True])
+def test_batch_punctuation_and_whitespace_cleanup_does_not_add_record_separators(qapp, remove_newlines):
+    texts = ['甲\u3000，\n乙', '\u00a0丙（丁）\t', ' ！？ ']
+    original = list(texts)
+    cfg = Config(copy_remove_punctuation=True, copy_remove_newlines=remove_newlines)
+    before = copy.deepcopy(cfg.data)
+    assert copy_text_batch(texts, cfg)
+    assert qapp.clipboard().text() == '甲乙丙丁'
+    assert texts == original and cfg.data == before
+
+
+@pytest.mark.parametrize('space', [' ', '\u3000', '\u00a0', '\u2000', '\u2003', '\u2009',
+                                  '\u202f', '\u205f', '\t', '\n', '\r', '\r\n', '\v', '\f',
+                                  '\u0085', '\u2028', '\u2029', '\x1c', '\x1d', '\x1e', '\x1f'])
+def test_all_punctuation_removes_unicode_whitespace_including_line_separators(space):
+    text = f'甲{space}，{space}乙'
+    assert prepare_copy_text(text, Config(copy_remove_punctuation=True)) == '甲乙'
+    assert prepare_copy_text(text, Config()) == text
+
+
+def test_all_punctuation_keeps_zero_width_format_and_combining_characters():
+    text = 'e\u0301，\u200b甲\u200d乙\ufeff\u2060 👩\u200d💻'
+    assert prepare_copy_text(text, Config(copy_remove_punctuation=True)) == 'e\u0301\u200b甲\u200d乙\ufeff\u2060👩\u200d💻'
+
+
+def test_individual_newline_cleanup_still_preserves_other_whitespace():
+    text = '甲 \u3000\t\u00a0，\n乙'
+    assert prepare_copy_text(text, Config(copy_remove_newlines=True)) == '甲 \u3000\t\u00a0，乙'
+
+
+def test_legacy_enabled_punctuation_key_keeps_working_after_reload(tmp_path, monkeypatch):
+    from src.core.config import ConfigManager
+    monkeypatch.setenv('DESKTOP_OCR_HOME', str(tmp_path))
+    (tmp_path / 'config').mkdir()
+    (tmp_path / 'config/settings.json').write_text(json.dumps({
+        'clipboard': {'copy_remove_punctuation': True, 'copy_remove_newlines': False,
+                      'monitor_clipboard': False}}), encoding='utf-8')
+    cfg = ConfigManager()
+    assert cfg.get('clipboard', 'copy_remove_punctuation') is True
+    assert cfg.get('clipboard', 'copy_remove_newlines') is False
+    assert prepare_copy_text('甲\u3000，\n乙', cfg) == '甲乙'
+    assert cfg.get('clipboard', 'monitor_clipboard') is False
+
+
+def test_settings_all_cleanup_label_and_tooltip_disclose_spaces_and_newlines(qtbot):
+    from src.ui.settings_dialog import SettingsDialog
+    dialog = SettingsDialog(Config())
+    qtbot.addWidget(dialog)
+    checkbox = dialog._copy_cleanup_checks['copy_remove_punctuation']
+    assert checkbox.text() == '複製時移除所有標點與空白'
+    assert all(text in checkbox.toolTip() for text in ('全形', 'Tab', '換行', '原始文字不變'))
+    assert not checkbox.isChecked()
 
 
 def test_punctuation_only_output_keeps_clipboard_and_manual_epoch(qapp):
     cfg = Config(copy_remove_punctuation=True)
     copy_text('保留內容')
     previous = get_last_write_id(), get_clipboard_epoch()
-    assert not copy_text('！？「」\n', cfg)
+    assert not copy_text('！？「」\u3000\u00a0 \t\r\n', cfg)
     assert qapp.clipboard().text() == '保留內容'
     assert (get_last_write_id(), get_clipboard_epoch()) == previous
 
@@ -362,7 +416,7 @@ def test_punctuation_cleanup_at_ocr_copy_boundary_preserves_saved_original(
     if mode == 'select':
         assert qapp.clipboard().text() == '原剪貼簿'
         Pipeline.copy_ocr_selection(owner, item_id, dto, text)
-    assert qapp.clipboard().text() == '甲A 123450\nＢ乙'
+    assert qapp.clipboard().text() == '甲A123450Ｂ乙'
     assert item_repo.get_by_id(item_id) == before
     assert item_repo.get_ocr_attempts(item_id) == attempts
 

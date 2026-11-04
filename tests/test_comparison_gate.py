@@ -10,6 +10,7 @@ from scripts.audit_runtime_network import MODES
 
 @pytest.mark.parametrize('name', ['unchanged_frames_skipped', 'changed_frames_resumed',
                                   'close_stops_polling', 'pin_toggle_available',
+                                  'mini_results_visible', 'mini_results_live_updated',
                                   'batch_groups_isolated', 'batch_serialized',
                                   'batch_unchanged_skipped', 'batch_cancel_stops_all'])
 def test_new_idle_and_window_checks_cannot_be_missing_or_false(name):

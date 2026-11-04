@@ -66,6 +66,7 @@ def comparison_probe(version, executable_hash, frozen=True):
             'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
             'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
             'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
+            'mini_results_visible', 'mini_results_live_updated',
             'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'), True))
 
 

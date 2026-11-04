@@ -67,6 +67,10 @@ class ComparisonWindow(QWidget):
                          | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowStaysOnTopHint)
         self.controller = controller
         self._compact = True
+        self._mini_mode = False
+        self._mini_ready = False
+        self._changing_mini_layout = False
+        self._normal_size = QSize(348, 560)
         self._selection_active = self._closing = self._closed_by_user = False
         self._screen = self._last_result = None
         self._cycle_result_visible = False
@@ -74,7 +78,7 @@ class ComparisonWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
         # Match the desktop launcher, including its minimum supported footprint.
-        self.setMinimumSize(320, 480)
+        self.setMinimumSize(320, 280)
         self.resize(348, 560)
         self.setStyleSheet(f'''
             QWidget {{ background: {_BG}; color: {_TEXT_PRI}; font-size: 12px; }}
@@ -115,6 +119,12 @@ class ComparisonWindow(QWidget):
         title = _label('文字核對')
         title.setStyleSheet('font-size: 15px; font-weight: 600;')
         heading.addWidget(title, 1)
+        self._mini_button = QPushButton('迷你')
+        self._mini_button.setObjectName('miniComparison')
+        self._mini_button.setCheckable(True)
+        self._mini_button.setToolTip('縮成仍顯示 A／B 結果的迷你視窗')
+        self._mini_button.toggled.connect(self.set_mini)
+        heading.addWidget(self._mini_button)
         self._pin_button = QPushButton('置頂')
         self._pin_button.setObjectName('pinComparison')
         self._pin_button.setCheckable(True)
@@ -131,7 +141,52 @@ class ComparisonWindow(QWidget):
         heading.addWidget(self._close_button)
         outer.addLayout(heading)
 
-        scroll = QScrollArea()
+        self._mini_panel = QWidget()
+        mini_layout = QVBoxLayout(self._mini_panel)
+        mini_layout.setContentsMargins(0, 0, 0, 0)
+        mini_layout.setSpacing(6)
+        self._mini_group_combo = QComboBox()
+        self._mini_group_combo.setObjectName('miniComparisonGroups')
+        self._mini_group_combo.setAccessibleName('迷你視窗核對組別')
+        self._mini_group_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self._mini_group_combo.setMinimumWidth(0)
+        apply_combo_box_theme(self._mini_group_combo)
+        self._mini_group_combo.currentIndexChanged.connect(self._select_mini_group)
+        mini_layout.addWidget(self._mini_group_combo)
+        self._mini_status_card = QFrame()
+        self._mini_status_card.setObjectName('statusCard')
+        mini_status_layout = QVBoxLayout(self._mini_status_card)
+        mini_status_layout.setContentsMargins(10, 7, 10, 7)
+        mini_status_layout.setSpacing(2)
+        self._mini_status = _label('準備核對')
+        self._mini_status.setAccessibleName('迷你視窗核對結果')
+        self._mini_activity = _label('選好 A、B，即可開始')
+        self._mini_activity.setObjectName('muted')
+        mini_status_layout.addWidget(self._mini_status)
+        mini_status_layout.addWidget(self._mini_activity)
+        mini_layout.addWidget(self._mini_status_card)
+        self._mini_previews = {}
+        for name in ('A', 'B'):
+            pane = QFrame()
+            pane.setObjectName('comparisonPane')
+            row = QHBoxLayout(pane)
+            row.setContentsMargins(9, 3, 9, 3)
+            row.setSpacing(6)
+            label = _label(name)
+            label.setStyleSheet('font-weight: 600;')
+            row.addWidget(label)
+            preview = _PreviewLabel()
+            preview.setObjectName(f'miniComparisonPreview{name}')
+            preview.setAccessibleName(f'迷你視窗 {name} 區辨識文字')
+            preview.set_preview('')
+            self._mini_previews[name] = preview
+            row.addWidget(preview, 1)
+            mini_layout.addWidget(pane)
+        mini_layout.addStretch(1)
+        self._mini_panel.hide()
+        outer.addWidget(self._mini_panel, 1)
+
+        scroll = self._scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
@@ -300,6 +355,8 @@ class ComparisonWindow(QWidget):
         self._refresh_regions()
         self._sync_buttons()
         self._set_status('準備核對', _TEXT_SEC)
+        self._sync_mini_result()
+        self._mini_ready = True
 
     def _groups(self):
         return getattr(self.controller, 'groups', [{'id': 'default', 'name': '第 1 組',
@@ -316,11 +373,13 @@ class ComparisonWindow(QWidget):
         labels = {'match': ('一致', _SUCCESS), 'mismatch': ('不同', _ERROR), 'uncertain': ('待確認', _WARNING)}
         different = sum((group.get('result') or {}).get('verdict') == 'mismatch' for group in groups)
         self._group_summary.setText(f'{len(groups)} 組' + (f' · {different} 組不同' if different else ''))
-        with QSignalBlocker(self._group_combo), QSignalBlocker(self._group_list):
+        with QSignalBlocker(self._group_combo), QSignalBlocker(self._group_list), QSignalBlocker(self._mini_group_combo):
             self._group_combo.clear()
             self._group_list.clear()
+            self._mini_group_combo.clear()
             for index, group in enumerate(groups):
                 self._group_combo.addItem(group['name'], group['id'])
+                self._mini_group_combo.addItem(group['name'], group['id'])
                 result = group.get('result') or {}
                 configured = set(group['regions']) == {'A', 'B'}
                 status, color = labels.get(result.get('verdict'), ('待核對' if configured else '未設定', _TEXT_SEC))
@@ -332,6 +391,7 @@ class ComparisonWindow(QWidget):
                 self._group_list.addItem(item)
                 if group['id'] == active:
                     self._group_combo.setCurrentIndex(index)
+                    self._mini_group_combo.setCurrentIndex(index)
                     self._group_list.setCurrentItem(item)
         self._group_list.setVisible(len(groups) > 1)
         editable = hasattr(self.controller, 'add_group') and not self._closing
@@ -349,6 +409,7 @@ class ComparisonWindow(QWidget):
             elif result is None and self._last_result is not None:
                 self._group_changed()
         self._sync_buttons()
+        self._sync_mini_result()
 
     def _group_changed(self):
         self._refresh_groups()
@@ -366,9 +427,15 @@ class ComparisonWindow(QWidget):
             self._set_status('準備核對', _TEXT_SEC)
             self._activity.setText('選好 A、B，即可開始' if not current or len(current['regions']) < 2 else '尚未產生結果')
         self._sync_buttons()
+        self._sync_mini_result()
 
     def _select_group(self):
         group_id = self._group_combo.currentData()
+        if group_id is not None and hasattr(self.controller, 'select_group'):
+            self.controller.select_group(group_id)
+
+    def _select_mini_group(self):
+        group_id = self._mini_group_combo.currentData()
         if group_id is not None and hasattr(self.controller, 'select_group'):
             self.controller.select_group(group_id)
 
@@ -472,6 +539,9 @@ class ComparisonWindow(QWidget):
         self._status.setStyleSheet(f'color: {color}; font-size: 19px; font-weight: 600; border: none;')
         self._status_card.setStyleSheet(f'QFrame#statusCard {{ border: 1px solid {_BORDER}; '
                                        f'border-left: 3px solid {color}; border-radius: 9px; }}')
+        self._mini_status.setText(text)
+        self._mini_status.setStyleSheet(f'color: {color}; font-size: 16px; font-weight: 600; border: none;')
+        self._mini_status_card.setStyleSheet(self._status_card.styleSheet())
 
     def _state_changed(self, state):
         self._refresh_regions()
@@ -491,6 +561,7 @@ class ComparisonWindow(QWidget):
                 self._set_status('已暫停' if state == 'paused' else '準備核對', _TEXT_SEC)
                 self._activity.setText('選好 A、B，即可開始')
             self._note.setText('已暫停，不擷取畫面。' if state == 'paused' else '各組依序核對，畫面未變就略過。')
+        self._sync_mini_result()
 
     def _updated(self, result):
         if self._closing or self._closed_by_user or self._selection_active:
@@ -523,6 +594,7 @@ class ComparisonWindow(QWidget):
         self._activity.setText(f'{stamp} · 第 {result.get("cycle", 0)} 次核對')
         self._note.setText(note)
         self._sync_buttons()
+        self._sync_mini_result()
 
     def _failed(self, message):
         self._set_status('需要確認', _WARNING)
@@ -530,6 +602,12 @@ class ComparisonWindow(QWidget):
         self._refresh_groups()
         self._refresh_regions()
         self._sync_buttons()
+        self._sync_mini_result()
+
+    def _sync_mini_result(self):
+        self._mini_activity.setText(self._activity.text())
+        for name, key in (('A', 'a'), ('B', 'b')):
+            self._mini_previews[name].set_preview((self._last_result or {}).get(key, ''))
 
     def _target_regions(self):
         return getattr(self.controller, 'target_regions', tuple(self.controller.regions.values()))
@@ -581,6 +659,8 @@ class ComparisonWindow(QWidget):
         return False
 
     def set_compact(self, compact):
+        if not compact and self._mini_mode:
+            self.set_mini(False)
         self._compact = bool(compact)
         self._details.setVisible(not compact)
         self._compact_button.setText('查看全文' if compact else '收合全文')
@@ -589,6 +669,42 @@ class ComparisonWindow(QWidget):
         for name, key in (('A', 'a'), ('B', 'b')):
             self._texts[name].setPlainText((self._last_result or {}).get(key, '') if not compact else '')
         # The result update and detail toggle never grow or reposition the tool.
+
+    def set_mini(self, mini, *, resize=True):
+        """Keep live result lines visible when the user shrinks the tool."""
+        mini = bool(mini)
+        if self._mini_mode == mini:
+            return
+        self._changing_mini_layout = True
+        try:
+            position = self.pos()
+            if mini and self.height() >= 540:
+                self._normal_size = QSize(self.size())
+            self._mini_mode = mini
+            with QSignalBlocker(self._mini_button):
+                self._mini_button.setChecked(mini)
+            self._mini_button.setText('還原' if mini else '迷你')
+            self._scroll.setVisible(not mini)
+            self._mini_panel.setVisible(mini)
+            self._note.setVisible(not mini)
+            with QSignalBlocker(self._compact_button):
+                self._compact_button.setChecked(True if mini else self._compact)
+            self._compact_button.setText('查看全文' if mini or self._compact else '收合全文')
+            self._sync_mini_result()
+            if resize:
+                self.resize(QSize(320, 300) if mini else self._normal_size)
+                self.move(position)
+        finally:
+            self._changing_mini_layout = False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self._mini_ready or self._changing_mini_layout:
+            return
+        if not self._mini_mode and self.height() < 540:
+            self.set_mini(True, resize=False)
+        elif self._mini_mode and self.height() >= 560:
+            self.set_mini(False, resize=False)
 
     def set_pinned(self, pinned):
         visible, position = self.isVisible(), self.pos()

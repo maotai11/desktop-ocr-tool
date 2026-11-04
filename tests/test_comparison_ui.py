@@ -302,7 +302,7 @@ def test_default_footprint_matches_launcher_and_details_do_not_resize(window, qa
     window.show()
     qapp.processEvents()
     assert (window.width(), window.height()) == (348, 560)
-    assert (window.minimumWidth(), window.minimumHeight()) == (320, 480)
+    assert (window.minimumWidth(), window.minimumHeight()) == (320, 280)
     assert window._details.isHidden()
     before = window.geometry()
     window.controller.updated.emit(dict(result(), a='A' * 100_000))
@@ -328,6 +328,115 @@ def test_ocr_tooltips_escape_html_and_preserve_plain_full_text(window):
     assert '&lt;img' in tooltip and '&amp;' in tooltip
     window.set_compact(False)
     assert window._texts['A'].toPlainText() == raw
+
+
+def _assert_mini_results_visible(window):
+    from PySide6.QtCore import QPoint, QRect
+    for widget in (window._mini_group_combo, window._mini_status,
+                   window._mini_previews['A'], window._mini_previews['B'],
+                   window._start_button, window._pause_button, window._close_button):
+        assert widget.isVisible()
+        bounds = QRect(widget.mapTo(window, QPoint(0, 0)), widget.size())
+        assert window.rect().contains(bounds), (widget.objectName(), bounds, window.rect())
+
+
+def test_mini_mode_keeps_both_live_results_visible_and_restores_size_position(window, qapp, monkeypatch):
+    configure(window)
+    window.show()
+    window.move(130, 90)
+    qapp.processEvents()
+    original = window.geometry()
+    original_position = window.pos()
+    window._mini_button.click()
+    qapp.processEvents()
+    assert window._mini_mode and window._mini_button.text() == '還原'
+    assert (window.width(), window.height()) == (320, 300)
+    assert window.pos() == original_position
+    assert not window._scroll.isVisible()
+    _assert_mini_results_visible(window)
+    calls = []
+    for method in ('show', 'raise_', 'activateWindow', 'resize', 'move'):
+        monkeypatch.setattr(window, method, lambda *args, name=method: calls.append(name))
+    window.controller.updated.emit(dict(result('mismatch'), a='A 新文字 123', b='B 新文字 456'))
+    qapp.processEvents()
+    assert window._mini_status.text() == '發現差異'
+    assert window._mini_previews['A']._full_text == 'A 新文字 123'
+    assert window._mini_previews['B']._full_text == 'B 新文字 456'
+    assert calls == []
+    _assert_mini_results_visible(window)
+    monkeypatch.undo()
+    window._mini_button.click()
+    qapp.processEvents()
+    assert not window._mini_mode and window.geometry() == original
+    assert window._scroll.isVisible()
+
+
+@pytest.mark.parametrize('height', [480, 300, 280])
+def test_manual_shrink_uses_visible_result_layout_at_every_small_size(window, qapp, height):
+    window.show()
+    qapp.processEvents()
+    window.resize(320, height)
+    window.controller.updated.emit(dict(result(), a='A123', b='A123'))
+    qapp.processEvents()
+    assert window._mini_mode and window.height() == height
+    _assert_mini_results_visible(window)
+    assert window._mini_previews['A'].text() == 'A123'
+    assert window._mini_previews['B'].text() == 'A123'
+    window.resize(348, 560)
+    qapp.processEvents()
+    assert not window._mini_mode and window._scroll.isVisible()
+
+
+def test_requesting_full_text_from_mini_restores_normal_view_without_losing_result(window, qapp):
+    raw = '<b>A</b>\n' + '長文字' * 50
+    window.controller.updated.emit(dict(result(), a=raw))
+    window.show()
+    window.set_mini(True)
+    window._compact_button.click()
+    qapp.processEvents()
+    assert not window._mini_mode and not window._compact
+    assert window._details.isVisible()
+    assert window._texts['A'].toPlainText() == raw
+
+
+def test_mini_from_expanded_details_can_reopen_full_text_in_one_click(window, qapp):
+    window.show()
+    window.controller.updated.emit(dict(result(), a='完整原文'))
+    window.set_compact(False)
+    window.set_mini(True)
+    assert window._compact_button.text() == '查看全文'
+    window._compact_button.click()
+    qapp.processEvents()
+    assert not window._mini_mode and not window._compact
+    assert window._details.isVisible()
+    assert window._texts['A'].toPlainText() == '完整原文'
+
+
+def test_mini_group_switch_and_close_keep_independent_results(group_window, qapp, monkeypatch):
+    window, controller = group_window, group_window.controller
+    first = controller.active_group_id
+    second = controller.add_group('第二組')
+    controller._groups[first]['result'] = dict(result(), group_id=first, a='第一組 A', b='第一組 B')
+    controller._groups[second]['result'] = dict(result('mismatch'), group_id=second, a='第二組 A', b='第二組 B')
+    window.show()
+    window.set_mini(True)
+    controller.running = True
+    window._mini_group_combo.setCurrentIndex(window._mini_group_combo.findData(first))
+    qapp.processEvents()
+    assert controller.running and window._mini_previews['A']._full_text == '第一組 A'
+    window._mini_group_combo.setCurrentIndex(window._mini_group_combo.findData(second))
+    assert controller.running and window._mini_previews['B']._full_text == '第二組 B'
+    assert window._mini_status.text() == '發現差異'
+    assert controller.rename_group(second, '新組名')
+    assert window._mini_group_combo.currentText() == '新組名'
+    assert controller.add_group('尚未設定')
+    assert window._mini_previews['A']._full_text == ''
+    assert window._mini_previews['B']._full_text == ''
+    assert window._mini_status.text() == '準備核對'
+    window._close_button.click()
+    assert not controller.running and not window.isVisible()
+    assert not any(timer.isActive() for timer in
+                   (controller._cycle_timer, controller._retry, controller._deadline))
 
 
 @pytest.fixture
