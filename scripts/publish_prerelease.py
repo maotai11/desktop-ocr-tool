@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.8. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.9. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.8"
+TAG = "v1.8.0-rc.9"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,7 +133,12 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版將 A／B 核對調整為與桌面浮動工具一致的 348 × 560 主窗，並新增最多 20 組獨立核對位置。
+本版修正縮小核對窗後看不到辨識結果的問題，新增迷你結果窗；「移除所有標點」也會移除空白與換行。
+
+### 縮小仍可查看結果
+- 迷你版面將 A／B 即時結果放在固定可見區，縮短視窗也不必捲動尋找結果。
+- 「迷你」可切成小結果窗，保留目前組別、核對狀態、A／B 文字、置頂、開始／暫停及關閉；還原後回到原視窗大小。手動縮短視窗也優先顯示結果。
+- 新結果在迷你窗即時更新；切換組別能查看各組結果，不會改掉正在辨識的位置。Windows 原生最小化仍會隱藏視窗，想保持結果可見請用「迷你」。
 
 ### 浮動核對與批量組別
 - 預設每區只顯示一行結果，長文字省略；滑鼠停留可預覽，按「查看全文」才展開詳細文字，視窗不會自動放大。
@@ -148,9 +153,9 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 
 螢幕 OCR、PDF／圖片套版、手寫、歷史及檔案位置功能保留。
 
-### 複製時移除所有標點
-- 在「設定 → 剪貼簿」啟用「複製時移除所有標點符號」，預設關閉。`「您好，世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
-- 保留文字、數字、空格與換行；數學／貨幣符號不屬於此標點選項。小數點與連字號會移除，例如 `1.23` 變為 `123`，請按用途選擇。
+### 複製時移除所有標點與空白
+- 在「設定 → 剪貼簿」啟用「複製時移除所有標點與空白」，預設關閉。`「您好， 世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
+- 同時移除半形／全形空格、Tab、換行及 Unicode 空白，多筆複製也直接接合、不再加入空行。保留文字、數字及數學／貨幣符號。小數點與連字號會移除，例如 `1.23` 變為 `123`，請按用途選擇。
 - 原有單獨移除逗號、撇號與換行的設定仍保留，只影響一般 OCR／歷史的複製輸出，不修改原始資料、手寫候選或文件套版模板。A／B 核對使用自己視窗的比較規則。
 
 螢幕 OCR 仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。PDF／圖片套版、手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
@@ -511,6 +516,7 @@ def _check_comparison_probe(report: dict, manifest: dict, frozen: bool) -> None:
                 'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
                 'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
                 'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
+                'mini_results_visible', 'mini_results_live_updated',
                 'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'}
     checks = report.get('checks')
     require(type(checks) is dict and set(checks) == required
