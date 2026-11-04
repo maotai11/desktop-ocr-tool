@@ -24,6 +24,8 @@ class Pipeline(QObject):
         ocr.set_repository(repo, files)
         self.closing = self.closed = False
         self._database_closed = False
+        self.history_maintenance = None
+        self._results_drained = False
         self._ocr_selections = {}
         self._tools_poll = QTimer(self)
         self._tools_poll.setInterval(25)
@@ -53,6 +55,14 @@ class Pipeline(QObject):
         ocr.finished.connect(self.ocr_stopped)
         db_thread.finished.connect(self.db_stopped)
 
+    def set_history_maintenance(self, controller):
+        self.history_maintenance = controller
+        controller.stopped.connect(self._maybe_stop_database)
+
+    def _refresh_history_views(self):
+        refresh = getattr(self.widget, 'refresh_history_views', self.widget.refresh_list)
+        refresh()
+
     @Slot(str)
     def dispatch_hotkey(self, name):
         if not self.closing:
@@ -79,7 +89,7 @@ class Pipeline(QObject):
     @Slot(int)
     @Slot(int, object)
     def saved(self, item_id, clipboard_epoch=None):
-        self.widget.refresh_list()
+        self._refresh_history_views()
         item = self.repo.get_by_id(item_id)
         auto_capture = self.cfg and self.cfg.get('capture', 'auto_ocr_on_capture', default=True)
         if item and item.raw_image_path and (item.source_mode == 'region_ocr' or
@@ -89,7 +99,7 @@ class Pipeline(QObject):
 
     @Slot(int)
     def updated(self, item_id):
-        self.widget.refresh_list()
+        self._refresh_history_views()
 
     @Slot(int, object)
     def recognized(self, item_id, result):
@@ -199,6 +209,8 @@ class Pipeline(QObject):
         if self.closing:
             return
         self.closing = True
+        if self.history_maintenance is not None:
+            self.history_maintenance.stop()
         for dialog in list(self._ocr_selections.values()):
             dialog.reject()
         self._shutdown_timer.start()
@@ -211,7 +223,8 @@ class Pipeline(QObject):
             self.widget.shutdown_comparison()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
-            self.clipboard.pause(True)
+            stop = getattr(self.clipboard, 'stop', None)
+            stop() if stop is not None else self.clipboard.pause(True)
         if self.hotkeys and not self.hotkeys.stop():
             logger.warning('熱鍵執行緒仍在停止中')
         self.capture.stop()
@@ -245,6 +258,13 @@ class Pipeline(QObject):
             if not self.ocr._started_once:
                 self.ocr_stopped()
         elif token == 'results':
+            self._results_drained = True
+            self._maybe_stop_database()
+
+    @Slot()
+    def _maybe_stop_database(self):
+        if (self.closing and self._results_drained
+                and (self.history_maintenance is None or self.history_maintenance.is_stopped)):
             self.db_thread.quit()
 
     @Slot()

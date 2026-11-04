@@ -38,7 +38,8 @@ def candidate(tmp_path, monkeypatch):
                                     **profile_report(profiles), checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
         'frozen-app-smoke.json': dict(common, probe='application_lifecycle', phase_a=True,
                                      engine_ready=True, shutdown_clean=True,
-                                     threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True}),
+                                     threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True,
+                                                      'history_maintenance': True}),
     }
     probes['frozen-handwriting.json'] = handwriting_probe(VERSION, hashlib.sha256(exe).hexdigest())
     probes['frozen-handwriting-image.json'] = image_probe(VERSION, hashlib.sha256(exe).hexdigest(), profiles)

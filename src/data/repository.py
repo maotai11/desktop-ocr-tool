@@ -2,7 +2,7 @@
 import logging
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import replace
 from contextlib import contextmanager
 from typing import Optional, List
@@ -13,6 +13,23 @@ from ..core.constants import DEDUP_SECONDS
 
 logger = logging.getLogger(__name__)
 _UNSET = object()
+
+
+class _ArchiveCancelled(Exception):
+    """Roll back a batch cancelled before its transaction completes."""
+
+
+_ARCHIVE_ELIGIBLE = """
+    is_deleted=0 AND is_archived=0 AND is_pinned=0
+    AND COALESCE(ocr_status,'none') NOT IN ('pending','processing')
+    AND updated_at >= '0001-01-01 00:00:00' AND updated_at <= ?
+    AND length(updated_at)=19 AND updated_at=datetime(julianday(updated_at))
+    AND NOT EXISTS (
+        SELECT 1 FROM ocr_attempts
+        WHERE ocr_attempts.job_id=items.ocr_job_id
+          AND ocr_attempts.completed_at IS NULL
+    )
+"""
 
 
 def _row_to_item(row: sqlite3.Row) -> ItemDTO:
@@ -373,6 +390,59 @@ class ItemRepository:
         )
         self._conn.commit()
 
+    def archive_inactive_batch(self, days: int, *, now=None, limit: int = 200,
+                               cancelled=None) -> dict:
+        """Archive a bounded set of inactive items, without deleting any data.
+
+        Age means time since the last update, so editing or unarchiving starts
+        a fresh retention period. Pin/deletion/job checks are repeated by the
+        UPDATE itself. All writes share the database transaction lock, and a
+        late cancellation rolls back this batch before it can commit.
+        """
+        if type(days) is not int or not 0 <= days <= 36500:
+            raise ValueError('Invalid automatic archive age')
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError('Invalid automatic archive batch size')
+        if days == 0:
+            return {'archived_ids': [], 'has_more': False, 'cutoff': None, 'cancelled': False}
+        now = datetime.now() if now is None else now
+        if not isinstance(now, datetime) or now.utcoffset() is not None:
+            raise ValueError('Automatic archive time must be local and timezone-naive')
+        try:
+            cutoff = (now - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        except OverflowError as exc:
+            raise ValueError('Invalid automatic archive time range') from exc
+        stamp = now.strftime('%Y-%m-%d %H:%M:%S')
+
+        def check_cancelled():
+            if cancelled is not None and cancelled.is_set():
+                raise _ArchiveCancelled()
+
+        try:
+            with self._db.transaction():
+                check_cancelled()
+                candidates = [row['id'] for row in self._conn.execute(
+                    f'SELECT id FROM items INDEXED BY idx_items_archive_age WHERE {_ARCHIVE_ELIGIBLE} '
+                    'ORDER BY updated_at,id LIMIT ?', (cutoff, limit))]
+                check_cancelled()
+                archived = []
+                if candidates:
+                    placeholders = ','.join('?' for _ in candidates)
+                    archived = [row['id'] for row in self._conn.execute(
+                        f'UPDATE items SET is_archived=1,updated_at=? WHERE id IN ({placeholders}) '
+                        f'AND {_ARCHIVE_ELIGIBLE} RETURNING id',
+                        (stamp, *candidates, cutoff))]
+                check_cancelled()
+                has_more = self._conn.execute(
+                    f'SELECT 1 FROM items INDEXED BY idx_items_archive_age WHERE {_ARCHIVE_ELIGIBLE} LIMIT 1',
+                    (cutoff,)).fetchone() is not None
+                check_cancelled()
+            return {'archived_ids': archived, 'has_more': has_more,
+                    'cutoff': cutoff, 'cancelled': False}
+        except _ArchiveCancelled:
+            return {'archived_ids': [], 'has_more': False,
+                    'cutoff': cutoff, 'cancelled': True}
+
     @write_transaction
     def soft_delete(self, item_id: int):
         now = self._now()
@@ -450,12 +520,15 @@ class ItemRepository:
                     show_archived: bool = False,
                     item_type: Optional[str] = None,
                     pinned_only: bool = False,
-                    needs_review_only: bool = False) -> List[ItemDTO]:
+                    needs_review_only: bool = False,
+                    archived_only: bool = False) -> List[ItemDTO]:
         conditions = []
         params = []
         if not show_deleted:
             conditions.append("is_deleted=0")
-        if not show_archived:
+        if archived_only:
+            conditions.append("is_archived=1")
+        elif not show_archived:
             conditions.append("is_archived=0")
         if item_type:
             conditions.append("item_type=?")
@@ -586,18 +659,24 @@ class TagRepository:
 
     @write_transaction
     def add_to_item(self, item_id: int, tag_id: int):
-        self._conn.execute(
+        changed = self._conn.execute(
             "INSERT OR IGNORE INTO item_tags(item_id, tag_id) VALUES(?,?)",
             (item_id, tag_id)
         )
+        if changed.rowcount:
+            self._conn.execute('UPDATE items SET updated_at=? WHERE id=?',
+                               (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), item_id))
         self._conn.commit()
 
     @write_transaction
     def remove_from_item(self, item_id: int, tag_id: int):
-        self._conn.execute(
+        changed = self._conn.execute(
             "DELETE FROM item_tags WHERE item_id=? AND tag_id=?",
             (item_id, tag_id)
         )
+        if changed.rowcount:
+            self._conn.execute('UPDATE items SET updated_at=? WHERE id=?',
+                               (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), item_id))
         self._conn.commit()
 
     def get_tags_for_item(self, item_id: int) -> List[TagDTO]:

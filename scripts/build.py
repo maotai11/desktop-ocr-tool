@@ -317,7 +317,7 @@ def validate_candidate(paths):
         elif (report.get('phase_a') is not True or report.get('engine_ready') is not True
               or report.get('shutdown_clean') is not True
               or report.get('database_integrity') != 'ok'
-              or report.get('threads_stopped') != {"capture": True, "ocr": True, "database": True, "hotkeys": True}):
+              or report.get('threads_stopped') != {"capture": True, "ocr": True, "database": True, "hotkeys": True, "history_maintenance": True}):
             raise RuntimeError(f'Incomplete lifecycle gate: {report_path}')
         reports[name] = {'sha256': sha256_file(report_path), 'status': 'PASSED'}
     if sha256_file(paths['out_exe']) != expected_hash:

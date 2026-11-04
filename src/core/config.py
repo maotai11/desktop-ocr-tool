@@ -8,52 +8,59 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# These were written into old profiles but never consumed by the core app.
+# They are not advertised in fresh settings. ConfigManager deliberately keeps
+# unknown loaded keys when saving, so retiring a setting never erases a user's
+# old profile or enables an experimental engine as a side effect.
+RETIRED_CORE_SETTINGS = {
+    'general.language': 'The bundled interface has no locale-switching implementation.',
+    'capture.backend': 'Core capture uses the single verified MSS backend.',
+    'capture.screenshot_format': 'Capture storage is PNG; export has its own explicit format.',
+    'capture.jpg_quality': 'The PNG capture path has no JPEG quality control.',
+    'capture.include_cursor': 'The core capture API has no cursor-inclusion setting.',
+    'capture.capture_sound': 'No capture-sound player is connected.',
+    'ocr.engine': 'Core uses the verified RapidOCR/ONNX profile.',
+    'ocr.model_det': 'Model paths are fixed by the verified model-profile lock.',
+    'ocr.model_rec': 'Model paths are fixed by the verified model-profile lock.',
+    'ocr.model_cls': 'Model paths are fixed by the verified model-profile lock.',
+    'ocr.language': 'Recognition language is part of the verified model profile.',
+    'ocr.primary_engine': 'Experimental provider selection is not connected to core startup.',
+    'ocr.secondary_engine': 'Experimental provider selection is not connected to core startup.',
+    'ocr.auto_switch_secondary': 'Experimental provider routing is not connected to core startup.',
+    'ocr.auto_switch_threshold': 'Experimental provider routing is not connected to core startup.',
+    'ocr.enable_secondary_engine': 'Optional engines are not bundled or enabled by core settings.',
+    'ocr.secondary_engine_provider': 'Optional engines are not bundled or enabled by core settings.',
+    'ocr.secondary_engine_for_handwriting': 'Optional-engine routing remains an extension API only.',
+    'ocr.secondary_engine_for_low_confidence': 'Optional-engine routing remains an extension API only.',
+    'ocr.secondary_engine_confidence_threshold': 'Optional-engine routing remains an extension API only.',
+    'preprocessing.enable_deskew': 'The current engine does not consume this legacy preprocessing map.',
+    'preprocessing.enable_denoise': 'The current engine uses its explicit bounded retry policy.',
+    'preprocessing.enable_contrast_enhance': 'The current engine uses its explicit bounded retry policy.',
+    'preprocessing.enable_shadow_removal': 'No shadow-removal implementation is connected.',
+    'preprocessing.binarize_method': 'The current engine uses its explicit bounded retry policy.',
+    'history.max_items': 'No automatic count-based removal is implemented.',
+    'history.auto_delete_archived_days': 'Automatic permanent deletion is not implemented.',
+}
+
 DEFAULT_SETTINGS = {
     "general": {
-        "language": "zh-TW",
         "start_with_windows": False,
         "start_minimized": True,
         "single_instance": True,
         "data_directory": "./data"
     },
     "capture": {
-        "backend": "mss",
-        "screenshot_format": "png",
-        "jpg_quality": 95,
-        "include_cursor": False,
         "auto_ocr_on_capture": True,
-        "capture_sound": False,
         "save_raw_image": True
     },
     "ocr": {
         "model_profile": "v6-small",
-        "engine": "onnxruntime",
-        "model_det": "models/det/pp-ocrv6_det_small.onnx",
-        "model_rec": "models/rec/pp-ocrv6_rec_small.onnx",
-        "model_cls": "models/cls/pp-ocrv4_cls.onnx",
-        "language": "chinese_cht",
         "confidence_accept": 0.85,
         "confidence_review": 0.60,
         "enable_second_pass": True,
         "max_ocr_passes": 2,
         "enable_handwriting_mode": False,
-        "max_image_short_side": 960,
-        "primary_engine": "rapidocr",
-        "secondary_engine": "none",
-        "auto_switch_secondary": True,
-        "auto_switch_threshold": 0.75,
-        "enable_secondary_engine": False,
-        "secondary_engine_provider": "paddleocr_v5",
-        "secondary_engine_for_handwriting": True,
-        "secondary_engine_for_low_confidence": True,
-        "secondary_engine_confidence_threshold": 0.85
-    },
-    "preprocessing": {
-        "enable_deskew": True,
-        "enable_denoise": True,
-        "enable_contrast_enhance": True,
-        "enable_shadow_removal": False,
-        "binarize_method": "sauvola"
+        "max_image_short_side": 960
     },
     "clipboard": {
         "monitor_clipboard": False,
@@ -73,9 +80,7 @@ DEFAULT_SETTINGS = {
         "max_file_size_mb": 100
     },
     "history": {
-        "max_items": 10000,
-        "auto_archive_days": 90,
-        "auto_delete_archived_days": 0
+        "auto_archive_days": 90
     },
     "hotkeys": {
         "capture_region_ocr": "Ctrl+Shift+O",
@@ -172,6 +177,7 @@ class ConfigManager:
         return os.path.abspath(os.path.join(self._root, rel))
 
     def get_model_path(self, key: str) -> str:
+        """Legacy extension helper; core loading uses the verified profile lock."""
         rel = self.get('ocr', key, default='')
         if not rel:
             return ''

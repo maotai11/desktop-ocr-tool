@@ -1,49 +1,22 @@
 {
   "general": {
-    "language": "zh-TW",
     "start_with_windows": false,
     "start_minimized": true,
     "single_instance": true,
     "data_directory": "./data"
   },
   "capture": {
-    "backend": "mss",
-    "screenshot_format": "png",
-    "jpg_quality": 95,
-    "include_cursor": false,
     "auto_ocr_on_capture": true,
-    "capture_sound": false,
     "save_raw_image": true
   },
   "ocr": {
-    "engine": "onnxruntime",
-    "model_det": "models/det/pp-ocrv6_det_small.onnx",
-    "model_rec": "models/rec/pp-ocrv6_rec_small.onnx",
-    "model_cls": "models/cls/pp-ocrv4_cls.onnx",
-    "language": "chinese_cht",
+    "model_profile": "v6-small",
     "confidence_accept": 0.85,
     "confidence_review": 0.6,
     "enable_second_pass": true,
     "max_ocr_passes": 2,
     "enable_handwriting_mode": false,
-    "max_image_short_side": 960,
-    "primary_engine": "rapidocr",
-    "secondary_engine": "none",
-    "auto_switch_secondary": true,
-    "auto_switch_threshold": 0.75,
-    "enable_secondary_engine": false,
-    "secondary_engine_provider": "paddleocr_v5",
-    "secondary_engine_for_handwriting": true,
-    "secondary_engine_for_low_confidence": true,
-    "secondary_engine_confidence_threshold": 0.85,
-    "model_profile": "v6-small"
-  },
-  "preprocessing": {
-    "enable_deskew": true,
-    "enable_denoise": true,
-    "enable_contrast_enhance": true,
-    "enable_shadow_removal": false,
-    "binarize_method": "sauvola"
+    "max_image_short_side": 960
   },
   "clipboard": {
     "monitor_clipboard": false,
@@ -63,9 +36,7 @@
     "max_file_size_mb": 100
   },
   "history": {
-    "max_items": 10000,
-    "auto_archive_days": 90,
-    "auto_delete_archived_days": 0
+    "auto_archive_days": 90
   },
   "hotkeys": {
     "capture_region_ocr": "Ctrl+Shift+O",

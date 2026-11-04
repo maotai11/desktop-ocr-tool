@@ -19,6 +19,19 @@ def write_transaction(method):
             return method(self, *args, **kwargs)
     return wrapped
 
+
+_FTS_UPDATE_TRIGGER = """CREATE TRIGGER IF NOT EXISTS items_fts_update
+       AFTER UPDATE OF text_content, edited_text, note_plaintext ON items
+       WHEN old.text_content IS NOT new.text_content
+         OR old.edited_text IS NOT new.edited_text
+         OR old.note_plaintext IS NOT new.note_plaintext
+       BEGIN
+           INSERT INTO items_fts(items_fts, rowid, text_content, edited_text, note_plaintext)
+           VALUES ('delete', old.id, old.text_content, old.edited_text, old.note_plaintext);
+           INSERT INTO items_fts(rowid, text_content, edited_text, note_plaintext)
+           VALUES (new.id, new.text_content, new.edited_text, new.note_plaintext);
+       END"""
+
 _CREATE_TABLES = [
     """CREATE TABLE IF NOT EXISTS app_meta (
         key   TEXT PRIMARY KEY,
@@ -111,13 +124,7 @@ _CREATE_TABLES = [
            INSERT INTO items_fts(rowid, text_content, edited_text, note_plaintext)
            VALUES (new.id, new.text_content, new.edited_text, new.note_plaintext);
        END""",
-    """CREATE TRIGGER IF NOT EXISTS items_fts_update
-       AFTER UPDATE ON items BEGIN
-           INSERT INTO items_fts(items_fts, rowid, text_content, edited_text, note_plaintext)
-           VALUES ('delete', old.id, old.text_content, old.edited_text, old.note_plaintext);
-           INSERT INTO items_fts(rowid, text_content, edited_text, note_plaintext)
-           VALUES (new.id, new.text_content, new.edited_text, new.note_plaintext);
-       END""",
+    _FTS_UPDATE_TRIGGER,
     """CREATE TRIGGER IF NOT EXISTS items_fts_delete
        AFTER DELETE ON items BEGIN
            INSERT INTO items_fts(items_fts, rowid, text_content, edited_text, note_plaintext)
@@ -130,6 +137,9 @@ _CREATE_TABLES = [
        ON items(source_mode, is_deleted, created_at)""",
     """CREATE INDEX IF NOT EXISTS idx_items_status_deleted
        ON items(ocr_status, is_deleted)""",
+    """CREATE INDEX IF NOT EXISTS idx_items_archive_age
+       ON items(updated_at, id)
+       WHERE is_deleted=0 AND is_archived=0 AND is_pinned=0""",
     """CREATE INDEX IF NOT EXISTS idx_items_content_hash
        ON items(content_hash) WHERE content_hash IS NOT NULL""",
     """CREATE INDEX IF NOT EXISTS idx_items_image_hash
@@ -169,6 +179,14 @@ class Database:
         attempt_columns = {row[1] for row in self._conn.execute('PRAGMA table_info(ocr_attempts)')}
         if 'provenance_json' not in attempt_columns:
             self._conn.execute('ALTER TABLE ocr_attempts ADD COLUMN provenance_json TEXT')
+        # Older installations rebuild FTS even for pin/archive/timestamp-only
+        # writes. Replace just that trigger, preserving all indexed content.
+        existing = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='items_fts_update'").fetchone()
+        normalize = lambda sql: ''.join(sql.replace('IF NOT EXISTS ', '').split()).casefold()
+        if existing is None or normalize(existing['sql']) != normalize(_FTS_UPDATE_TRIGGER):
+            self._conn.execute('DROP TRIGGER IF EXISTS items_fts_update')
+            self._conn.execute(_FTS_UPDATE_TRIGGER)
         self._conn.commit()
 
         cur = self._conn.execute(

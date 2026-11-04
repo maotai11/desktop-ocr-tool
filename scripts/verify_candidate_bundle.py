@@ -205,7 +205,8 @@ def _check_probe(report, manifest, frozen):
         if (report.get('phase_a') is not True or report.get('engine_ready') is not True
                 or report.get('shutdown_clean') is not True
                 or report.get('threads_stopped') !=
-                {'capture': True, 'ocr': True, 'database': True, 'hotkeys': True}):
+                {'capture': True, 'ocr': True, 'database': True, 'hotkeys': True,
+                 'history_maintenance': True}):
             raise ValueError('Incomplete lifecycle probe')
     else:
         raise ValueError('Unknown probe kind')
