@@ -2,31 +2,51 @@
 
 Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可框選螢幕辨識文字、手寫單字找候選，也能匯入 PDF／圖片，把固定位置的欄位逐頁填入文字模板，最後複製或匯出 TXT。
 
-本版為 **1.8.0-rc.10 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
+本版為 **1.8.0-rc.11 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
 
-本版補上啟動與每日執行的 90 天自動封存，並修正設定儲存後剪貼簿監聽沒有即時切換、浮窗與主控台資料不同步的問題。A／B 多組結果改為同時呈現各組名稱、A／B 文字、差異狀態與時間，不必逐組切換才能查看。
+本版新增「整列搜尋」：在來源表格框選同一列的多個 A 欄位，到一個 B 範圍尋找各欄文字；每個 A 最多選定一處結果。可手動換列，或校正表格的選取列底色後跟隨其他軟體換列。原有 A／B 固定位置核對、90 天自動封存、文件套版及複製模式保留。
 
 沿用前版的套件修補與背景工作回收：手寫完成後結束輔助程序，OCR 閒置時停用 CPU 忙等。A／B 連續辨識只有在使用者開始核對後才執行。套件掃描及網路觀察的範圍見 [資安與背景工作檢查](docs/SECURITY_REVIEW.md)，設定、旁支與停用節點的掃描範圍見 [設定接線與節點稽核](docs/CONFIG_WIRING_MATRIX.md)。
 
 ## 下載與第一次執行
 
-從 [v1.8.0-rc.10 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.10) 下載：
+從 [v1.8.0-rc.11 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.11) 下載：
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.10.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.10/InkPick-v1.8.0-rc.10.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
-| [InkPick-v1.8.0-rc.10.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.10/InkPick-v1.8.0-rc.10.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
-| [InkPick-v1.8.0-rc.10-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.10/InkPick-v1.8.0-rc.10-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
-| InkPick-v1.8.0-rc.10-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
-| InkPick-v1.8.0-rc.10-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
+| [InkPick-v1.8.0-rc.11.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.11/InkPick-v1.8.0-rc.11.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.11.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.11/InkPick-v1.8.0-rc.11.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.11-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.11/InkPick-v1.8.0-rc.11-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
+| InkPick-v1.8.0-rc.11-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
+| InkPick-v1.8.0-rc.11-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 
 1. 在可上網的電腦下載 ZIP，再用隨身碟帶到離線電腦。
 2. 解壓到自己有寫入權限的資料夾，例如 `D:\Tools\InkPick`。不要直接從 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 `InkPick-v1.8.0-rc.10.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
+3. 執行 `InkPick-v1.8.0-rc.11.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
 4. 首次開啟會解開內含資源並載入模型。浮動窗顯示「可擷取文字」後，即可使用。
 5. 結束程式請用系統匣的結束選項，讓尚未完成的辨識與儲存先結束。
 
-核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.10.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.11.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+
+## 整列搜尋：多個 A，到一個 B 範圍找文字
+
+例如來源表格同一列有「姓名、編號、金額」，另一個畫面有一整區資料可核對。這個模式讓多個 A 共用一個 B 搜尋區；每個 A 最多選定一處位置，找到多處時由你選，不自動挑第一筆。原有固定位置 A／B 核對仍保留在下節。
+
+1. 讓來源第一列與 B 資料同時顯示於主螢幕。點浮動窗「整列搜尋」，或從系統匣選「整列搜尋（多 A／共用 B）」。先替預設「欄位 1」按「框選」，需要其他欄位再按「新增 A 欄位」；姓名、編號、金額都框在同一列，可改名，最多 20 欄。
+2. 按「框選 B 範圍」，一次圈住所有 A 共用的可見搜尋區。A 和 B 不可重疊。所有 A 共用同一比對方式；「數字嚴格／文字近似」採固定 95% 文字相似門檻，數字片段保留正負號與格式，OCR 信心另行判斷。
+3. 按「開始搜尋」查看各 A 的結果。有多處符合時，在該欄下拉選單選位置，再按「採用」；找不到不沿用前一列。數字片段嚴格保留格式：`1.23 ≠ 123`、`-100 ≠ 100`、`1,000 ≠ 1000`、`01 ≠ 1`；近似或低信心結果即使手選，也仍需確認。標示定位到 OCR 行，行內重複數字不能保證逐字定位。
+4. 手動換列：設定「列高／間距」（相鄰列距，1–500 螢幕像素），按「上一列／下一列」。所有 A 框一起移動並重辨，不會替另一套軟體點選或捲頁。
+5. 自動跟隨：先在來源軟體選取基準列，按「框選表格範圍」圈住可跟隨區域，再按「校正目前選取列」，在 3 秒倒數內回到來源軟體選好基準列；校正成功後開啟「自動跟隨表格」。新選取底色連續兩次檢查穩定後才跟隨；同一 Y 座標換成新內容也會重辨。
+
+西文詞與識別碼要求完整邊界：`Ann` 不命中 `Anna`，`123` 不命中 `INV123`；中文可在行內找子字串。
+
+控制窗可切換置頂；桌面標示點擊穿透，「標記填色濃度」可調。要改位置請回控制窗按框選，Esc 取消。擷取時暫時隱藏標示，可能短暫閃動。自動跟隨依賴一致的選取底色；多處高亮、白底、斑馬紋或超出範圍時不能可靠定位，請改手動換列或重新校正。
+
+開窗不自動搜尋；「開始搜尋」或手動換列才啟動搜尋，校正另做一次取樣。暫停／關閉取消後續工作及標示；單次原生 OCR 需先返回。設定、位置和結果僅保留於本次執行，不寫歷史、剪貼簿、匯出或內容 Log，也不產生搜尋截圖檔。不能讀取未顯示或被遮住的文字，不會自動捲頁。完整步驟、比對規則與暫存範圍見 [整列搜尋操作說明](docs/SHARED_SEARCH.md)。
+
+![整列搜尋控制窗的合成示例：姓名有多處候選，金額已找到](docs/ui/shared-search-window.png)
+
+合成資料示例：姓名「王小明」有多處候選待選，金額「1,250」已找到。桌面標示依 OCR 文字行定位，不代表儲存格或字元座標。
 
 ## A／B 核對：同時查看多組結果
 
@@ -181,7 +201,7 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 
 ## 辨識限制與離線驗證範圍
 
-發布前會對 Linux／Windows 的實際 Python 套件清單執行 pip-audit；有漏洞、漏掃或查詢失敗即停止發布。這不涵蓋所有原生 DLL 或未知漏洞。Linux 另追蹤六組合成操作（含 A／B 核對）及其子程序的網路系統呼叫；Windows 使用同版 EXE 的防火牆阻擋測試。每版結果見下載頁的 validation metadata。
+發布前會對 Linux／Windows 的實際 Python 套件清單執行 pip-audit；有漏洞、漏掃或查詢失敗即停止發布。這不涵蓋所有原生 DLL 或未知漏洞。Linux 另追蹤合成操作及其子程序的網路系統呼叫；Windows 使用同版 EXE 的防火牆阻擋測試。整列搜尋等新增路徑的覆蓋與結果，見同版 validation metadata，不沿用舊版數量作為通過證據。
 
 手寫完成後會結束輔助程序；新筆畫會取消過期工作。系統匣、快捷鍵與載入的 OCR 模型仍保留，讓下次操作可用；剪貼簿監看預設關閉。文件按停止或清空後不再處理後續頁面，但已進入原生 PDF／OCR 的運算需先返回。要完全結束請從系統匣選「退出」。
 

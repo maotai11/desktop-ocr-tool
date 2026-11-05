@@ -1,6 +1,6 @@
 # 設定接線與節點稽核
 
-更新版本：1.8.0-rc.10（2026-11-04）。本表描述目前核心程式的接線與限制；[v1.6.1 的 61 項基準矩陣](audit-baseline/CONFIG_WIRING_MATRIX.md) 是當時快照，不再用它的 dead／partial 結論判定現行版本。
+更新版本：1.8.0-rc.11（2026-11-05）。本表描述目前核心程式的接線與限制；[v1.6.1 的 61 項基準矩陣](audit-baseline/CONFIG_WIRING_MATRIX.md) 是當時快照，不再用它的 dead／partial 結論判定現行版本。
 
 設定被保存、UI 有欄位或測試出現鍵名，都不等於功能已接通。下表列出實際消費點與套用時機；原生 Windows 互動及封裝結果，以同一來源版本的 validation metadata 為準，不把原始碼檢查當成乾淨實機驗收。
 
@@ -37,6 +37,23 @@
 
 `config/default_settings.json` 與 Python `DEFAULT_SETTINGS` 以一致性測試核對。Python 預設值是缺檔與 merge 的來源；保存舊 JSON 額外鍵只是相容，不代表新增支援。辨識引擎參數、快捷鍵與啟動設定仍需重啟；剪貼簿監看、文字收錄、複製清理及自動封存有明確的即時套用路徑。
 
+## rc.11 整列搜尋的會話設定
+
+整列搜尋的欄位、座標、校正與結果是本次執行的狀態，不是新增 JSON 預設鍵；不把 UI 記憶體值誤列成已保存設定。原有固定位置 A／B 流程保留。
+
+實際入口為 `FloatingWidget.open_shared_search`／系統匣 action → `SharedSearchWindow` → `SharedSearchController`；擷取由 `SharedCaptureWorker` 處理，辨識共用 `OcrWorker`，候選由 `search_matching.match_field` 產生，選取列由 `RowTracker` 校正及追蹤。這些消費點分別位於 `src/ui/shared_search_window.py`、`src/comparison/shared_controller.py`、`shared_capture.py`、`search_matching.py` 與 `row_tracking.py`。
+
+| 入口 | 實際作用 | 邊界 |
+| --- | --- | --- |
+| 新增／框選 A、框選 B | 最多 20 個同列 A 共用一個 B；同張快照依序 OCR 及搜尋候選 | 每個 A 最多採用一處，重複候選要人工選；不套用複製清理 |
+| 比對方式／固定文字相似門檻 | 全部 A 共用規則；數字片段保留正負號及格式，文字相似門檻固定 95%；逐字模式停用近似 | OCR 信心另行判斷，近似或 needs_review 不因手選而變成確定命中；行級框不冒充逐字定位 |
+| 列高／上一列／下一列 | 1–500 像素列距，同時移動所有 A，再開始新一輪 | 手動換列暫停自動跟隨，不替外部軟體送鍵、點列或捲頁 |
+| 表格範圍／校正目前選取列／自動跟隨 | 在圈定範圍校正選取底色與 A 相對偏移；兩次穩定檢查才接受新列 | 不明／多列／越界不猜測；同 Y 新內容須重辨，不以座標命中快取 |
+| 置頂／標示透明度／穿透標示 | 控制浮窗置頂及桌面填色，標示平時不攔截下方軟體點擊 | 框選用既有全螢幕工具；擷取前隱藏標示可能閃動，仍限主螢幕 |
+| 開始／暫停／清除／關閉 | 明確開始才檢查；停止撤銷後續佇列、影像與過期標示 | 原生單次呼叫先返回；不寫歷史／剪貼簿／內容 Log／搜尋檔案，不在關窗後繼續跟隨 |
+
+B 只在像素與辨識設定相同時重用一份有界記憶體 OCR 結果；發佈前再驗證畫面，A／B／列內容已改便丟棄。沒有新增模型下載、表格結構模型或跨次啟動的配置恢復。實際入口及限制見 [操作說明](SHARED_SEARCH.md)，新模式驗證以同版摘要為準。
+
 ## 自動封存與跨視窗更新
 
 封存依 `updated_at` 已滿設定天數判定，查看／複製不延長日期；真正編輯、標籤關聯變更或手動還原會更新時間。釘選、已刪除、已封存、OCR pending／processing、尚有未完成 OCR 工作或時間格式無效的紀錄排除。選取與更新在交易內複查條件，取消時可回滾未提交批次。
@@ -65,7 +82,7 @@
 | 掃描對象 | 本次結果／處理 | 可定位證據或限制 |
 | --- | --- | --- |
 | 設定 → UI → 執行流程 | 修復自動封存、剪貼簿即時開關及歷史跨視窗通知；未支援鍵依上表退休或明確停用 | `tests/test_history_maintenance.py`、`test_history_application_wiring.py`、`test_clipboard_monitoring.py`、`test_history_view_sync.py`、`test_h3_config_wiring.py` |
-| A／B 多組呈現 | 一般／迷你視窗同時列各組結果，設定選單只管理組別及全文；共用單一擷取／OCR 佇列 | comparison UI／controller／group tests 與同版 20 項來源、frozen、隔離探針；同時可見不代表同時取樣或平行推論 |
+| A／B 多組呈現 | 一般／迷你視窗同時列各組結果，設定選單只管理組別及全文；共用單一擷取／OCR 佇列 | comparison UI／controller／group tests；rc.10 的 20 項來源／frozen／隔離探針是舊模式基準，不代表新模式覆蓋；同時可見不代表同時取樣或平行推論 |
 | 舊 `AppSignals` bus | 刪除 `src/core/signals.py`，沒有現行引用；各功能仍使用實際 QObject signal | 原始碼引用掃描；不刪仍被 CLI、probe 或原生 helper 使用的入口 |
 | rc.3 README 單次工作流程 | 刪除 `.github/workflows/release_readme.yml` | 已完成歷史任務；現行固定版本發布 marker 是發布保護，並非另一個未接線功能 |
 | 可選 provider／舊預處理 | 保留擴充 API，退出 Core 的新預設及功能承諾 | 不因靜態引用少就載入可選引擎、重寫辨識策略或刪除擴充介面 |

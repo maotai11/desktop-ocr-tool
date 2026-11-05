@@ -268,6 +268,7 @@ def main(smoke_report=None) -> int:
                     'database': not db_thread.isRunning(),
                     'hotkeys': not hotkey_listener.isRunning(),
                     'history_maintenance': history_maintenance.is_stopped,
+                    'shared_search': widget.shared_search_is_stopped(),
                 }
                 smoke['shutdown_clean'] = (pipeline.closed and db._closed
                                            and all(smoke['threads_stopped'].values()))

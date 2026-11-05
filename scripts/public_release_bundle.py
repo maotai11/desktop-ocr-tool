@@ -30,6 +30,8 @@ PUBLIC_DOCUMENTATION = {
     'OFFLINE_README.txt': 'docs/OFFLINE_README.txt',
     'README.txt': 'docs/OFFLINE_README.txt',
     'docs/DOCUMENT_TEMPLATE.md': 'docs/DOCUMENT_TEMPLATE.md',
+    'docs/SHARED_SEARCH.md': 'docs/SHARED_SEARCH.md',
+    'docs/ui/shared-search-window.png': 'docs/ui/shared-search-window.png',
     'docs/SECURITY_REVIEW.md': 'docs/SECURITY_REVIEW.md',
     'docs/ui/floating-window.png': 'docs/ui/floating-window.png',
     'docs/ui/ocr-selection.png': 'docs/ui/ocr-selection.png',

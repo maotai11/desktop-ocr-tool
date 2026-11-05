@@ -8,6 +8,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'assert_shared_search_probe.ps1')
 $scratch = $null
 $ruleName = 'InkPick-portable-' + [guid]::NewGuid().ToString()
 $ruleCreated = $false
@@ -24,8 +25,8 @@ try {
     $bundle = (Resolve-Path -LiteralPath $BundleDirectory).Path
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or
-        $manifest.version -cne '1.8.0-rc.10' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.10.exe') {
+        $manifest.version -cne '1.8.0-rc.11' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.11.exe') {
         throw 'Unexpected portable candidate identity'
     }
     $original = Join-Path $bundle $manifest.executable_name
@@ -78,7 +79,8 @@ try {
         @{ mode = '--self-test-handwriting'; name = 'isolated-handwriting.json'; kind = 'handwriting_lifecycle' },
         @{ mode = '--self-test-handwriting-image'; name = 'isolated-handwriting-image.json'; kind = 'handwriting_image_lifecycle' },
         @{ mode = '--self-test-documents'; name = 'isolated-documents.json'; kind = 'document_template_lifecycle' },
-        @{ mode = '--self-test-comparison'; name = 'isolated-comparison.json'; kind = 'comparison_lifecycle' }
+        @{ mode = '--self-test-comparison'; name = 'isolated-comparison.json'; kind = 'comparison_lifecycle' },
+        @{ mode = '--self-test-shared-search'; name = 'isolated-shared-search.json'; kind = 'shared_search_lifecycle' }
     )) {
         $report = Join-Path $reports $probe.name
         if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report }
@@ -125,7 +127,27 @@ try {
             $result.executable_sha256 -cne $hash -or $result.clean_machine_verified -ne $false) {
             throw 'Portable EXE probe identity or result differs from candidate'
         }
-        if ($probe.kind -ceq 'document_template_lifecycle') {
+        if ($probe.kind -ceq 'shared_search_lifecycle') {
+            Assert-SharedSearchProbe $result $manifest.version $hash
+        } elseif ($probe.kind -ceq 'application_lifecycle') {
+            if ($result.schema -ne 2 -or $result.database_integrity -cne 'ok' -or
+                $result.threads_stopped -isnot [System.Management.Automation.PSCustomObject]) {
+                throw 'Incomplete portable application lifecycle report'
+            }
+            foreach ($name in @('phase_a', 'engine_ready', 'shutdown_clean')) {
+                if ($result.$name -isnot [bool] -or $result.$name -ne $true) {
+                    throw 'Portable application lifecycle did not finish'
+                }
+            }
+            $threadNames = @('capture', 'ocr', 'database', 'hotkeys', 'history_maintenance', 'shared_search')
+            if ((@($result.threads_stopped.PSObject.Properties.Name | Sort-Object) -join '|') -cne
+                (@($threadNames | Sort-Object) -join '|')) { throw 'Incomplete portable worker shutdown report' }
+            foreach ($name in $threadNames) {
+                if ($result.threads_stopped.$name -isnot [bool] -or $result.threads_stopped.$name -ne $true) {
+                    throw 'Portable application left a worker running'
+                }
+            }
+        } elseif ($probe.kind -ceq 'document_template_lifecycle') {
             # This probe uses real PDFium/Pillow without creating a Qt GUI.
             # Preserve its narrower claim and require every fixed lifecycle
             # check, rather than accepting the top-level passed flag alone.

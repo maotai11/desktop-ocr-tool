@@ -7,7 +7,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts.verify_candidate_bundle import VERSION, sha256_file, verify_candidate
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe
 
 
 def encoded(value):
@@ -39,10 +39,11 @@ def candidate(tmp_path, monkeypatch):
         'frozen-app-smoke.json': dict(common, probe='application_lifecycle', phase_a=True,
                                      engine_ready=True, shutdown_clean=True,
                                      threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True,
-                                                      'history_maintenance': True}),
+                                                      'history_maintenance': True, 'shared_search': True}),
     }
     probes['frozen-handwriting.json'] = handwriting_probe(VERSION, hashlib.sha256(exe).hexdigest())
     probes['frozen-handwriting-image.json'] = image_probe(VERSION, hashlib.sha256(exe).hexdigest(), profiles)
+    probes['frozen-shared-search.json'] = shared_search_probe(VERSION, hashlib.sha256(exe).hexdigest())
     manifest = {'handwriting': handwriting_identity(), 'schema': 2, 'platform': 'win32', 'version': VERSION,
                 'executable_name': f'InkPick-v{VERSION}.exe',
                 'executable_sha256': hashlib.sha256(exe).hexdigest(), 'models': models,
@@ -67,7 +68,7 @@ def candidate(tmp_path, monkeypatch):
     write_bundle()
     for name, value in probes.items():
         (firewall / name).write_bytes(encoded(value))
-        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json'}[name]
+        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json', 'frozen-shared-search.json': 'source-shared-search.json'}[name]
         (tmp_path / source_name).write_bytes(encoded(dict(value, frozen=False, executable_sha256=None)))
     gate = {'passed': True, 'version': VERSION, 'executable_sha256': manifest['executable_sha256'],
             'clean_machine_verified': False,
