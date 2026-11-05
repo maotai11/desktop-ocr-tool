@@ -183,6 +183,25 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def check_shared_search_probe(report, manifest, frozen):
+    """Bind shared-table lifecycle and native overlay evidence to this EXE."""
+    from src.shared_search_probe import CHECK_NAMES
+    expected = dict(schema=1, probe='shared_search_lifecycle', passed=True,
+        version=manifest['version'], frozen=frozen, platform='win32', qt_platform='windows',
+        executable_sha256=manifest['executable_sha256'] if frozen else None,
+        clean_machine_verified=False, fixture_kind='SYNTHETIC_SHARED_SEARCH',
+        ocr_accuracy_tested=False, model_inference_tested=False, overlay_capture_verified=True)
+    if (type(report) is not dict or any(type(report.get(key)) is not type(value)
+            or report.get(key) != value for key, value in expected.items())):
+        raise ValueError('Incomplete shared-search lifecycle identity')
+    checks = report.get('checks')
+    if (type(checks) is not dict or set(checks) != set(CHECK_NAMES)
+            or not all(value is True for value in checks.values())):
+        raise ValueError('Incomplete shared-search lifecycle checks')
+    if any(key in report for key in ('error', 'error_code', 'traceback')):
+        raise ValueError('Shared-search lifecycle includes a failure diagnostic')
+
+
 def _json(data):
     return json.loads(data.decode('utf-8-sig'))
 
@@ -206,7 +225,7 @@ def _check_probe(report, manifest, frozen):
                 or report.get('shutdown_clean') is not True
                 or report.get('threads_stopped') !=
                 {'capture': True, 'ocr': True, 'database': True, 'hotkeys': True,
-                 'history_maintenance': True}):
+                 'history_maintenance': True, 'shared_search': True}):
             raise ValueError('Incomplete lifecycle probe')
     else:
         raise ValueError('Unknown probe kind')
@@ -555,6 +574,13 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             raise ValueError('Embedded handwriting image probe checksum mismatch')
         check_handwriting_image_probe(_json(raw), manifest, True)
         probes[report_name] = 'PASSED'
+        report_name = 'frozen-shared-search.json'
+        raw = archive.read(prefix + 'candidate-validation/' + report_name)
+        if manifest['candidate_probes'][report_name] != {
+                'sha256': hashlib.sha256(raw).hexdigest(), 'status': 'PASSED'}:
+            raise ValueError('Embedded shared-search probe checksum mismatch')
+        check_shared_search_probe(_json(raw), manifest, True)
+        probes[report_name] = 'PASSED'
     gate = _json((artifacts / 'firewall-validation/candidate-gate.json').read_bytes())
     if (gate.get('passed') is not True or gate.get('executable_sha256') != executable_hash.hexdigest()
             or gate.get('version') != VERSION or gate.get('clean_machine_verified') is not False):
@@ -567,6 +593,8 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             raise ValueError('Outbound-blocked probe checksum mismatch')
         if name == 'frozen-handwriting-image.json':
             check_handwriting_image_probe(_json(path.read_bytes()), manifest, True)
+        elif name == 'frozen-shared-search.json':
+            check_shared_search_probe(_json(path.read_bytes()), manifest, True)
         else:
             _check_probe(_json(path.read_bytes()), manifest, True)
     handwriting_path = artifacts / 'firewall-validation/frozen-handwriting.json'
@@ -587,6 +615,10 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
         _check_probe(_json((root / name).read_bytes()), manifest, False)
     check_handwriting_probe(_json((root / 'source-handwriting.json').read_bytes()), manifest, False)
     check_handwriting_image_probe(_json((root / 'source-handwriting-image.json').read_bytes()), manifest, False)
+    shared_source = _json((root / 'source-shared-search.json').read_bytes())
+    check_shared_search_probe(shared_source, manifest, False)
+    if shared_source.get('source_commit') != expected_commit:
+        raise ValueError('Shared-search source commit mismatch')
     stress_path = artifacts / 'firewall-validation/frozen-runtime-stress.json'
     check_frozen_stress(_json(stress_path.read_bytes()), manifest)
     suites = ET.parse(root / 'test-results.xml').getroot()

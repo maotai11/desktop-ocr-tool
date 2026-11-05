@@ -98,6 +98,8 @@ jobs:
         run: python src/main.py --self-test-documents artifacts/source-documents.json
       - id: source_comparison
         run: python src/main.py --self-test-comparison source-comparison.json
+      - id: source_shared_search
+        run: python src/main.py --self-test-shared-search source-shared-search.json
       - name: Trace synthetic application process trees for network activity
         id: network_audit
         if: runner.os == 'Linux'
@@ -225,7 +227,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.10'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.11'
     runs-on: ubuntu-latest
     permissions:
       contents: write

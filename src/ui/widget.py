@@ -95,6 +95,7 @@ def _line_icon(kind: str, color: str) -> QIcon:
 
 class FloatingWidget(QWidget):
     comparison_status = Signal(str)
+    shared_search_status = Signal(str)
     settings_saved = Signal()
     clipboard_pause_changed = Signal(bool)
 
@@ -119,6 +120,13 @@ class FloatingWidget(QWidget):
         self._comparison_controller = None
         self._comparison_overlay = None
         self._comparison_closing = False
+        self._shared_search = None
+        self._shared_search_controller = None
+        self._shared_search_selector = None
+        self._shared_search_closing = False
+        self._shared_search_selection = 0
+        self._shared_search_selection_signature = None
+        self._shared_search_applying_selection = False
         self._clip_paused = False
         self._ocr_ready = False
         self._items = []
@@ -277,7 +285,15 @@ class FloatingWidget(QWidget):
         self._btn_comparison.setMinimumHeight(32)
         self._btn_comparison.setToolTip("固定兩個位置持續核對，用顏色提醒不同")
         self._btn_comparison.clicked.connect(self.open_comparison)
-        vbox.addWidget(self._btn_comparison)
+        comparison_actions = QHBoxLayout()
+        comparison_actions.setSpacing(8)
+        comparison_actions.addWidget(self._btn_comparison)
+        self._btn_shared_search = QPushButton("整列搜尋")
+        self._btn_shared_search.setMinimumHeight(32)
+        self._btn_shared_search.setToolTip("多個 A 欄位，在同一個 B 範圍找位置；支援換列與反藍追蹤")
+        self._btn_shared_search.clicked.connect(self.open_shared_search)
+        comparison_actions.addWidget(self._btn_shared_search)
+        vbox.addLayout(comparison_actions)
 
         self._ocr_progress_bar = QProgressBar()
         self._ocr_progress_bar.setFixedHeight(3)
@@ -517,6 +533,10 @@ class FloatingWidget(QWidget):
     def open_comparison(self):
         if self._comparison_closing:
             return
+        self._cancel_shared_search_selection()
+        self.pause_shared_search()
+        if self._shared_search is not None:
+            self._shared_search.hide()
         if self._comparison is None:
             from ..comparison.controller import ComparisonController
             from .comparison_window import ComparisonWindow
@@ -573,7 +593,8 @@ class FloatingWidget(QWidget):
         self._comparison_overlay.selection_prompt = f'框選 {name} 區域 · Esc 取消'
 
         def selected(x, y, width, height, monitor):
-            if self._comparison_closing or self._comparison._closed_by_user:
+            if (self._comparison_closing or self._comparison._closed_by_user
+                    or not self._comparison._selection_active):
                 return
             if self._comparison_controller.active_group_id != group_id:
                 self._comparison.set_selection_active(False)
@@ -620,6 +641,146 @@ class FloatingWidget(QWidget):
 
     def comparison_is_stopped(self):
         return self._comparison_controller is None or self._comparison_controller.is_stopped
+
+    def open_shared_search(self):
+        """One session-only search tool, sharing the existing serialized OCR worker."""
+        if self._shared_search_closing:
+            return
+        if self._comparison_overlay is not None and self._comparison._selection_active:
+            self._comparison_overlay._cancel()
+        self.pause_comparison()
+        if self._comparison is not None:
+            self._comparison.hide()
+        if self._shared_search is None:
+            from ..comparison.shared_controller import SharedSearchController
+            from .shared_search_window import SharedSearchWindow
+            from .capture_overlay import CaptureOverlay
+            controller = SharedSearchController(self._ocr_worker, parent=self)
+            window = SharedSearchWindow(controller)
+            selector = CaptureOverlay()
+            self._shared_search = window
+            self._shared_search_controller = controller
+            self._shared_search_selector = selector
+            window.select_requested.connect(self._select_shared_search_region)
+            window.screen_invalidated.connect(self._cancel_shared_search_selection)
+            window.closed.connect(self._cancel_shared_search_selection)
+            selector.cancelled.connect(self._shared_search_selection_cancelled)
+            controller.fields_changed.connect(self._shared_search_fields_changed)
+            self.settings_saved.connect(controller.invalidate_cache)
+            controller.updated.connect(self._shared_search_results_changed)
+            controller.state_changed.connect(self._shared_search_results_changed)
+            controller.failed.connect(lambda _: self.shared_search_status.emit('uncertain'))
+            controller.before_capture = self._shared_search_can_capture
+            controller.after_capture = window.after_capture
+        self.hide()
+        self._shared_search.open()
+
+    def _shared_search_region_signature(self):
+        controller = self._shared_search_controller
+        if controller is None:
+            return None
+        return (tuple((field['id'], field.get('region')) for field in controller.fields),
+                controller.b_region, controller.tracking_region, controller.row_pitch)
+
+    def _shared_search_fields_changed(self):
+        window = self._shared_search
+        if (window is not None and window._selection_active
+                and not self._shared_search_applying_selection
+                and self._shared_search_selection_signature != self._shared_search_region_signature()):
+            self._cancel_shared_search_selection()
+
+    def _cancel_shared_search_selection(self):
+        self._shared_search_selection += 1
+        self._shared_search_selection_signature = None
+        if self._shared_search_selector is not None:
+            self._shared_search_selector._cancel()
+
+    def _shared_search_selection_cancelled(self):
+        self._shared_search_selection += 1
+        self._shared_search_selection_signature = None
+        if self._shared_search is not None and not self._shared_search_closing:
+            self._shared_search.set_selection_active(False)
+
+    def _select_shared_search_region(self, name):
+        if self._shared_search_closing or self._shared_search is None:
+            return
+        controller, window = self._shared_search_controller, self._shared_search
+        if name not in ('B', 'TRACK') and name not in {field['id'] for field in controller.fields}:
+            return
+        self._cancel_shared_search_selection()
+        token = self._shared_search_selection
+        self.hide()
+        window.set_selection_active(True)
+        self._shared_search_selection_signature = self._shared_search_region_signature()
+        label = ('B 搜尋範圍' if name == 'B' else '表格追蹤範圍' if name == 'TRACK' else
+                 next(field['name'] for field in controller.fields if field['id'] == name))
+        self._shared_search_selector.selection_prompt = f'框選 {label} · Esc 取消'
+
+        def selected(x, y, width, height, monitor):
+            if (self._shared_search_closing or token != self._shared_search_selection
+                    or getattr(window, '_closed_by_user', False) or not window._selection_active
+                    or self._shared_search_selection_signature != self._shared_search_region_signature()):
+                return
+            if name not in ('B', 'TRACK') and name not in {field['id'] for field in controller.fields}:
+                return
+            self._shared_search_applying_selection = True
+            try:
+                window.set_region(name, (x, y, width, height, monitor))
+            finally:
+                self._shared_search_applying_selection = False
+                self._shared_search_selection_signature = None
+                window.set_selection_active(False)
+
+        self._shared_search_selector.start_capture(selected)
+
+    def _shared_search_can_capture(self):
+        window, controller = self._shared_search, self._shared_search_controller
+        if self._shared_search_closing or window is None or not window.can_capture():
+            return False
+        from PySide6.QtCore import QRect
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return False
+        origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
+        regions = [QRect(*region[:4]) for region in controller.target_regions]
+        for other in QApplication.topLevelWidgets():
+            if (other is window or other is window.highlight_overlay
+                    or not other.isVisible() or other.isMinimized()):
+                continue
+            frame = other.frameGeometry()
+            bounds = QRect(round((frame.x() - origin.x()) * dpr),
+                           round((frame.y() - origin.y()) * dpr),
+                           round(frame.width() * dpr), round(frame.height() * dpr))
+            if any(bounds.intersects(region) for region in regions):
+                return False
+        return window.before_capture()
+
+    def _shared_search_results_changed(self, *_):
+        controller = self._shared_search_controller
+        if controller is None or not controller.running:
+            self.shared_search_status.emit('paused')
+            return
+        states = [(field.get('result') or {}).get('status') for field in controller.fields]
+        self.shared_search_status.emit('missing' if 'missing' in states else
+                                       'uncertain' if any(state not in ('matched',) for state in states)
+                                       else 'matched')
+
+    def pause_shared_search(self):
+        if self._shared_search is not None:
+            self._shared_search.pause()
+        elif self._shared_search_controller is not None:
+            self._shared_search_controller.pause()
+
+    def shutdown_shared_search(self):
+        self._shared_search_closing = True
+        self._cancel_shared_search_selection()
+        if self._shared_search_controller is not None:
+            self._shared_search_controller.shutdown()
+        if self._shared_search is not None:
+            self._shared_search.shutdown()
+
+    def shared_search_is_stopped(self):
+        return self._shared_search_controller is None or self._shared_search_controller.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')

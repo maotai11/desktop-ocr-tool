@@ -100,15 +100,15 @@ def valid_reports(paths):
                             checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
         '--smoke-app': dict(common, probe='application_lifecycle', phase_a=True,
                             engine_ready=True, shutdown_clean=True,
-                            threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True, 'history_maintenance': True}),
+                            threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True, 'history_maintenance': True, 'shared_search': True}),
     }
 
 
 @pytest.mark.parametrize('defect', ['none', 'wrong_hash', 'not_frozen', 'wrong_version',
                                   'offscreen', 'model_hash', 'thread_running', 'claimed_clean',
-                                  'maintenance_missing', 'maintenance_running'])
+                                  'maintenance_missing', 'maintenance_running', 'shared_missing', 'shared_running'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
-    from handwriting_release_fixtures import identity, image_probe, probe
+    from handwriting_release_fixtures import identity, image_probe, probe, shared_search_probe
 
     from scripts import handwriting_bundle
     monkeypatch.setattr(handwriting_bundle, 'identity', lambda _: identity())
@@ -118,6 +118,7 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     reports = valid_reports(paths)
     reports['--self-test-handwriting'] = probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     reports['--self-test-handwriting-image'] = image_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']), build.bundled_model_profiles(build.ROOT))
+    reports['--self-test-shared-search'] = shared_search_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     if defect == 'wrong_hash': reports['--self-test']['executable_sha256'] = '0' * 64
     if defect == 'not_frozen': reports['--self-test']['frozen'] = False
     if defect == 'wrong_version': reports['--self-test']['version'] = '0.0.0'
@@ -126,13 +127,15 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     if defect == 'thread_running': reports['--smoke-app']['threads_stopped']['ocr'] = False
     if defect == 'maintenance_missing': reports['--smoke-app']['threads_stopped'].pop('history_maintenance')
     if defect == 'maintenance_running': reports['--smoke-app']['threads_stopped']['history_maintenance'] = False
+    if defect == 'shared_missing': reports['--smoke-app']['threads_stopped'].pop('shared_search')
+    if defect == 'shared_running': reports['--smoke-app']['threads_stopped']['shared_search'] = False
     if defect == 'claimed_clean': reports['--smoke-app']['clean_machine_verified'] = True
     def run(executable, mode, report_path):
         write_validation_report(report_path, reports[mode])
         return reports[mode]
     monkeypatch.setattr(build, '_run_probe', run)
     if defect == 'none':
-        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json'}
+        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json'}
     else:
         with pytest.raises(RuntimeError):
             build.validate_candidate(paths)

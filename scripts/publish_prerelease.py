@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.10. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.11. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.10"
+TAG = "v1.8.0-rc.11"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,23 +133,26 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版補上90天自動封存，將多組 A／B 結果改為同時呈現，並修正掃描找到的設定與訊號漏接。
+本版新增「整列搜尋」：同一列可框選多個 A 欄位，到一個共用 B 範圍各自找位置；可手動換列，也能校正來源軟體的選取底色後跟隨新列。
 
-### 90天整理與孤兒節點修正
-- 「設定 → 一般 → 自動封存」預設90天，設0可停用。依最後修改時間已滿設定天數整理；啟動時及程式開啟期間每日檢查，每批200筆，排除釘選、已刪除／已封存及辨識中的紀錄。
-- 封存保留文字、原圖及附件，可在「已歸檔」查看並「取消歸檔」。它不會永久刪除資料或釋出附件空間；複製紀錄不會延後最後修改日期。
-- 修正「已歸檔」混入一般紀錄、浮窗與主控台修改後畫面不同步，以及托盤暫停勾選不同步。資料刷新保留搜尋、篩選、選取及捲動。
-- 關閉剪貼簿監聽／文字收錄立即解除監聽；重新啟用只接收之後的變化，不補收既有剪貼簿。取消與退出會拒絕過期回呼。
-- 27個未生效的舊預設設定退出新設定；舊JSON值仍可載入儲存，但不會啟用未封裝的引擎。移除無使用者的舊訊號匯流排與已完成的rc.3一次性發布流程。
-- 旁支掃描以rc.9來源為基準，14個舊分支皆已在master祖先鏈，PR #1–#12全合併；沒有再次合併或刪除舊分支。選用引擎介面與舊審計快照保留其原本用途，不誤當本版已啟用功能。
+### 整列搜尋：多 A、共用 B
+- 從浮動窗或系統匣開啟「整列搜尋」。先框預設 A 欄位，按「新增 A 欄位」加入姓名、編號或金額等，最多 20 欄；再框一個大家共用的 B 搜尋範圍。全部 A 設定完成後按「開始搜尋」，不用替每欄重選 B。
+- 每個 A 各自列出原文、結果及候選，最多採用一個 B 位置；不同 A 可以使用同一個 B 候選。B 畫面和辨識設定相同時只保留一份有界快取，不會每個 A 都重讀 B；發表結果前會再次確認 A／B 畫面。
+- 「數字嚴格／文字近似」保留正負號、小數點、千分位、百分號及前導零，`1.23` 不等於 `123`、`01` 不等於 `1`。文字採固定 95% 相似門檻；近似或低信心的候選仍標為需要確認，相似度不是 OCR 準確率。
+- 綠色「已找到」、紅色「未找到」、琥珀色「多處符合／需要確認」。重複候選不自動採用第一筆；在該欄下拉選位置後按「採用」。來源內容已改變時，過期的選擇與結果不再沿用。
 
-### A／B 多組結果同時呈現
-- 每組以一張卡片同時顯示名稱、差異狀態、A／B文字與時間，不必逐組切換才能看結果。一般348×560可完整看到3組，迷你320×300至少2組；最多20組，可直接捲動查看。
-- 「設定組別」只用於選取位置、更名、移除與全文；切換設定對象不隱藏其他組別結果。各組依序辨識，各自跳過未變畫面；更新不搶焦點、不自動放大或移動捲動位置。
-- 置頂、暫停、關閉與固定位置沿用；關閉停止整批，最小化繼續已啟動的監看。組別與結果只留本次記憶體，不新增歷史、截圖或自動貼上。
-- 預設忽略空白與標點，只比較文字及數字，金額、負號或標點有意義時請改逐字比對。
+### 手動換列與自動跟隨
+- 設定「列高／間距」（初始 30 螢幕像素，可設 1–500），按「上一列／下一列」，所有 A 框一起移動並重新搜尋。這只移動讀取位置，不會替另一套軟體點選或捲頁。
+- 自動跟隨前先框來源表格、設定列高，按「校正目前選取列」，在 3 秒倒數內回來源軟體選好基準列。開啟「自動跟隨表格」後，新底色列連續兩次檢查穩定才跟隨。
+- 同一個 Y 座標捲入新資料仍會更新內容；底色消失、多列同色或超出表格時不猜測新位置。手動換列會停用自動跟隨，改框或改列高後需重新校正。白底、斑馬紋、動畫與不等高列可能無法追蹤，請改手動操作。
 
-螢幕OCR、文件套版、手寫與複製清理維持原用法；沒有導入表格模型或新增確認貼上功能。
+### 標示、停止與隱私
+- 控制窗預設 348 × 560，可拖移、調整大小與切換置頂。桌面標示可調填色濃度，平時點擊穿透；要改位置請用控制窗的「框選」，Esc 取消。
+- 擷取前暫時隱藏標示，等待畫面更新後才取圖，避免讀到自己的框；可能出現短暫閃動。框只精確到 OCR 文字行，不能當作字元或儲存格定位。
+- 暫停、清除或關閉會停止後續檢查，清掉結果與標示；當前原生 OCR 需先返回，晚到結果不會重新顯示舊標示。位置與校正只保留本次執行，不存 A／B 截圖、歷史、剪貼簿或內容 Log。
+- 本版先限主螢幕且來源必須可見；遮住、最小化或畫面外的文字無法搜尋。沒有導入新的表格結構模型，也不會自動辨認合併儲存格或操作來源軟體。
+
+原有多組 A／B 固定核對、一般 OCR、手寫、文件套版、複製清理與 90 天封存沿用既有操作。詳細步驟與例子見 ZIP 內 `docs/SHARED_SEARCH.md` 及同版離線說明。
 
 ### 複製時移除所有標點與空白
 - 在「設定 → 剪貼簿」啟用「複製時移除所有標點與空白」，預設關閉。`「您好， 世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
@@ -529,7 +532,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
     """Bind standalone/empty-profile probes to the exact candidate EXE."""
     from scripts.prepare_public_validation import strict_json
     from scripts.verify_candidate_bundle import (
-        _check_probe, check_handwriting_image_probe, check_handwriting_probe,
+        _check_probe, check_handwriting_image_probe, check_handwriting_probe, check_shared_search_probe,
     )
     prefix = 'artifacts/portable-validation/'
     try:
@@ -552,6 +555,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
             ('isolated-handwriting-image.json', check_handwriting_image_probe),
             ('isolated-documents.json', _check_document_probe),
             ('isolated-comparison.json', _check_comparison_probe),
+            ('isolated-shared-search.json', check_shared_search_probe),
         ):
             raw = snapshots[prefix + name]
             report = strict_json(raw)
@@ -589,7 +593,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-comparison.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-comparison.json", "source-shared-search.json", "test-results.xml",
                       "artifacts/security-audit.json", "artifacts/dependency-inventory.json",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
@@ -599,18 +603,21 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/firewall-validation/handwriting-firewall-gate.json",
                       "artifacts/firewall-validation/frozen-runtime-stress.json",
                       "artifacts/firewall-validation/frozen-comparison.json",
+                      "artifacts/firewall-validation/frozen-shared-search.json",
                       "artifacts/portable-validation/isolated-profile-gate.json",
                       "artifacts/portable-validation/isolated-selftest.json",
                       "artifacts/portable-validation/isolated-app-smoke.json",
                       "artifacts/portable-validation/isolated-handwriting.json",
                       "artifacts/portable-validation/isolated-handwriting-image.json",
                       "artifacts/portable-validation/isolated-documents.json",
-                      "artifacts/portable-validation/isolated-comparison.json"]
+                      "artifacts/portable-validation/isolated-comparison.json",
+                      "artifacts/portable-validation/isolated-shared-search.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
                       "artifacts/candidate-validation/frozen-handwriting.json",
                       "artifacts/candidate-validation/frozen-handwriting-image.json",
+                      "artifacts/candidate-validation/frozen-shared-search.json",
                       "artifacts/" + ZIP_NAME + ".sha256"]
     snapshots = {}
     for name in snapshot_names:
@@ -682,6 +689,16 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         require(comparison.get('source_commit') == context.source_commit,
                 'Comparison probe source differs from candidate')
     check_portable_profile(snapshots, manifest)
+    from scripts.verify_candidate_bundle import check_shared_search_probe
+    for name, frozen in (('source-shared-search.json', False),
+                         ('artifacts/firewall-validation/frozen-shared-search.json', True)):
+        shared = json.loads(snapshots[name])
+        try:
+            check_shared_search_probe(shared, manifest, frozen)
+        except ValueError as exc:
+            raise PublicationError('Invalid shared-search lifecycle evidence') from exc
+        require(shared.get('source_commit') == context.source_commit,
+                'Shared-search probe source differs from candidate')
     require(source.get("dirty") is False
             and COMMIT_RE.fullmatch(source.get("head_tree", "")) is not None
             and SHA256_RE.fullmatch(source.get("working_tree_sha256", "")) is not None,
@@ -716,7 +733,8 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                     for info in archive.infolist()), "Symlink member in portable ZIP")
         for name in ["BUILD_MANIFEST.json", "SOURCE_MANIFEST.json",
                      "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json",
-                     "candidate-validation/frozen-handwriting.json", "candidate-validation/frozen-handwriting-image.json"]:
+                     "candidate-validation/frozen-handwriting.json", "candidate-validation/frozen-handwriting-image.json",
+                     "candidate-validation/frozen-shared-search.json"]:
             require(archive.getinfo(prefix + name).file_size <= MAX_JSON_BYTES,
                     "Oversized embedded validation metadata")
             metadata_files[name] = archive.read(prefix + name)

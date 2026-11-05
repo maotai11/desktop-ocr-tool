@@ -221,6 +221,8 @@ class Pipeline(QObject):
             self.widget.shutdown_documents()
         if hasattr(self.widget, 'shutdown_comparison'):
             self.widget.shutdown_comparison()
+        if hasattr(self.widget, 'shutdown_shared_search'):
+            self.widget.shutdown_shared_search()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
             stop = getattr(self.clipboard, 'stop', None)
@@ -297,6 +299,10 @@ class Pipeline(QObject):
             return
         if (hasattr(self.widget, 'comparison_is_stopped') and
                 not self.widget.comparison_is_stopped()):
+            self._tools_poll.start()
+            return
+        if (hasattr(self.widget, 'shared_search_is_stopped') and
+                not self.widget.shared_search_is_stopped()):
             self._tools_poll.start()
             return
         self._tools_poll.stop()

@@ -17,19 +17,19 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.10'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.11'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'network_audit', 'build', 'firewall', 'portable_profile', 'bundle_verify')
+    'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'source_shared_search', 'network_audit', 'build', 'firewall', 'portable_profile', 'bundle_verify')
 WINDOWS_ONLY = {'build', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
 BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed worker_pid_verified '
     'job_assigned cancelled_and_reaped children_reaped queue_latest_only clipboard_roundtrip '
-    'history_maintenance '
+    'history_maintenance shared_search '
     'self_mime_preserved helper_stopped firewall_gate_acknowledged helper_outbound_blocked '
     'executable_outbound_blocked firewall_service_running firewall_profiles_enabled started '
     'timed_out output_limit_exceeded direct_child_reaped owned_tree_exited '
@@ -41,6 +41,9 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'unchanged_frames_skipped changed_frames_resumed close_stops_polling pin_toggle_available '
     'mini_results_visible mini_results_live_updated all_groups_visible all_groups_live_updated '
     'batch_groups_isolated batch_serialized batch_unchanged_skipped batch_cancel_stops_all '
+    'shared_b_reused multiple_a_rows one_b_match_per_a strict_numbers ambiguous_requires_selection '
+    'manual_selection_applied manual_row_shift blue_calibration blue_follow_stable same_y_scroll_refreshed '
+    'stale_rows_discarded capture_overlay_hidden clipboard_history_untouched overlay_capture_verified '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
@@ -55,11 +58,11 @@ ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle', 'comparison_lifecycle', 'dependency_vulnerabilities', 'runtime_network'},
+              'document_template_lifecycle', 'comparison_lifecycle', 'shared_search_lifecycle', 'dependency_vulnerabilities', 'runtime_network'},
     'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
     'scanner': {'pip-audit'},
     'scanner_version': {'2.10.1'},
-    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS'},
+    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS', 'SYNTHETIC_SHARED_SEARCH'},
     'phase': {'completed', 'waiting_firewall', 'starting', 'shutdown'},
     'status': {'PASSED', 'FAILED', 'NOT_RUN', 'RECORDED_NOT_A_TRUSTED_LOCK'},
     'source_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
@@ -77,8 +80,8 @@ CONTAINERS = {'checks', 'phases', 'collection', 'execution', 'model_profiles', '
     'v6-small', 'v6-medium', 'source_manifest', 'build_manifest', 'handwriting', 'helper',
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
-    'frozen-handwriting-image.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'probes', 'candidate_probes',
+    'frozen-handwriting-image.json', 'frozen-shared-search.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
+    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json', 'probes', 'candidate_probes',
     'threads_stopped', 'dependency_inventory', 'job_before_cleanup', 'job_after_cleanup'}
 STATUSES = {'PASSED', 'FAILED', 'NOT_RUN'}
 
@@ -258,7 +261,9 @@ def observed_result(value):
             for child in item: visit(child)
     visit(value)
     if any(r.get('invalid_allowlisted_fields') for r in records): return 'INVALID_FIELDS'
-    failed = any(r.get('passed') is False or any(r.get(k) is True for k in ('timed_out','output_limit_exceeded','nonpublic_error_present')) or (type(r.get('exit_code')) is int and r['exit_code'] != 0) or any(r.get(k, 0) > 0 for k in
+    failed = any(r.get('passed') is False or (r.get('probe') == 'shared_search_lifecycle'
+        and r.get('platform') == 'win32' and r.get('overlay_capture_verified') is False)
+        or any(r.get(k) is True for k in ('timed_out','output_limit_exceeded','nonpublic_error_present')) or (type(r.get('exit_code')) is int and r['exit_code'] != 0) or any(r.get(k, 0) > 0 for k in
         ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls')) or
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
@@ -267,7 +272,10 @@ def observed_result(value):
              'uncertain_not_match','clipboard_unchanged','cancelled_results_ignored','workers_stopped',
              'unchanged_frames_skipped','changed_frames_resumed','close_stops_polling','pin_toggle_available',
              'mini_results_visible','mini_results_live_updated','all_groups_visible','all_groups_live_updated',
-             'batch_groups_isolated','batch_serialized','batch_unchanged_skipped','batch_cancel_stops_all')))
+             'batch_groups_isolated','batch_serialized','batch_unchanged_skipped','batch_cancel_stops_all',
+             'shared_b_reused','multiple_a_rows','one_b_match_per_a','strict_numbers','ambiguous_requires_selection',
+             'manual_selection_applied','manual_row_shift','blue_calibration','blue_follow_stable','same_y_scroll_refreshed',
+             'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched')))
         for r in records)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'
@@ -281,6 +289,7 @@ def sources():
         ('source-handwriting.json', 'json', False), ('source-handwriting-image.json', 'json', False),
         ('artifacts/source-documents.json', 'json', False),
         ('source-comparison.json', 'json', False),
+        ('source-shared-search.json', 'json', False),
         ('artifacts/firewall-validation/frozen-comparison.json', 'json', True),
         ('artifacts/security-audit.json', 'json', False),
         ('artifacts/runtime-network-audit.json', 'json', False),
@@ -294,12 +303,12 @@ def sources():
         ('artifacts/handwriting-native-probe.json', 'json', False),
         ('artifacts/verified-bundle.json', 'json', True)]
     for directory in ('candidate-validation', 'firewall-validation'):
-        for name in ('frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json'):
+        for name in ('frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json'):
             result.append((f'artifacts/{directory}/{name}', 'json', True))
     for name in ('candidate-gate.json', 'handwriting-firewall-gate.json', 'frozen-runtime-stress.json'):
         result.append((f'artifacts/firewall-validation/{name}', 'json', True))
     for name in ('isolated-profile-gate.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json'):
+                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json'):
         result.append((f'artifacts/portable-validation/{name}', 'json', True))
     result.extend([
         (f'artifacts/release-v{VERSION}/BUILD_MANIFEST.json', 'json', True),
@@ -317,6 +326,7 @@ def source_step(relative):
         'source-handwriting-image.json':'source_image',
         'artifacts/source-documents.json':'source_documents',
         'source-comparison.json':'source_comparison',
+        'source-shared-search.json':'source_shared_search',
         'artifacts/security-audit.json':'security_audit',
         'artifacts/runtime-network-audit.json':'network_audit',
         'artifacts/document-validation/frozen-documents.json':'firewall',
