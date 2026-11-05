@@ -1,6 +1,7 @@
 """The finite GUI report is earned by controls and survives failure safely."""
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,17 @@ def release_owned_clipboard(qapp):
     qapp.clipboard().clear()
 
 
-def test_real_gui_control_matrix_and_worker_shutdown(qapp, tmp_path, monkeypatch):
+@pytest.mark.parametrize('lexical_root', [False, True], ids=['canonical-root', 'lexical-parent-alias'])
+def test_real_gui_control_matrix_and_worker_shutdown(qapp, tmp_path, monkeypatch, lexical_root):
+    if lexical_root:
+        original_temporary_directory = gui_probe.tempfile.TemporaryDirectory
+        @contextmanager
+        def aliased_temporary_directory(*args, **kwargs):
+            with original_temporary_directory(*args, **kwargs) as directory:
+                alias = Path(directory) / 'alias'
+                alias.mkdir()
+                yield str(alias / '..')
+        monkeypatch.setattr(gui_probe.tempfile, 'TemporaryDirectory', aliased_temporary_directory)
     monkeypatch.setenv('DESKTOP_OCR_HOME', str(tmp_path / 'unrelated-profile'))
     monkeypatch.setenv('GITHUB_SHA', 'a' * 40)
     unrelated = tmp_path / 'unrelated-profile'
@@ -44,6 +55,20 @@ def test_real_gui_control_matrix_and_worker_shutdown(qapp, tmp_path, monkeypatch
     assert qapp.clipboard().text() == 'original clipboard'
     assert qapp.clipboard().mimeData().html() == '<b>original clipboard</b>'
     assert list(unrelated.iterdir()) == [sentinel]
+
+
+def test_fixture_path_containment_still_rejects_external_file(tmp_path):
+    owned_root = (tmp_path / 'owned').resolve()
+    owned_root.mkdir()
+    internal = owned_root / 'fixture.png'
+    internal.write_bytes(b'owned fixture')
+    external = tmp_path / 'external.png'
+    external.write_bytes(b'external fixture')
+    gui_probe._require_owned_fixture(internal, owned_root)
+    with pytest.raises(ValueError):
+        gui_probe._require_owned_fixture(external, owned_root)
+    with pytest.raises(ValueError):
+        gui_probe._require_owned_fixture(owned_root / '..' / external.name, owned_root)
 
 
 def test_failure_replaces_old_pass_cleans_owned_files_and_redacts(qapp, tmp_path, monkeypatch):
