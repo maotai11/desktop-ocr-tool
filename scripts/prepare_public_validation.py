@@ -122,7 +122,23 @@ def safe_fields(value, depth=0, context=None):
             continue  # model path/source URL/license free text is not public metadata
         if key in ('source','source_manifest') and not isinstance(item, dict):
             continue  # upstream URLs are not the structured source-identity containers
-        if key == 'models' and type(item) is str and context in ('v6-small', 'v6-medium'):
+        if key == 'frozen_payload':
+            # Public proof keeps only these finite facts from the payload
+            # inspector. Archive member names, paths and native diagnostics
+            # are not part of this summary contract.
+            if type(item) is not dict:
+                invalid.append(key)
+                continue
+            payload = {}
+            for flag in ('inspected', 'embedded_model_hashes_verified',
+                         'embedded_handwriting_verified', 'native_archive_coverage_verified'):
+                if flag in item:
+                    if type(item[flag]) is bool:
+                        payload[flag] = item[flag]
+                    else:
+                        invalid.append(key)
+            result[key] = payload
+        elif key == 'models' and type(item) is str and context in ('v6-small', 'v6-medium'):
             # runtime_stress records OcrEngine's fixed profile/role/version/hash identity.
             parts = item.split(';')
             parsed = {}
