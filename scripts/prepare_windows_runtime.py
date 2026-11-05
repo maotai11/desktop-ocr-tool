@@ -161,16 +161,19 @@ def verify_native_files(root, lock, *, immutable_only=False):
     root = Path(root)
     def redirected(path):
         return path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction())
+    def package_tool(name):
+        # ensurepip and later wheels own these areas, never CPython provenance.
+        return name.casefold().startswith(('lib/site-packages/', 'scripts/'))
     require(not redirected(root), 'Runtime root is redirected')
     expected = {name: item for name, item in lock['files'].items()
-                if not immutable_only or not name.casefold().startswith('lib/site-packages/')}
+                if not immutable_only or not package_tool(name)}
     actual = {}
     for path in root.rglob('*'):
         require(not redirected(path), 'Runtime filesystem contains a link or junction')
         if not path.is_file():
             continue
         name = path.relative_to(root).as_posix()
-        if immutable_only and name.casefold().startswith('lib/site-packages/'):
+        if immutable_only and package_tool(name):
             continue
         with path.open('rb') as stream:
             header = stream.read(2)
@@ -183,11 +186,11 @@ def verify_native_files(root, lock, *, immutable_only=False):
 
 SMOKE = '''import hashlib,json,ssl,sys,_ssl,_hashlib
 print(json.dumps({'python_version':'.'.join(map(str,sys.version_info[:3])),
- 'openssl_version':'.'.join(map(str,ssl.OPENSSL_VERSION_INFO[:3])),
+ 'openssl_version':ssl.OPENSSL_VERSION.split()[1],
  'openssl_library':ssl.OPENSSL_VERSION,'executable':sys.executable,
- 'prefix':sys.prefix,'base_prefix':sys.base_prefix,'ssl_module':_ssl.__file__,
- 'hashlib_module':_hashlib.__file__,
- 'hashlib_ok':hashlib.sha256(b'abc').hexdigest()=='ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'})
+ 'prefix':sys.prefix,'base_prefix':sys.base_prefix,'ssl_module':getattr(_ssl,'__file__',''),
+ 'hashlib_module':getattr(_hashlib,'__file__',''),
+ 'hashlib_ok':hashlib.sha256(b'abc').hexdigest()=='ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'}))
 '''  # All absolute paths stay private inside this bootstrap process.
 
 
@@ -287,18 +290,16 @@ def main(argv=None):
     parser.add_argument('--report', required=True, type=Path)
     args = parser.parse_args(argv)
     try:
+        # Seed a fresh failure before any platform/lock preflight. prepare()
+        # then replaces it with its earned stage flags in its own finally.
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_bytes(canonical_bytes({'schema': 1, 'probe': 'windows_runtime_preparation',
+            'platform': 'win32', 'passed': False, 'error_code': 'WINDOWS_RUNTIME_PREPARATION_FAILED'}) + b'\n')
         require(sys.platform == 'win32', 'Windows runtime bootstrap requires Windows')
         prepare(args.destination, args.report)
         print(str(args.destination.resolve() / 'python.exe'))
         return 0
     except Exception:  # noqa: BLE001 - raw URLs, directories and child output stay private
-        # Even a preflight/lock failure must replace any stale previous PASS.
-        try:
-            args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_bytes(canonical_bytes({'schema': 1, 'probe': 'windows_runtime_preparation',
-                'platform': 'win32', 'passed': False, 'error_code': 'WINDOWS_RUNTIME_PREPARATION_FAILED'}) + b'\n')
-        except OSError:
-            pass
         print('WINDOWS_RUNTIME_PREPARATION_FAILED', file=sys.stderr)
         return 1
 
