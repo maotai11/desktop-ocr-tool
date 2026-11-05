@@ -239,13 +239,14 @@ def test_api_set_v6_uses_measured_host_mapping_and_rejects_bad_bounds():
         audit.parse_api_set(data)
 
 
-def api_set_fixture(*hosts):
-    name = 'api-ms-win-test-l1-1-0'.encode('utf-16-le')
+def api_set_fixture(*hosts, name='api-ms-win-test-l1-1-0', hashed_prefix=None):
+    hashed_length = len((hashed_prefix or name).encode('utf-16-le'))
+    name = name.encode('utf-16-le')
     encoded = [host.encode('utf-16-le') for host in hosts]
     strings = 52 + 20 * len(hosts)
     data = bytearray(strings + len(name) + sum(map(len, encoded)))
     struct.pack_into('<7I', data, 0, 6, len(data), 0, 1, 28, 0, 0)
-    struct.pack_into('<6I', data, 28, 0, strings, len(name), len(name), 52, len(hosts))
+    struct.pack_into('<6I', data, 28, 0, strings, len(name), hashed_length, 52, len(hosts))
     data[strings:strings + len(name)] = name
     position = strings + len(name)
     for index, raw in enumerate(encoded):
@@ -260,6 +261,86 @@ def test_observed_windows_kernel_and_winspool_hosts_parse_without_global_failure
     # winspool.drv in the real v6 schema. The synthetic contract keeps no host paths.
     result = audit.parse_api_set(api_set_fixture('win32kfull.sys', 'winspool.drv', 'kernelbase.dll'))
     assert result['api-ms-win-test-l1-1-0.dll'] == ('win32kfull.sys', 'winspool.drv', 'kernelbase.dll')
+
+
+@pytest.mark.parametrize('canonical,requested,host,symbol', [
+    ('api-ms-win-shcore-scaling-l1-1-2', 'api-ms-win-shcore-scaling-l1-1-1', 'shcore.dll', 'GetDpiForMonitor'),
+    ('api-ms-win-core-winrt-string-l1-1-1', 'api-ms-win-core-winrt-string-l1-1-0', 'combase.dll',
+     'WindowsCreateStringReference'),
+])
+def test_observed_api_set_revisions_use_measured_hash_prefix(canonical, requested, host, symbol):
+    # Actual Windows Server 2025 run 41988813188 measured these HashedLength
+    # prefixes (60/66 bytes); exact requested revision records were absent.
+    namespace = audit.parse_api_set(api_set_fixture(host, name=canonical, hashed_prefix=canonical.rsplit('-', 1)[0]))
+    assert list(namespace) == [canonical + '.dll']
+    calls = []
+    def system_metadata(name):
+        calls.append(name)
+        return {'machine': 'AMD64', 'is_dll': True, '_exports': {symbol}}
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': requested + '.dll', 'kind': 'delay', '_symbols': [symbol]}, [],
+        system_metadata=system_metadata, api_sets=namespace, known_dlls=set(), package_dependencies={})
+    assert result['resolution'] == 'api_set' and result['target'] == host and result['missing_symbols_count'] == 0
+    assert calls == [host]
+
+
+@pytest.mark.parametrize('defect', ['plain_dict', 'full_name_hash', 'wrong_prefix', 'non_numeric_revision',
+                                   'kernel_only', 'missing_symbol', 'not_dll'])
+def test_revision_alias_never_guesses_unmeasured_or_invalid_hosts(defect):
+    canonical = 'api-ms-win-test-l1-1-2'
+    prefix = canonical.rsplit('-', 1)[0]
+    namespace = audit.parse_api_set(api_set_fixture('kernelbase.dll', name=canonical, hashed_prefix=prefix))
+    requested = 'api-ms-win-test-l1-1-0.dll'
+    metadata = {'machine': 'AMD64', 'is_dll': True, '_exports': {'Entry'}}
+    if defect == 'plain_dict': namespace = dict(namespace)
+    if defect == 'full_name_hash': namespace = audit.parse_api_set(api_set_fixture('kernelbase.dll', name=canonical))
+    if defect == 'wrong_prefix': requested = 'api-ms-win-other-l1-1-0.dll'
+    if defect == 'non_numeric_revision': requested = 'api-ms-win-test-l1-1-guess.dll'
+    if defect == 'kernel_only': namespace = audit.parse_api_set(api_set_fixture('win32k.sys', name=canonical, hashed_prefix=prefix))
+    if defect == 'missing_symbol': metadata['_exports'] = set()
+    if defect == 'not_dll': metadata['is_dll'] = False
+    calls = []
+    def system_metadata(name):
+        calls.append(name)
+        return metadata if name == 'kernelbase.dll' else None
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': requested, 'kind': 'regular', '_symbols': ['Entry']}, [],
+        system_metadata=system_metadata, api_sets=namespace, known_dlls=set(), package_dependencies={})
+    assert result['resolution'] == 'unresolved' and result['missing_symbols_count'] == 1
+    if defect == 'kernel_only': assert calls == []
+
+
+def test_conflicting_hash_prefix_is_unresolved_but_canonical_records_stay_exact():
+    namespace = audit._ApiSetNamespace()
+    prefix = 'api-ms-win-test-l1-1'
+    namespace.add_record(prefix + '-1.dll', prefix, ('first.dll',))
+    namespace.add_record(prefix + '-2.dll', prefix, ('second.dll',))
+    assert namespace.hosts_for_name(prefix + '-1.dll') == ('first.dll',)
+    assert namespace.hosts_for_name(prefix + '-2.dll') == ('second.dll',)
+    calls = []
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': prefix + '-0.dll', 'kind': 'regular', '_symbols': ['Entry']}, [],
+        system_metadata=lambda name: calls.append(name), api_sets=namespace,
+        known_dlls=set(), package_dependencies={})
+    assert result['resolution'] == 'unresolved' and calls == []
+    namespace.add_record(prefix + '-3.dll', prefix, ('first.dll',))
+    assert namespace.hosts_for_name(prefix + '-0.dll') == ()
+
+
+def test_identical_measured_host_tuples_can_share_a_prefix():
+    namespace = audit._ApiSetNamespace()
+    prefix = 'api-ms-win-test-l1-1'
+    namespace.add_record(prefix + '-1.dll', prefix, ('kernelbase.dll',))
+    namespace.add_record(prefix + '-2.dll', prefix, ('kernelbase.dll',))
+    assert namespace.hosts_for_name(prefix + '-0.dll') == ('kernelbase.dll',)
+
+
+@pytest.mark.parametrize('hashed_size', [0, 1, 65536])
+def test_invalid_measured_hash_prefix_bounds_are_rejected(hashed_size):
+    data = bytearray(api_set_fixture('kernelbase.dll'))
+    struct.pack_into('<I', data, 28 + 12, hashed_size)
+    with pytest.raises(ValueError, match='hashed length'):
+        audit.parse_api_set(data)
 
 
 def test_kernel_only_api_set_never_resolves_a_user_mode_import():

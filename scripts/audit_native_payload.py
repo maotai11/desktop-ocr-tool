@@ -456,6 +456,29 @@ def _runtime_sources(index, *, runtime_root=None, runtime_version=None, lock_pat
         index.setdefault(digest, []).append(source)
 
 
+class _ApiSetNamespace(dict):
+    """Canonical records plus revision prefixes measured from the OS schema."""
+    def __init__(self):
+        super().__init__()
+        self._hashed_hosts = {}
+
+    def add_record(self, name, prefix, hosts):
+        require(name not in self or self[name] == hosts, 'Conflicting canonical API-set record')
+        self[name] = hosts
+        if prefix not in self._hashed_hosts:
+            self._hashed_hosts[prefix] = hosts
+        elif self._hashed_hosts[prefix] != hosts:
+            self._hashed_hosts[prefix] = None  # Ambiguous aliases never select an arbitrary host.
+
+    def hosts_for_name(self, name):
+        if name in self:
+            return self[name]
+        match = re.fullmatch(r'((?:api|ext)-ms-(?:[a-z0-9]+-)+l[0-9]+-[0-9]+)-[0-9]+\.dll', name)
+        if match and match[1] in self._hashed_hosts:
+            return self._hashed_hosts[match[1]] or ()
+        return None
+
+
 def parse_api_set(data):
     """Read Windows API-set namespace v6 from System32/apisetschema.dll .apiset."""
     require(len(data) >= 28, 'Incomplete API-set namespace')
@@ -465,11 +488,13 @@ def parse_api_set(data):
         require(length % 2 == 0 and 0 <= start <= start + length <= size, 'Invalid API-set string')
         return data[start:start + length].decode('utf-16-le').lower()
     require(offset + count * 24 <= size, 'Invalid API-set entries')
-    result = {}
+    result = _ApiSetNamespace()
     for index in range(count):
-        _, name_offset, name_size, _, values_offset, value_count = struct.unpack_from('<6I', data, offset + index * 24)
+        _, name_offset, name_size, hashed_size, values_offset, value_count = struct.unpack_from('<6I', data, offset + index * 24)
         require(value_count <= 1024 and values_offset + value_count * 20 <= size, 'Invalid API-set values')
+        require(hashed_size % 2 == 0 and 0 < hashed_size <= name_size, 'Invalid API-set hashed length')
         name = string(name_offset, name_size) + '.dll'
+        prefix = string(name_offset, hashed_size)
         safe_path(name)
         hosts = []
         for item in range(value_count):
@@ -483,7 +508,7 @@ def parse_api_set(data):
                 # contracts. Preserve those records without treating them as
                 # libraries loadable by this desktop application.
                 hosts.append(target)
-        result[name] = tuple(dict.fromkeys(hosts))
+        result.add_record(name, prefix, tuple(dict.fromkeys(hosts)))
     return result
 
 
@@ -522,8 +547,9 @@ def resolve_import(importer, dependency, files, *, system_metadata, api_sets, kn
         return outcome('unresolved', name, {'_exports': set()})
     if not _user_library_name(name):
         return unresolved()
-    if name in api_sets:
-        for host in api_sets[name]:
+    api_hosts = api_sets.hosts_for_name(name) if isinstance(api_sets, _ApiSetNamespace) else api_sets.get(name)
+    if api_hosts is not None:
+        for host in api_hosts:
             if not _user_library_name(host):
                 continue  # A kernel-only contract cannot satisfy a user-mode import.
             metadata = system_metadata(host)
