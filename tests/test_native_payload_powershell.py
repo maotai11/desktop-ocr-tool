@@ -90,6 +90,81 @@ def test_native_defender_readiness_fails_closed(tmp_path, case):
 
 
 @pytest.mark.parametrize('case', [
+    'fresh', 'stale_updated', 'stale_update_failed', 'stale_update_timeout',
+    'stale_scanner_unavailable', 'still_stale', 'privacy_unsafe_stale',
+    'maps_unsafe_stale', 'service_unavailable_stale', 'engine_unavailable_stale',
+    'signature_unavailable_stale', 'invalid_timestamp', 'privacy_changes_after_update',
+    'service_changes_after_update', 'custom_deadline', 'excessive_deadline',
+])
+def test_native_definitions_refresh_only_after_safe_staleness_and_recheck(tmp_path, case):
+    max_seconds = 73 if case == 'custom_deadline' else 181 if case == 'excessive_deadline' else 180
+    body = r'''
+$script:trace = [ordered]@{ scanner_calls=0; update_calls=0; status_reads=0; preference_reads=0; seconds=0; arguments=@(); program='' }
+$script:status = [pscustomobject]@{
+    AMServiceEnabled=$true; AntivirusEnabled=$true; AMEngineVersion='1.1.26090.2'
+    AntivirusSignatureVersion='1.451.99.0'; AntivirusSignatureLastUpdated=[DateTime]::UtcNow.AddHours(-151)
+    AMRunningMode='Normal'; RealTimeProtectionEnabled=$true
+}
+$script:preference = [pscustomobject]@{ SubmitSamplesConsent=2; MAPSReporting=0 }
+if ($fixture.case -eq 'fresh') { $script:status.AntivirusSignatureLastUpdated=[DateTime]::UtcNow.AddHours(-2) }
+if ($fixture.case -eq 'invalid_timestamp') { $script:status.AntivirusSignatureLastUpdated=[DateTime]::UtcNow.AddHours(2) }
+if ($fixture.case -eq 'privacy_unsafe_stale') { $script:preference.SubmitSamplesConsent=1 }
+if ($fixture.case -eq 'maps_unsafe_stale') { $script:preference.MAPSReporting=2 }
+if ($fixture.case -eq 'service_unavailable_stale') { $script:status.AMServiceEnabled=$false }
+if ($fixture.case -eq 'engine_unavailable_stale') { $script:status.AMEngineVersion='0.0.0.0' }
+if ($fixture.case -eq 'signature_unavailable_stale') { $script:status.AntivirusSignatureVersion='0.0.0.0' }
+function Get-MpComputerStatus { $script:trace.status_reads++; return $script:status }
+function Get-MpPreference { $script:trace.preference_reads++; return $script:preference }
+function Get-NativeDefenderScanner {
+    $script:trace.scanner_calls++
+    if ($fixture.case -eq 'stale_scanner_unavailable') { throw 'NATIVE_DEFENDER_UNAVAILABLE' }
+    return 'TRUSTED-MICROSOFT-MPCMD.EXE'
+}
+function Invoke-NativeBoundedProcess([string]$Program, [string[]]$Arguments, [string]$LogPrefix, [int]$Seconds) {
+    $script:trace.update_calls++
+    $script:trace.seconds=$Seconds
+    $script:trace.arguments=@($Arguments)
+    $script:trace.program=$Program
+    if ($fixture.case -eq 'stale_update_failed') { return 2 }
+    if ($fixture.case -eq 'stale_update_timeout') { throw 'NATIVE_PROCESS_TIMEOUT' }
+    if ($fixture.case -ne 'still_stale') {
+        $script:status.AntivirusSignatureLastUpdated=[DateTime]::UtcNow.AddMinutes(-1)
+        $script:status.AntivirusSignatureVersion='1.451.100.0'
+    }
+    if ($fixture.case -eq 'privacy_changes_after_update') { $script:preference.SubmitSamplesConsent=1 }
+    if ($fixture.case -eq 'service_changes_after_update') { $script:status.AntivirusEnabled=$false }
+    return 0
+}
+try {
+    $ready = Get-NativeFreshDefenderReadiness -LogPrefix (Join-Path $PSScriptRoot 'definition-update') -MaxSeconds $fixture.max_seconds
+    $ready | ConvertTo-Json -Compress
+} finally {
+    Write-NativeJson (Join-Path $PSScriptRoot 'refresh-trace.json') $script:trace
+}
+'''
+    result = run_helpers(tmp_path, body, {'case': case, 'max_seconds': max_seconds})
+    succeeded = case in ('fresh', 'stale_updated', 'custom_deadline')
+    assert (result.returncode == 0) is succeeded, result.stdout + result.stderr
+    trace = json.loads((tmp_path / 'refresh-trace.json').read_text(encoding='utf-8'))
+    safe_stale = case in ('stale_updated', 'stale_update_failed', 'stale_update_timeout',
+                         'stale_scanner_unavailable', 'still_stale', 'privacy_changes_after_update',
+                         'service_changes_after_update', 'custom_deadline')
+    assert trace['scanner_calls'] == int(safe_stale)
+    assert trace['update_calls'] == int(safe_stale and case != 'stale_scanner_unavailable')
+    if trace['update_calls']:
+        assert trace['arguments'] == ['-SignatureUpdate', '-MMPC']
+        assert trace['program'] == 'TRUSTED-MICROSOFT-MPCMD.EXE'
+        assert trace['seconds'] == max_seconds <= 180
+    if case in ('stale_updated', 'custom_deadline', 'still_stale',
+                'privacy_changes_after_update', 'service_changes_after_update'):
+        assert trace['status_reads'] == trace['preference_reads'] == 2
+    if succeeded:
+        report = json.loads(result.stdout.splitlines()[-1])
+        assert report['sample_submission_consent'] == 2 and report['maps_reporting'] == 0
+        assert report['antivirus_signature_version'] == ('1.451.99.0' if case == 'fresh' else '1.451.100.0')
+
+
+@pytest.mark.parametrize('case', [
     'valid', 'traversal', 'absolute', 'extra_file', 'missing_file', 'duplicate',
     'directory', 'unapproved_root', 'backslash', 'symlink',
 ])
