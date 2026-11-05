@@ -264,7 +264,11 @@ def build_with_pyinstaller(root: Path, paths: dict[str, Path], onefile=True) -> 
     handwriting = identity(root)
     if handwriting['helper'].get('platform') != 'win32':
         raise RuntimeError('A Windows x64 handwriting helper is required')
-    subprocess.run(pyinstaller_command(root, paths, onefile), cwd=root, check=True, timeout=900)
+    command = pyinstaller_command(root, paths, onefile)
+    # The owned child preserves every CLI option, then applies the OS-proven
+    # compatibility policy after complete Analysis and before packaging.
+    command[2] = 'scripts.windows_binary_policy'
+    subprocess.run(command, cwd=root, check=True, timeout=900)
     from scripts.verify_candidate_bundle import inspect_frozen_payload
     # Reject accidental vendor/default/baseline ONNX additions before running an EXE.
     inspect_frozen_payload(paths['out_exe'], bundled_model_profiles(root),

@@ -29,9 +29,11 @@ MAX_ENTRIES = 10_000
 MAX_FILE_BYTES = 512 * 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 MAX_NATIVE_FILES = 2048
+MAX_EXPORT_SYMBOLS = 131_072
 SHA = re.compile(r'[0-9a-f]{64}')
 COMMIT = re.compile(r'[0-9a-f]{40}')
 NATIVE_SUFFIXES = ('.dll', '.pyd', '.exe')
+_IMPORTER_UNSET = object()
 PROVENANCE_KINDS = {'wheel_record', 'cpython_runtime', 'native_helper_lock',
                     'pyinstaller_bootloader_code', 'windows_system_file'}
 SCANNER_KEYS = ('antivirus_scan_completed', 'antivirus_detections_count',
@@ -92,6 +94,23 @@ def _user_library_name(value):
         return False
     return bool(re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}', value)
                 and value.lower().endswith(('.dll', '.drv')))
+
+
+def _windows_sxs_target(value):
+    safe_path(value)
+    require(re.fullmatch(r'WinSxS/amd64_[A-Za-z0-9_.+-]{1,255}/comctl32\.dll', value),
+            'Unsupported Windows activation-context target')
+    return value
+
+
+def _importer_basename(value):
+    if type(value) is not str or not 0 < len(value) <= 255 or value == '@executable':
+        return None
+    try:
+        safe_path(value)
+    except ValueError:
+        return None
+    return value.casefold() if PurePosixPath(value).name == value else None
 
 
 def _utc(value):
@@ -168,12 +187,16 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
         require(type(item['imports']) is list and len(item['imports']) <= 1024, 'Invalid import list')
         seen_imports = set()
         for dependency in item['imports']:
-            require(type(dependency) is dict and set(dependency) == {'name', 'kind', 'resolution', 'target',
-                'symbols_count', 'missing_symbols_count'}, 'Invalid dependency fields')
+            require(type(dependency) is dict, 'Invalid dependency fields')
+            dependency_keys = {'name', 'kind', 'resolution', 'target', 'symbols_count', 'missing_symbols_count'}
+            if dependency.get('resolution') == 'windows_sxs':
+                dependency_keys.add('target_sha256')
+            require(set(dependency) == dependency_keys, 'Invalid dependency fields')
             name = safe_path(dependency['name'])
             require(_user_library_name(name)
                     and dependency['kind'] in ('regular', 'delay')
-                    and dependency['resolution'] in ('bundled', 'system32', 'api_set'), 'Unresolved native dependency')
+                    and dependency['resolution'] in ('bundled', 'system32', 'api_set', 'windows_sxs'),
+                    'Unresolved native dependency')
             identity = (name.casefold(), dependency['kind'])
             require(identity not in seen_imports, 'Duplicate import descriptor')
             seen_imports.add(identity)
@@ -181,7 +204,11 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
             require(type(dependency['symbols_count']) is int and 0 <= dependency['symbols_count'] <= 65536
                     and type(dependency['missing_symbols_count']) is int
                     and dependency['missing_symbols_count'] == 0, 'Native imported symbol is unresolved')
-            if dependency['resolution'] != 'bundled':
+            if dependency['resolution'] == 'windows_sxs':
+                _windows_sxs_target(target)
+                require(name == 'comctl32.dll' and type(dependency['target_sha256']) is str
+                        and SHA.fullmatch(dependency['target_sha256']), 'Invalid Windows activation-context evidence')
+            elif dependency['resolution'] != 'bundled':
                 require(_user_library_name(target), 'Unsafe system dependency target')
     require('@executable' in paths and next(item for item in files if item['path'] == '@executable')['sha256']
             == executable_sha256, 'Outer executable is absent from inventory')
@@ -271,13 +298,55 @@ def check_audit_report(report, inventory, *, executable_sha256, source_commit):
             and abs(duration - (end - start).total_seconds()) <= 5, 'Invalid native scan duration')
 
 
+def _export_expectations(pe, data):
+    """Bound raw export tables before pefile walks them; reject partial parsing."""
+    directory = pe.OPTIONAL_HEADER.DATA_DIRECTORY[0]
+    if not directory.VirtualAddress:
+        require(directory.Size == 0, 'Invalid native export directory')
+        return 0, set()
+    image_size = pe.OPTIONAL_HEADER.SizeOfImage
+    require(directory.Size >= 40 and directory.VirtualAddress + directory.Size <= image_size,
+            'Invalid native export directory bounds')
+
+    def read_table(rva, count, width):
+        require(0 <= count <= MAX_EXPORT_SYMBOLS, 'Native export table exceeds bounded symbol count')
+        if not count:
+            return b''
+        size = count * width
+        require(rva > 0 and size <= len(data) and rva + size <= image_size,
+                'Invalid native export table bounds')
+        raw = pe.get_data(rva, size)
+        require(len(raw) == size, 'Truncated native export table')
+        return raw
+
+    raw = pe.get_data(directory.VirtualAddress, 40)
+    require(len(raw) == 40, 'Truncated native export directory')
+    (_flags, _time, _major, _minor, _name, base, functions_count, names_count,
+     functions_rva, names_rva, ordinals_rva) = struct.unpack('<IIHHIIIIIII', raw)
+    require(functions_count <= MAX_EXPORT_SYMBOLS and names_count <= MAX_EXPORT_SYMBOLS
+            and base + functions_count <= 0x1_0000_0000,
+            'Native export table exceeds bounded symbol count')
+    functions_raw = read_table(functions_rva, functions_count, 4)
+    names_raw = read_table(names_rva, names_count, 4)
+    ordinals_raw = read_table(ordinals_rva, names_count, 2)
+    functions = [value[0] for value in struct.iter_unpack('<I', functions_raw)]
+    require(all(address == 0 or address < image_size for address in functions),
+            'Invalid native export function address')
+    require(all(0 < value[0] < image_size for value in struct.iter_unpack('<I', names_raw)),
+            'Invalid native export name address')
+    require(all(value[0] < functions_count and functions[value[0]] != 0
+                for value in struct.iter_unpack('<H', ordinals_raw)), 'Invalid native export ordinal')
+    return names_count, {base + index for index, address in enumerate(functions) if address}
+
+
 def _pe_metadata(data):
     import pefile
     require(len(data) <= MAX_FILE_BYTES, 'Native PE file is too large')
-    pe = pefile.PE(data=data, fast_load=True)
+    pe = pefile.PE(data=data, fast_load=True, max_symbol_exports=MAX_EXPORT_SYMBOLS)
     try:
         require(pe.FILE_HEADER.Machine == 0x8664 and pe.OPTIONAL_HEADER.Magic == 0x20B,
                 'Native payload is not AMD64 PE32+')
+        expected_names, expected_ordinals = _export_expectations(pe, data)
         pe.parse_data_directories(directories=[1, 13, 0, 2])
         versions = {}
         for block in getattr(pe, 'FileInfo', []):
@@ -299,14 +368,29 @@ def _pe_metadata(data):
                 imports.append({'name': name, 'kind': kind, '_symbols': symbols})
         exports = getattr(pe, 'DIRECTORY_ENTRY_EXPORT', None)
         exported = set()
+        forwarders = {}
+        parsed_names = 0
+        parsed_ordinals = set()
         if exports is not None:
             for symbol in exports.symbols:
                 exported.add(int(symbol.ordinal))
+                parsed_ordinals.add(int(symbol.ordinal))
                 if symbol.name:
                     exported.add(symbol.name.decode('ascii'))
+                    parsed_names += 1
+                if symbol.forwarder is not None:
+                    forwarder = symbol.forwarder.decode('ascii')
+                    require(0 < len(forwarder) <= 4096
+                            and all(33 <= ord(char) <= 126 and char not in '\\/' for char in forwarder),
+                            'Invalid native export forwarder')
+                    forwarders[int(symbol.ordinal)] = forwarder
+                    if symbol.name:
+                        forwarders[symbol.name.decode('ascii')] = forwarder
+        require(parsed_names == expected_names and parsed_ordinals == expected_ordinals,
+                'Incomplete native export parsing')
         return {'machine': 'AMD64', 'is_dll': bool(pe.FILE_HEADER.Characteristics & 0x2000),
                 'file_version': versions.get('FileVersion', ''), 'product_version': versions.get('ProductVersion', ''),
-                'imports': imports, '_exports': exported,
+                'imports': imports, '_exports': exported, '_forwarders': forwarders,
                 '_code': [(section.Name.hex(), section.VirtualAddress, hashlib.sha256(section.get_data()).hexdigest())
                           for section in pe.sections if section.Characteristics & 0x20000000]}
     finally:
@@ -407,6 +491,73 @@ def _runtime_sources(index, *, runtime_root=None, runtime_version=None, lock_pat
         index.setdefault(digest, []).append(source)
 
 
+class _ApiSetNamespace(dict):
+    """Canonical records plus revision prefixes measured from the OS schema."""
+    def __init__(self):
+        super().__init__()
+        self._records = {}
+        self._hashed_records = {}
+
+    def add_record(self, name, prefix, hosts, *, selection_hosts=None, all_hosts=None):
+        selections = {alias: tuple(sorted(set(values))) for alias, values in
+                      (selection_hosts if selection_hosts is not None else {None: hosts}).items()}
+        default = selections.get(None, ())
+        # Aliases identical to the default do not change selection semantics.
+        selections = {alias: values for alias, values in selections.items() if alias is None or values != default}
+        unknown_hosts = default if len(default) == 1 and default[0] and len(selections) == 1 else ()
+        all_choices = tuple(sorted(set(all_hosts if all_hosts is not None else
+                                      (host for values in selections.values() for host in values))))
+        record = (unknown_hosts, selections, all_choices)
+        require(name not in self or self[name] == hosts, 'Conflicting canonical API-set record')
+        require(name not in self._records or self._records[name] == record,
+                'Conflicting canonical API-set host selection')
+        self[name] = hosts
+        self._records[name] = record
+        if prefix not in self._hashed_records:
+            self._hashed_records[prefix] = record
+        elif self._hashed_records[prefix] != record:
+            self._hashed_records[prefix] = None  # Never guess among conflicting measured records.
+
+    def _record_for_name(self, name):
+        if type(name) is not str:
+            return False, None
+        name = name.casefold()
+        if name in self:
+            return True, self._records.get(name)
+        match = re.fullmatch(r'((?:api|ext)-ms-(?:[a-z0-9]+-)+l[0-9]+-[0-9]+)-[0-9]+\.dll', name)
+        if match and match[1] in self._hashed_records:
+            return True, self._hashed_records[match[1]]
+        return False, None
+
+    def hosts_for_name(self, name, importer_name=None):
+        found, record = self._record_for_name(name)
+        if not found:
+            return None
+        if record is None:
+            return ()
+        unknown_hosts, selections, _all_choices = record
+        if importer_name is None:
+            return unknown_hosts
+        importer = _importer_basename(importer_name)
+        if importer is None:
+            return ()
+        chosen = selections.get(importer, selections.get(None, ()))
+        return chosen if len(chosen) == 1 and chosen[0] else ()
+
+    def all_hosts_for_name(self, name):
+        """All finite measured choices, for unreferenced identity checks only."""
+        found, record = self._record_for_name(name)
+        if not found:
+            return None
+        if record is None:
+            return ()
+        _unknown, selections, choices = record
+        default = selections.get(None, ())
+        if len(default) != 1 or not default[0] or any(len(hosts) != 1 for hosts in selections.values()):
+            return ()
+        return choices
+
+
 def parse_api_set(data):
     """Read Windows API-set namespace v6 from System32/apisetschema.dll .apiset."""
     require(len(data) >= 28, 'Incomplete API-set namespace')
@@ -416,15 +567,22 @@ def parse_api_set(data):
         require(length % 2 == 0 and 0 <= start <= start + length <= size, 'Invalid API-set string')
         return data[start:start + length].decode('utf-16-le').lower()
     require(offset + count * 24 <= size, 'Invalid API-set entries')
-    result = {}
+    result = _ApiSetNamespace()
     for index in range(count):
-        _, name_offset, name_size, _, values_offset, value_count = struct.unpack_from('<6I', data, offset + index * 24)
+        _, name_offset, name_size, hashed_size, values_offset, value_count = struct.unpack_from('<6I', data, offset + index * 24)
         require(value_count <= 1024 and values_offset + value_count * 20 <= size, 'Invalid API-set values')
+        require(hashed_size % 2 == 0 and 0 < hashed_size <= name_size, 'Invalid API-set hashed length')
         name = string(name_offset, name_size) + '.dll'
+        prefix = string(name_offset, hashed_size)
         safe_path(name)
-        hosts = []
+        hosts, selections, all_choices = [], {}, []
         for item in range(value_count):
-            _, _alias_offset, _alias_size, target_offset, target_size = struct.unpack_from('<5I', data, values_offset + item * 20)
+            _, alias_offset, alias_size, target_offset, target_size = struct.unpack_from('<5I', data, values_offset + item * 20)
+            alias = string(alias_offset, alias_size)
+            if alias:
+                safe_path(alias)
+                require(re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}', alias), 'Unsafe API-set importer alias')
+            target = ''
             if target_size:
                 target = string(target_offset, target_size)
                 safe_path(target)
@@ -434,7 +592,10 @@ def parse_api_set(data):
                 # contracts. Preserve those records without treating them as
                 # libraries loadable by this desktop application.
                 hosts.append(target)
-        result[name] = tuple(dict.fromkeys(hosts))
+            selections.setdefault(alias or None, []).append(target)
+            all_choices.append(target)
+        result.add_record(name, prefix, tuple(dict.fromkeys(hosts)),
+                          selection_hosts=selections, all_hosts=all_choices)
     return result
 
 
@@ -460,21 +621,38 @@ def _windows_loader():
     return system, api_sets, known
 
 
-def resolve_import(importer, dependency, files, *, system_metadata, api_sets, known_dlls, package_dependencies):
+def resolve_import(importer, dependency, files, *, system_metadata, api_sets, known_dlls, package_dependencies,
+                   sxs_metadata=None, importer_name=_IMPORTER_UNSET):
     """Resolve explicit directories/owner scopes; never use a global basename glob."""
     name, symbols = dependency['name'], dependency['_symbols']
     paths = {item['path'].casefold(): item for item in files if item['path'] != '@executable'}
     def outcome(kind, target, metadata):
-        return {'name': name, 'kind': dependency['kind'], 'resolution': kind, 'target': target,
+        result = {'name': name, 'kind': dependency['kind'], 'resolution': kind, 'target': target,
                 'symbols_count': len(symbols), 'missing_symbols_count': sum(symbol not in metadata['_exports'] for symbol in symbols)}
+        if kind in ('system32', 'api_set') and '_windows_sxs_target' in metadata:
+            result.update(resolution='windows_sxs', target=_windows_sxs_target(metadata['_windows_sxs_target']),
+                          target_sha256=metadata['_windows_sxs_sha256'])
+        return result
     def eligible(metadata):
         return metadata is not None and metadata.get('machine') == 'AMD64' and metadata.get('is_dll') is True
     def unresolved():
         return outcome('unresolved', name, {'_exports': set()})
     if not _user_library_name(name):
         return unresolved()
-    if name in api_sets:
-        for host in api_sets[name]:
+    if sxs_metadata is not None:
+        redirected = sxs_metadata(name)
+        if redirected is not None:
+            require('_windows_sxs_target' in redirected, 'Activation-context metadata has no target identity')
+            return outcome('system32', name, redirected) if eligible(redirected) else unresolved()
+    if importer_name is _IMPORTER_UNSET:
+        logical = importer.get('path')
+        try:
+            importer_name = PurePosixPath(safe_path(logical)).name if logical != '@executable' else None
+        except ValueError:
+            importer_name = None
+    api_hosts = api_sets.hosts_for_name(name, importer_name) if isinstance(api_sets, _ApiSetNamespace) else api_sets.get(name)
+    if api_hosts is not None:
+        for host in api_hosts:
             if not _user_library_name(host):
                 continue  # A kernel-only contract cannot satisfy a user-mode import.
             metadata = system_metadata(host)
@@ -504,6 +682,53 @@ def resolve_import(importer, dependency, files, *, system_metadata, api_sets, kn
     if eligible(metadata):
         return outcome('system32', name, metadata)
     return unresolved()
+
+
+def _system_metadata_loader(system, context):
+    """Prefer the candidate's actual SxS redirection; never search WinSxS by glob."""
+    system = Path(system).resolve()
+    cache, redirections = {}, {}
+
+    def redirected_metadata(name):
+        require(_user_library_name(name), 'Unsafe system dependency name')
+        if name not in redirections:
+            target = context.resolve_dll(name)
+            metadata = None
+            if target is not None:
+                target = Path(target)
+                windows_root = Path(context.windows_root).resolve()
+                require(target.is_file() and not _redirected(target) and target.resolve().is_relative_to(windows_root),
+                        'Redirected Windows dependency leaves the OS directory')
+                relative = target.resolve().relative_to(windows_root).as_posix()
+                parts = PurePosixPath(relative).parts
+                require(len(parts) == 3 and parts[0].casefold() == 'winsxs',
+                        'Unsupported Windows activation-context target')
+                relative = _windows_sxs_target('WinSxS/' + parts[1].lower() + '/' + parts[2].lower())
+                require(name == 'comctl32.dll' and target.stat().st_size <= MAX_FILE_BYTES,
+                        'Unsupported Windows activation-context dependency')
+                data = target.read_bytes()
+                metadata = _pe_metadata(data)
+                require(metadata['machine'] == 'AMD64' and metadata['is_dll'] is True,
+                        'Windows activation-context target is not an AMD64 DLL')
+                metadata.update(_windows_sxs_target=relative, _windows_sxs_sha256=hashlib.sha256(data).hexdigest())
+            redirections[name] = metadata
+        return redirections[name]
+
+    def system_metadata(name):
+        redirected = redirected_metadata(name)
+        if redirected is not None:
+            return redirected
+        if name not in cache:
+            path = system / name
+            require(not _redirected(path) and path.resolve().parent == system, 'Redirected System32 dependency')
+            if path.is_file():
+                require(path.stat().st_size <= MAX_FILE_BYTES, 'Oversized System32 dependency')
+                cache[name] = _pe_metadata(path.read_bytes())
+            else:
+                cache[name] = None
+        return cache[name]
+
+    return system_metadata, redirected_metadata
 
 
 def _bootloader_provenance(executable_metadata, record_index):
@@ -546,12 +771,6 @@ def audit_static(executable, extract_dir, source_commit):
         'version': 'protocol-' + str(helper_lock['protocol']), 'source_path': 'native/handwriting/runtime/' + helper_lock['name'],
         'source_sha256': digest, 'match': 'sha256'})
     system, api_sets, known = _windows_loader()
-    system_cache = {}
-    def system_metadata(name):
-        if name not in system_cache:
-            path = system / name
-            system_cache[name] = _pe_metadata(path.read_bytes()) if path.is_file() else None
-        return system_cache[name]
     extract_dir.mkdir(parents=True)
     total, seen, files = 0, set(), []
     for packed, entry in reader.toc.items():
@@ -597,12 +816,16 @@ def audit_static(executable, extract_dir, source_commit):
         'size_bytes': executable.stat().st_size, **outer_metadata,
         'component_version': '',
         'provenance': _bootloader_provenance(outer_metadata, index), 'signature_status': 'Pending'})
+    from scripts.windows_sxs import candidate_activation_context
+    with candidate_activation_context(executable) as context:
+        system_metadata, sxs_metadata = _system_metadata_loader(system, context)
+        for item in files:
+            item['imports'] = [resolve_import(item, dependency, files, system_metadata=system_metadata,
+                 api_sets=api_sets, known_dlls=known, package_dependencies=dependencies,
+                 sxs_metadata=sxs_metadata, **({'importer_name': executable.name} if item['path'] == '@executable' else {}))
+                 for dependency in item['imports']]
     for item in files:
-        item['imports'] = [resolve_import(item, dependency, files, system_metadata=system_metadata,
-             api_sets=api_sets, known_dlls=known, package_dependencies=dependencies) for dependency in item['imports']]
-    for item in files:
-        item.pop('_exports')
-        item.pop('_code')
+        _strip_private_pe_metadata(item)
     files.sort(key=lambda item: item['path'].casefold())
     inventory = {'schema': 1, 'probe': 'native_payload_inventory', 'version': APP_VERSION, 'platform': 'win32',
         'source_commit': source_commit, 'source_run_id': os.environ.get('GITHUB_RUN_ID'),
@@ -617,6 +840,12 @@ def audit_static(executable, extract_dir, source_commit):
               'scan_relative_paths': [item['scan_path'] for item in files],
               'scan_scope_files_sha256': scan_scope_digest(files)}
     return static, inventory
+
+
+def _strip_private_pe_metadata(item):
+    """Private symbol/code details are never included in published inventory."""
+    for key in ('_exports', '_forwarders', '_code'):
+        item.pop(key)
 
 
 def finalize(static, inventory, windows, executable):
