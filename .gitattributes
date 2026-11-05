@@ -5,3 +5,5 @@
 *.onnx binary
 *.model binary
 *.zip binary
+# Preserve the exact upstream license bytes, including its original whitespace.
+licenses/python-3.12.16-LICENSE.txt -text -whitespace

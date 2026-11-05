@@ -98,3 +98,24 @@ def test_portable_single_executable_gate_precedes_publication_and_is_fail_closed
     for mode in ('--self-test', '--smoke-app', '--self-test-handwriting', '--self-test-handwriting-image',
                  '--self-test-documents'):
         assert f"mode = '{mode}'" in script
+
+
+def test_verified_windows_runtime_preparation_precedes_all_package_commands():
+    from scripts import prepare_public_validation as public
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load((root / '.github/workflows/validate.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['validate']['steps']
+    indexes = {step.get('id'): index for index, step in enumerate(steps)}
+    stage = steps[indexes['runtime_preparation']]
+    assert indexes['runtime_preparation'] == indexes['python'] + 1
+    assert indexes['runtime_preparation'] < indexes['build_installer'] < indexes['wheels']
+    assert stage['if'] == "runner.os == 'Windows'"
+    assert not stage.get('continue-on-error') and 'always()' not in stage['if']
+    assert stage['run'] == ('python scripts/prepare_windows_runtime.py '
+        '--destination "$env:RUNNER_TEMP/inkpick-python-runtime" '
+        '--report artifacts/windows-runtime-inventory.json')
+    assert int(stage['timeout-minutes']) <= 5
+    assert steps[indexes['python']]['with']['python-version'] == '3.12'
+    assert 'runtime_preparation' in public.STEP_IDS and 'runtime_preparation' in public.WINDOWS_ONLY
+    assert ('artifacts/windows-runtime-inventory.json', 'json', True) in public.sources()
+    assert public.source_step('artifacts/windows-runtime-inventory.json') == 'runtime_preparation'

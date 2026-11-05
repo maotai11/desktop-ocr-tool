@@ -1,0 +1,235 @@
+{
+  "archive_filename": "cpython-3.12.16+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+  "archive_prefix": "python/",
+  "archive_sha256": "1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149",
+  "archive_size": 22014416,
+  "archive_url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+  "files": {
+    "DLLs/_asyncio.pyd": {
+      "sha256": "6c3570716921fd402c441c3ad8fab159f80c60fc55dd31ebb273e18d0764b2ff",
+      "size_bytes": 59392
+    },
+    "DLLs/_bz2.pyd": {
+      "sha256": "4ce0888c64c92806abfa067ddd0a3fffa0cb0be230c2d5a6054094af343c64a7",
+      "size_bytes": 73216
+    },
+    "DLLs/_ctypes.pyd": {
+      "sha256": "0abcfe23e653e2bc6da07265dcdbe7c1f381bc97183e251db484ea4e33abfcbe",
+      "size_bytes": 116224
+    },
+    "DLLs/_ctypes_test.pyd": {
+      "sha256": "67a27bf1ce7ee1c2315925afbc0ae8969745e9e07e62420c3ef3752133a8aeac",
+      "size_bytes": 25088
+    },
+    "DLLs/_decimal.pyd": {
+      "sha256": "ea563edf82530e516560880767779b6c5c23d84b6cbdfa19ba5e8322f9d42709",
+      "size_bytes": 248832
+    },
+    "DLLs/_elementtree.pyd": {
+      "sha256": "e40b9ead71dd6d0a72e551f8f783fc3658a745bb3060b7a313d64535ce6da45e",
+      "size_bytes": 122368
+    },
+    "DLLs/_hashlib.pyd": {
+      "sha256": "2339f748935aca402ceb1e397c9f488bb42200eea7804d31f973a8ced6fe1a4b",
+      "size_bytes": 54784
+    },
+    "DLLs/_lzma.pyd": {
+      "sha256": "c1109a16ebe0f573f1df565899adee57ce73a9633a6bab8b6d1cc9ce483d0c85",
+      "size_bytes": 153088
+    },
+    "DLLs/_msi.pyd": {
+      "sha256": "690b8452bf071057142da6a6e49233c70af0c6c177982b175bb2ae81d87f4480",
+      "size_bytes": 33280
+    },
+    "DLLs/_multiprocessing.pyd": {
+      "sha256": "246dcc0dcb2ddff11c9491110dd334a785ca266a2257268ead09ed9ffecc2fbd",
+      "size_bytes": 24064
+    },
+    "DLLs/_overlapped.pyd": {
+      "sha256": "fc1bd45848f10d2a3c32d568990e922e8567cc4ccd3e97ae9e07829184cbf03d",
+      "size_bytes": 44032
+    },
+    "DLLs/_queue.pyd": {
+      "sha256": "e0b738902e9b229896e8aded26b2616abeafa7c46293362c95a83dce840205e5",
+      "size_bytes": 20480
+    },
+    "DLLs/_socket.pyd": {
+      "sha256": "0dff3e3b7777b0cbc5f278e020239c9a03b7b470cf4ea6c62b1cfd2fdbddcbb7",
+      "size_bytes": 71680
+    },
+    "DLLs/_sqlite3.pyd": {
+      "sha256": "8d1ef0cf074a10f7e28835c235260293e4bdb07c1952852f01acc2136f952b66",
+      "size_bytes": 112128
+    },
+    "DLLs/_ssl.pyd": {
+      "sha256": "27b8579d4c14134f7c97266956f4a6218f13d4c15e242c67b93b2b03adbad1a2",
+      "size_bytes": 165888
+    },
+    "DLLs/_testbuffer.pyd": {
+      "sha256": "e75e13c69dc6b3356c36ad92f22bce2b167429da2d9f23dd2fdb468570514a52",
+      "size_bytes": 43520
+    },
+    "DLLs/_testcapi.pyd": {
+      "sha256": "02d7208f8f48a1cccce93b206a1495c22a92c22bc0920527a2b1253211d4fd72",
+      "size_bytes": 297984
+    },
+    "DLLs/_testclinic.pyd": {
+      "sha256": "a56f642441c08efa924903da519d1d2f8a9ef1b09aa7339835a225e263b9b43e",
+      "size_bytes": 55296
+    },
+    "DLLs/_testconsole.pyd": {
+      "sha256": "c2d8054c935a1f26f86e36844bd1c9fe057c70b3a58c9f5cb771c5baf33a0f35",
+      "size_bytes": 15360
+    },
+    "DLLs/_testimportmultiple.pyd": {
+      "sha256": "a9c153455d15025d51b051d27cc969597979d9c31a39b874f1d4f29a9c5140d6",
+      "size_bytes": 13312
+    },
+    "DLLs/_testinternalcapi.pyd": {
+      "sha256": "2f2494b889da2af415187bbad350a61a2dccc65354b0db80f7e0cb6484722345",
+      "size_bytes": 39936
+    },
+    "DLLs/_testmultiphase.pyd": {
+      "sha256": "7a59b63b2a6fd7b37e13ad1b4419522486eaca035559abfb73f8e6929e65e416",
+      "size_bytes": 27648
+    },
+    "DLLs/_testsinglephase.pyd": {
+      "sha256": "0a30c8a3afa4c927220c6bc83dee5e6c3460b19e67a38241639f17151e86c523",
+      "size_bytes": 18432
+    },
+    "DLLs/_tkinter.pyd": {
+      "sha256": "1eec44128ed888022dd4b86b26b03e676020ab1d5df5fbb4107fe4267f38272a",
+      "size_bytes": 55296
+    },
+    "DLLs/_uuid.pyd": {
+      "sha256": "689143e8379254e6a5b046dd709d25bce0703f049607d99d13616a8559a0c07e",
+      "size_bytes": 13824
+    },
+    "DLLs/_wmi.pyd": {
+      "sha256": "4aed43305acffa5a530970532169367c59062996bb08a938713bf0044cb8b433",
+      "size_bytes": 25600
+    },
+    "DLLs/_zoneinfo.pyd": {
+      "sha256": "891306bb828888741d26dc83f778025e2c1e3564837293354300096c0127c965",
+      "size_bytes": 36352
+    },
+    "DLLs/libcrypto-3-x64.dll": {
+      "sha256": "dce8937b5cb456a0d6c4040cba760b9b97881631b5ef844a64ca0175c7c35f90",
+      "size_bytes": 7856640
+    },
+    "DLLs/libffi-8.dll": {
+      "sha256": "2ce5d09874ff875d6cc5e220d23520d38a362dd73517081571d1e032acebfef9",
+      "size_bytes": 28160
+    },
+    "DLLs/libssl-3-x64.dll": {
+      "sha256": "58a5cfda3f9057a743c87f623780b0b358279d394467abbd35ff2570fbd0c366",
+      "size_bytes": 1571840
+    },
+    "DLLs/pyexpat.pyd": {
+      "sha256": "48595059edc8d5c049edada829a71056971473855a39e65e872f4112fc97d258",
+      "size_bytes": 211456
+    },
+    "DLLs/select.pyd": {
+      "sha256": "09ec190e299a2925d65d66821510ef11db0b1c2db13069a0185bf970977c5429",
+      "size_bytes": 18944
+    },
+    "DLLs/sqlite3.dll": {
+      "sha256": "cb82c726c39bb73717a8820688137cf3504d4fba928f188504384c23b6602817",
+      "size_bytes": 1607680
+    },
+    "DLLs/tcl86t.dll": {
+      "sha256": "a308beae8555cff5ac2aff7eaf0aef40b5fe173f047e246dc49da9a4d3ef62f9",
+      "size_bytes": 1839896
+    },
+    "DLLs/tk86t.dll": {
+      "sha256": "20f4876506bce7f89e53570e64fd1dce30a64548326b45f372871c7019560df4",
+      "size_bytes": 1589528
+    },
+    "DLLs/unicodedata.pyd": {
+      "sha256": "6e12f0e3fc207e82cc59b62acbd68e0ae1fbc7f513d9475e4c66c3036d80732d",
+      "size_bytes": 1127936
+    },
+    "DLLs/winsound.pyd": {
+      "sha256": "a039b2614f247910759e2af5f831b819ce1bd74595769e1fb67cf964e00a6a95",
+      "size_bytes": 18432
+    },
+    "DLLs/zlib1.dll": {
+      "sha256": "1dd27f0411ebb31bd148a61589cee254410915f1e6c37aa3ffa52fac71a5426c",
+      "size_bytes": 146208
+    },
+    "Lib/site-packages/pip/_vendor/distlib/t32.exe": {
+      "sha256": "5fd873e09786a1eaabaa44261e9e30609d88745da040ebb702c1a5069ab345ca",
+      "size_bytes": 97792
+    },
+    "Lib/site-packages/pip/_vendor/distlib/t64-arm.exe": {
+      "sha256": "81f7936c6d05cadd4a185bb9a8a64abe9a72c937ad979ea5afe672de59123fcc",
+      "size_bytes": 182784
+    },
+    "Lib/site-packages/pip/_vendor/distlib/t64.exe": {
+      "sha256": "acd47a82dc01132e3b8414f683c2e117c18aedbf650a370249fe9fdbc445cda1",
+      "size_bytes": 108032
+    },
+    "Lib/site-packages/pip/_vendor/distlib/w32.exe": {
+      "sha256": "f27b3724964ff524e837374847d2856f7d10a884516fc34200d0a2332a739789",
+      "size_bytes": 91648
+    },
+    "Lib/site-packages/pip/_vendor/distlib/w64-arm.exe": {
+      "sha256": "f6704d3a1022f69ad6b7e604a927d00ce2f9dae515bfad5a7df9a2e3e4bd2448",
+      "size_bytes": 168448
+    },
+    "Lib/site-packages/pip/_vendor/distlib/w64.exe": {
+      "sha256": "55b21889fd3d28799b834fba3d29482e7aa1b0519864b790e3914af7cdda666b",
+      "size_bytes": 101888
+    },
+    "Lib/venv/scripts/nt/python.exe": {
+      "sha256": "2a5550d982664f182db9b0629bebdadc6a980b0093b8741966e820419288211d",
+      "size_bytes": 262144
+    },
+    "Lib/venv/scripts/nt/pythonw.exe": {
+      "sha256": "018be45d82d2785ab708c1ca7a20ac46bc0a268b3cd3d2f7da9c874013f4445c",
+      "size_bytes": 249856
+    },
+    "python.exe": {
+      "sha256": "246221b571e7a692a8b26818b628cac4c163e836de9897812eaebc2a8e1efa90",
+      "size_bytes": 91648
+    },
+    "python3.dll": {
+      "sha256": "d054a745b92a230114251975f7296178131a284f872ea97817d4b820453c5c90",
+      "size_bytes": 56320
+    },
+    "python312.dll": {
+      "sha256": "00f1e27a720f04606d9f6eac703b89418265fde213d6cb9378a0a4854b5d4669",
+      "size_bytes": 6970368
+    },
+    "pythonw.exe": {
+      "sha256": "da3619599a88ea75e15ae743bb8a544f432035a717b46dd3533605eca65bdee1",
+      "size_bytes": 90112
+    },
+    "tcl/dde1.4/tcldde14.dll": {
+      "sha256": "95454d21be84b4bef1f90b7aff56484b0111b30384d7c6d1a05463871c8036d3",
+      "size_bytes": 37664
+    },
+    "tcl/reg1.3/tclreg13.dll": {
+      "sha256": "0250f59bf28cb7b65ed46a3befab5cff58785628502c5bd982e4c890580b85ad",
+      "size_bytes": 34584
+    },
+    "tcl/tix8.4.3/tix84.dll": {
+      "sha256": "5b98953e5e36f4a3c889131a852d92e35070c708033f470319317fd7cd4a7b1d",
+      "size_bytes": 371200
+    },
+    "vcruntime140.dll": {
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "size_bytes": 124544
+    },
+    "vcruntime140_1.dll": {
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+      "size_bytes": 49792
+    }
+  },
+  "openssl_version": "3.5.9",
+  "provider": "astral-sh/python-build-standalone",
+  "python_version": "3.12.16",
+  "release_tag": "20261026",
+  "schema": 1,
+  "source_commit": "fa506e0858ac9f2cc5b289c137b888a2aa24d1ee"
+}

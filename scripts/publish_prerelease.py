@@ -143,7 +143,7 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 ### 這次多查了哪些項目
 - GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫、兩種核對與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
 - 對同一份 EXE 的所有內含 PE 檔建立雜湊、來源、相依匯入與簽章清單；以 Microsoft Defender 自訂掃描 EXE 及抽出的完整原生檔。工具不可用、來源無法對應、相依無法解析或掃描未完成都阻擋發布。公開 metadata 附相對路徑清單，沒有原始 runner 路徑或內容 Log。
-- Qt 更新到 6.11.3，移除不使用的 TLS 外掛與外部工具鏈帶入的舊 OpenSSL DLL；這些靜態清單與防毒掃描無法證明所有原生檔都沒有未知漏洞。範圍與未驗項目見 ZIP 的 `docs/VALIDATION_COVERAGE.md`。
+- Windows 執行環境固定為 CPython 3.12.16（Astral python-build-standalone 20261026）及其 OpenSSL 3.5.9，下載檔與原生檔逐一核對固定 SHA256；Qt 固定 6.11.3，排除未使用的 Qt TLS 外掛。必要的 SSL 相依檔隨執行環境一併更新。這些靜態清單與防毒掃描無法證明所有原生檔都沒有未知漏洞；範圍見 ZIP 的 `docs/VALIDATION_COVERAGE.md`，授權原文在 `licenses/`。
 
 ### 整列搜尋：多 A、共用 B
 - 從浮動窗或系統匣開啟「整列搜尋」。先框預設 A 欄位，按「新增 A 欄位」加入姓名、編號或金額等，最多 20 欄；再框一個大家共用的 B 搜尋範圍。全部 A 設定完成後按「開始搜尋」，不用替每欄重選 B。

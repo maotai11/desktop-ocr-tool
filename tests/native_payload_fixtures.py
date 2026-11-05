@@ -7,11 +7,14 @@ from scripts.audit_native_payload import (
     inventory_digest,
     scan_scope_digest,
 )
+from scripts.prepare_windows_runtime import load_runtime_lock
 from src.core.version import APP_VERSION
 
 
 def inventory_and_report(executable_sha256, source_commit='a' * 40, *, source_run_id=None,
                          source_run_attempt=None, executable_size=1024):
+    runtime = load_runtime_lock()
+    runtime_dll = runtime['files']['python312.dll']
     files = [
         {'path': '@executable', 'scan_path': 'candidate/InkPick.exe', 'sha256': executable_sha256,
          'size_bytes': executable_size, 'machine': 'AMD64', 'is_dll': False,
@@ -20,11 +23,11 @@ def inventory_and_report(executable_sha256, source_commit='a' * 40, *, source_ru
              'source_path': 'PyInstaller/bootloader/Windows-64bit-intel/runw.exe',
              'source_sha256': 'b' * 64, 'match': 'executable_sections'}, 'imports': [],
          'signature_status': 'NotSigned'},
-        {'path': 'python312.dll', 'scan_path': 'payload/python312.dll', 'sha256': 'c' * 64,
-         'size_bytes': 1024, 'machine': 'AMD64', 'is_dll': True, 'file_version': '3.12.14.0',
-         'product_version': '3.12.14.0', 'component_version': '',
-         'provenance': {'kind': 'cpython_runtime', 'package': 'CPython', 'version': '3.12.14',
-             'source_path': 'python312.dll', 'source_sha256': 'c' * 64, 'match': 'sha256'},
+        {'path': 'python312.dll', 'scan_path': 'payload/python312.dll', 'sha256': runtime_dll['sha256'],
+         'size_bytes': runtime_dll['size_bytes'], 'machine': 'AMD64', 'is_dll': True,
+         'file_version': runtime['python_version'], 'product_version': runtime['python_version'], 'component_version': '',
+         'provenance': {'kind': 'cpython_runtime', 'package': 'CPython', 'version': runtime['python_version'],
+             'source_path': 'python312.dll', 'source_sha256': runtime_dll['sha256'], 'match': 'sha256'},
          'imports': [{'name': 'kernel32.dll', 'kind': 'regular', 'resolution': 'system32',
                       'target': 'kernel32.dll', 'symbols_count': 1, 'missing_symbols_count': 0}],
          'signature_status': 'Valid'},

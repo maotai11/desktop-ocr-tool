@@ -27,6 +27,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+      - name: Prepare verified pinned Windows Python runtime
+        id: runtime_preparation
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: python scripts/prepare_windows_runtime.py --destination "$env:RUNNER_TEMP/inkpick-python-runtime" --report artifacts/windows-runtime-inventory.json
       - if: runner.os == 'Linux'
         id: linux_dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1 strace

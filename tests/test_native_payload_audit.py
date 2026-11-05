@@ -199,3 +199,104 @@ def test_non_windows_audit_cannot_claim_a_native_scan(tmp_path, monkeypatch):
     assert code == 1
     report = json.loads(output.read_text())
     assert report['passed'] is False and '/private' not in json.dumps(report)
+
+
+@pytest.fixture
+def locked_runtime(tmp_path, monkeypatch):
+    from scripts import prepare_windows_runtime
+    payloads = {'python312.dll': b'MZlocked-python' + bytes(80),
+                'DLLs/_ssl.pyd': b'MZlocked-ssl' + bytes(80),
+                'Lib/venv/scripts/nt/python.exe': b'MZlocked-venv' + bytes(80),
+                'Lib/site-packages/pip/_vendor/distlib/t64.exe': b'MZold-pip' + bytes(80)}
+    lock = {'python_version': '3.12.16', 'files': {
+        path: {'sha256': hashlib.sha256(data).hexdigest(), 'size_bytes': len(data)}
+        for path, data in payloads.items()}}
+    for relative, data in payloads.items():
+        source = tmp_path / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(data)
+    # This double isolates the lock consumer. The bootstrap's own tests verify
+    # provider/archive identity and the actual committed map independently.
+    committed = copy.deepcopy(lock)
+    monkeypatch.setattr(prepare_windows_runtime, 'load_runtime_lock', lambda *args: copy.deepcopy(committed))
+    return tmp_path, lock, payloads
+
+
+def test_runtime_sources_require_committed_path_hash_and_version(locked_runtime):
+    directory, lock, _ = locked_runtime
+    index = {}
+    audit._runtime_sources(index, runtime_root=directory, runtime_version='3.12.16')
+    sources = [item for values in index.values() for item in values]
+    assert {item['source_path'] for item in sources} == {
+        'python312.dll', 'DLLs/_ssl.pyd', 'Lib/venv/scripts/nt/python.exe'}
+    assert all(item['version'] == lock['python_version'] and item['kind'] == 'cpython_runtime'
+               and item['source_sha256'] == lock['files'][item['source_path']]['sha256'] for item in sources)
+
+
+@pytest.mark.parametrize('defect', ['modified', 'replacement', 'missing', 'version', 'unknown', 'disguised'])
+def test_runtime_tampering_or_unknown_pe_never_receives_provenance(locked_runtime, defect):
+    directory, _, payloads = locked_runtime
+    version = '3.12.16'
+    if defect == 'modified': (directory / 'python312.dll').write_bytes(b'MZunlocked-python' + bytes(80))
+    if defect == 'replacement': (directory / 'python312.dll').write_bytes(payloads['DLLs/_ssl.pyd'])
+    if defect == 'missing': (directory / 'DLLs/_ssl.pyd').unlink()
+    if defect == 'version': version = '3.12.10'
+    if defect == 'unknown': (directory / 'DLLs/unknown.dll').write_bytes(b'MZunknown' + bytes(80))
+    if defect == 'disguised': (directory / 'DLLs/hidden.dat').write_bytes(b'MZhidden' + bytes(80))
+    index = {}
+    with pytest.raises(ValueError):
+        audit._runtime_sources(index, runtime_root=directory, runtime_version=version)
+    assert index == {}
+
+
+def test_runtime_report_cannot_override_committed_pe_hashes(locked_runtime):
+    directory, lock, _ = locked_runtime
+    changed = b'MZunlocked-python' + bytes(80)
+    (directory / 'python312.dll').write_bytes(changed)
+    lock['files']['python312.dll']['sha256'] = hashlib.sha256(changed).hexdigest()
+    lock['files']['python312.dll']['size_bytes'] = len(changed)
+    (directory / 'mutable-runtime-report.json').write_text(json.dumps(lock), encoding='utf-8')
+    index = {}
+    with pytest.raises(ValueError):
+        audit._runtime_sources(index, runtime_root=directory, runtime_version='3.12.16')
+    assert index == {}
+
+
+def test_pip_replacement_is_wheel_owned_and_not_indexed_as_cpython(locked_runtime):
+    directory, _, _ = locked_runtime
+    package = directory / 'Lib/site-packages'
+    (package / 'pip/_vendor/distlib/t64.exe').write_bytes(b'MZnew-pip' + bytes(80))
+    (package / 'new-package').mkdir()
+    (package / 'new-package/native.pyd').write_bytes(b'MZwheel-owned' + bytes(80))
+    index = {}
+    audit._runtime_sources(index, runtime_root=directory, runtime_version='3.12.16')
+    assert all('/site-packages/' not in '/' + item['source_path']
+               for values in index.values() for item in values)
+
+
+def test_redirected_runtime_file_is_rejected_even_for_known_bytes(locked_runtime):
+    directory, _, payloads = locked_runtime
+    source = directory / 'DLLs/_ssl.pyd'
+    source.unlink()
+    target = directory / 'elsewhere.dat'
+    target.write_bytes(payloads['DLLs/_ssl.pyd'])
+    try:
+        source.symlink_to(target)
+    except OSError:
+        pytest.skip('Creating a test symlink requires host privileges')
+    with pytest.raises(ValueError, match='redirected'):
+        audit._runtime_sources({}, runtime_root=directory, runtime_version='3.12.16')
+
+
+@pytest.mark.parametrize('defect', ['version', 'path', 'size', 'digest', 'package', 'site_packages'])
+def test_public_runtime_provenance_is_revalidated_against_committed_map(evidence, defect):
+    inventory, _ = evidence
+    item = inventory['files'][1]
+    if defect == 'version': item['provenance']['version'] = '3.12.10'
+    if defect == 'path': item['provenance']['source_path'] = 'DLLs/_ssl.pyd'
+    if defect == 'size': item['size_bytes'] += 1
+    if defect == 'digest': item['sha256'] = item['provenance']['source_sha256'] = 'e' * 64
+    if defect == 'package': item['provenance']['package'] = 'unverified-provider'
+    if defect == 'site_packages': item['provenance']['source_path'] = 'Lib/site-packages/native.pyd'
+    with pytest.raises(ValueError):
+        audit.check_inventory(inventory, executable_sha256='d' * 64, source_commit='a' * 40)

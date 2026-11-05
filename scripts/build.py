@@ -29,6 +29,8 @@ from src.core.version import (
 # Explicit source/destination paths keep the user guide and its relative image
 # links usable offline without promoting unrelated audit material into releases.
 RELEASE_DOCUMENTATION = {
+    "licenses/python-3.12.16-LICENSE.txt": "licenses/python-3.12.16-LICENSE.txt",
+    "licenses/openssl-3.5.9-LICENSE.txt": "licenses/openssl-3.5.9-LICENSE.txt",
     "README.md": "README.md",
     "OFFLINE_README.txt": "docs/OFFLINE_README.txt",
     "README.txt": "docs/OFFLINE_README.txt",

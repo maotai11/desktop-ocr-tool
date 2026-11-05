@@ -26,6 +26,8 @@ PUBLIC_MANIFEST = 'PUBLIC_MANIFEST.json'
 BLOCKED = {'BUILD_MANIFEST.json', 'SOURCE_MANIFEST.json', 'dependency-inventory.json',
            'candidate-validation', 'docs', 'artifacts', 'Validate-Candidate.ps1'}
 PUBLIC_DOCUMENTATION = {
+    'licenses/python-3.12.16-LICENSE.txt': 'licenses/python-3.12.16-LICENSE.txt',
+    'licenses/openssl-3.5.9-LICENSE.txt': 'licenses/openssl-3.5.9-LICENSE.txt',
     'README.md': 'README.md',
     'OFFLINE_README.txt': 'docs/OFFLINE_README.txt',
     'README.txt': 'docs/OFFLINE_README.txt',

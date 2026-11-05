@@ -207,7 +207,7 @@ B 區內直接顯示「欄位名稱／狀態、A 文字、B 文字」三行標�
 
 發布前會對 Linux／Windows 的實際 Python 套件清單執行 pip-audit；有漏洞、漏掃或查詢失敗即停止發布。這不涵蓋所有原生 DLL 或未知漏洞。Linux 另追蹤合成操作及其子程序的網路系統呼叫；Windows 使用同版 EXE 的防火牆阻擋測試。整列搜尋等新增路徑的覆蓋與結果，見同版 validation metadata，不沿用舊版數量作為通過證據。
 
-這次另外查到實際舊 Qt 6.11.2 的 Core／Network 原生公告，將 Qt 綁定升至 6.11.3，並移除未使用、由打包環境外帶的 OpenSSL 3.0.16。Python 套件零發現不能替代這些 DLL 檢查；逐項來源與成品掃描範圍見上方驗證說明。
+這次另外查到舊 Qt 6.11.2 的 Core／Network 公告，以及舊 CPython 3.12.10 隨附的 OpenSSL 3.0.16。Qt 綁定升至 6.11.3；Windows 離線執行環境改用鎖定的 Astral standalone CPython 3.12.16（20261026 發行包、動態 OpenSSL 3.5.9），建置時核對壓縮包 SHA256 與 PE 清單。未使用的 Qt TLS plugins 及外帶 OpenSSL 另行排除；Python 套件零發現不能替代這些原生檢查。
 
 Defender 檢查保留病毒碼不超過 72 小時的門檻。建置機只在病毒碼過期時，以 Microsoft 簽章有效的官方工具嘗試更新，最多 180 秒，再重新檢查；失敗或仍過期就不通過。不改防護設定，也不在離線使用電腦啟動更新或背景工作。
 
@@ -221,7 +221,35 @@ OCR 有 PP-OCRv6 Small／Medium 辨字模型可選，兩者都已內含；Medium
 
 ## 原始碼開發與建置
 
-以下只在開發／建置機執行，離線使用電腦不需要做。Python 3.12；Windows 建置另需 Microsoft x64 C++ 編譯器，手寫 helper 使用 Release `/MT` 靜態 CRT。
+以下只在開發／建置機執行，離線使用電腦不需要做。Linux 開發／測試使用 Python 3.12；Windows 發布固定使用 [Astral python-build-standalone](https://github.com/astral-sh/python-build-standalone) 的 CPython 3.12.16／20261026 發行包，供應來源是 Astral，並非 python.org 官方安裝器。既有 RapidOCR 1.4.4 要求 Python < 3.13，因此維持 3.12 系列。發行包只在建置時下載與核對，使用電腦不需預裝 Python；Windows 建置另需 Microsoft x64 C++ 編譯器，手寫 helper 使用 Release `/MT` 靜態 CRT。
+
+Windows 發布建置先在 PowerShell 準備 runtime；第一行使用新的系統暫存子目錄，不能放在 Repo 內或覆用既有目錄。既有 Windows Python 3.12 只用來啟動 bootstrap，成功後接收它印出的已驗證 `python.exe`，後續 pip、模型、helper、探針與建置都用這個完整路徑。請逐步執行，遇到錯誤即停止。
+
+```powershell
+$inkpickRuntimeDir = Join-Path ([IO.Path]::GetTempPath()) ('inkpick-python-' + [guid]::NewGuid().ToString('N'))
+$inkpickPython = python scripts/prepare_windows_runtime.py --destination $inkpickRuntimeDir --report artifacts/windows-runtime-inventory.json
+if ($LASTEXITCODE -ne 0) { throw 'Windows Python runtime verification failed' }
+& $inkpickPython -m pip install --upgrade pip==26.2.2
+& $inkpickPython -m pip install -r requirements-dev.txt
+& $inkpickPython scripts/prepare_models.py
+& $inkpickPython scripts/prepare_handwriting_model.py
+& $inkpickPython scripts/build_handwriting_helper.py
+& $inkpickPython scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
+& $inkpickPython scripts/run_bounded_pytest.py --report artifacts/pytest-bounds.json --memory-mib 4096 --timeout 1800 -- -q
+& $inkpickPython src/main.py --self-test source-selftest.json
+& $inkpickPython src/main.py --smoke-app source-app-smoke.json
+& $inkpickPython src/main.py --self-test-handwriting source-handwriting.json
+& $inkpickPython src/main.py --self-test-handwriting-image source-handwriting-image.json
+& $inkpickPython src/main.py --self-test-documents source-documents.json
+& $inkpickPython src/main.py --self-test-comparison source-comparison.json
+& $inkpickPython src/main.py --self-test-shared-search source-shared-search.json
+& $inkpickPython src/main.py --self-test-gui source-gui.json
+& $inkpickPython scripts/build.py
+```
+
+CI 使用 `--destination "$env:RUNNER_TEMP/inkpick-python-runtime" --report artifacts/windows-runtime-inventory.json`；`GITHUB_PATH`／`GITHUB_ENV` 只供同一 job 後續步驟，沒有變更全域 Python 或 PATH。本機沒有這些 GitHub 檔案時不會匯出環境，因此不能在 bootstrap 後改回任意 `python`。
+
+Linux 開發與來源驗證使用 Python 3.12，步驟如下；`scripts/build.py` 的 EXE 建置僅在 Windows 執行。
 
 ```sh
 python -m pip install -r requirements-dev.txt
@@ -238,8 +266,6 @@ python src/main.py --self-test-documents source-documents.json
 python src/main.py --self-test-comparison source-comparison.json
 python src/main.py --self-test-shared-search source-shared-search.json
 python src/main.py --self-test-gui source-gui.json
-# Windows only:
-python scripts/build.py
 ```
 
 模型只在建置時從固定來源下載並核對 SHA256；應用程式不會在首次執行補下載。Linux 無桌面測試可設 `QT_QPA_PLATFORM=offscreen`。
