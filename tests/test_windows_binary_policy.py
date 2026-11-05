@@ -27,10 +27,28 @@ def exporting(*, forwarder=None):
     data[offset:offset + 13] = b'OpenPrinterW\0'
     if forwarder is not None:
         raw = forwarder.encode('ascii') + b'\0'
-        assert len(raw) <= 24
-        struct.pack_into('<I', data, 0x340, 0x1128)
-        data[0x328:0x328 + len(raw)] = raw
+        position = 0x328
+        if len(raw) > 24:
+            assert len(raw) <= 512
+            position = len(data)
+            data.extend(bytes(512))
+            struct.pack_into('<I', data, 0x98 + 240 + 8, len(data) - 512)
+            struct.pack_into('<I', data, 0x98 + 240 + 16, len(data) - 512)
+            struct.pack_into('<I', data, 0x98 + 116, len(data) - 0x300)
+        struct.pack_into('<I', data, 0x340, 0x1000 + position - 512)
+        data[position:position + len(raw)] = raw
     return bytes(data)
+
+
+def conditional_namespace(default, importer, alternate, *, name=CONTRACT[:-4]):
+    data = bytearray(api_set_fixture(default, alternate, name=name,
+                                    hashed_prefix=name.rsplit('-', 1)[0]))
+    alias = importer.encode('utf-16-le')
+    offset = len(data)
+    data.extend(alias)
+    struct.pack_into('<II', data, 52 + 20 + 4, offset, len(alias))
+    struct.pack_into('<I', data, 4, len(data))
+    return native.parse_api_set(bytes(data))
 
 
 @pytest.fixture
@@ -70,8 +88,7 @@ def test_real_pe_os_replacement_removes_only_proven_exact_root_compatibility_fil
 def test_unproven_os_contract_is_retained(fixture, defect):
     f = fixture
     if defect == 'unknown_contract':
-        f.namespace.clear()
-        f.namespace._hashed_hosts.clear()
+        f.namespace = native._ApiSetNamespace()
         write(f.system, CONTRACT, exporting())  # no name-only fallback allowed
     elif defect == 'missing_export':
         write(f.system, 'kernelbase.dll', tiny_pe())
@@ -84,11 +101,12 @@ def test_unproven_os_contract_is_retained(fixture, defect):
         f.loader = lambda: (f.system, f.namespace, set())
         write(f.system, 'driver.sys', exporting())
     else:
-        alias = CONTRACT.replace('-0.dll', '-9.dll')
-        f.namespace._hashed_hosts[CONTRACT.rsplit('-', 1)[0]] = None
-        f.namespace.pop(CONTRACT)
-        f.binaries[0] = (alias, f.binaries[0][1], 'BINARY')
-        f.binaries[1] = ('consumer.pyd', write(f.root, 'consumer.pyd', tiny_pe_with_import(alias)), 'EXTENSION')
+        prefix = CONTRACT.rsplit('-', 1)[0]
+        f.namespace = native._ApiSetNamespace()
+        f.namespace.add_record(prefix + '-1.dll', prefix, ('first.dll',))
+        f.namespace.add_record(prefix + '-2.dll', prefix, ('second.dll',))
+        assert f.namespace.hosts_for_name(CONTRACT, importer_name='consumer.pyd') == ()
+    f.loader = lambda: (f.system, f.namespace, set())
     assert policy.filter_tocs(f.binaries, [], loader=f.loader)[0] == f.binaries
 
 
@@ -187,6 +205,74 @@ def test_policy_is_inactive_outside_supported_windows(fixture, monkeypatch):
     monkeypatch.setattr(policy, '_windows10_or_later', lambda: False)
     missing = [('ucrtbase.dll', 'not-read-on-other-platforms', 'BINARY')]
     assert policy.filter_tocs(missing, []) == (missing, [])
+
+
+def test_real_importer_selects_conditional_host_without_borrowing_another_context(fixture):
+    f = fixture
+    namespace = conditional_namespace('default.dll', 'special.pyd', 'alternate.dll')
+    write(f.system, 'default.dll', tiny_pe())
+    write(f.system, 'alternate.dll', exporting())
+    loader = lambda: (f.system, namespace, set())
+    proof = policy._SystemProof(loader)
+    assert proof.satisfies(CONTRACT, ['OpenPrinterW'], requester_basename='special.pyd')
+    assert not proof.satisfies(CONTRACT, ['OpenPrinterW'], requester_basename='ordinary.pyd')
+    assert not proof.satisfies(CONTRACT, ['OpenPrinterW'])  # genuinely unknown parent
+    binaries = [f.binaries[0], ('nested/special.pyd', f.binaries[1][1], 'EXTENSION')]
+    assert [entry[0] for entry in policy.filter_tocs(binaries, [], loader=loader)[0]] == ['nested/special.pyd']
+    binaries[1] = ('ordinary.pyd', binaries[1][1], 'EXTENSION')
+    assert policy.filter_tocs(binaries, [], loader=loader)[0] == binaries
+
+
+def test_bundled_forwarder_supplies_its_real_dll_basename_as_requester(fixture):
+    f = fixture
+    namespace = conditional_namespace('default.dll', 'special.dll', 'alternate.dll')
+    write(f.system, 'default.dll', tiny_pe())
+    write(f.system, 'alternate.dll', exporting())
+    binaries = [f.binaries[0], ('nested/special.dll', write(f.root, 'special.dll',
+        exporting(forwarder=CONTRACT[:-4] + '.OpenPrinterW')), 'BINARY')]
+    loader = lambda: (f.system, namespace, set())
+    assert [entry[0] for entry in policy.filter_tocs(binaries, [], loader=loader)[0]] == ['nested/special.dll']
+    binaries[1] = ('ordinary.dll', binaries[1][1], 'BINARY')
+    assert policy.filter_tocs(binaries, [], loader=loader)[0] == binaries
+
+
+def test_os_forwarder_supplies_actual_forwarding_os_dll_as_requester(fixture):
+    f = fixture
+    name = 'api-ms-x-l1-1-0'
+    namespace = conditional_namespace('ucrtbase.dll', 'ucrtbase.dll', 'kernelbase.dll', name=name)
+    write(f.system, 'ucrtbase.dll', exporting(forwarder=name + '.#7'))
+    binaries = [('ucrtbase.dll', f.binaries[0][1], 'BINARY'),
+                ('consumer.pyd', write(f.root, 'consumer.pyd', tiny_pe_with_import('ucrtbase.dll')), 'EXTENSION')]
+    loader = lambda: (f.system, namespace, set())
+    assert [entry[0] for entry in policy.filter_tocs(binaries, [], loader=loader)[0]] == ['consumer.pyd']
+
+
+@pytest.mark.parametrize('alternate', ['alternate.dll', 'missing.dll', 'driver.sys'])
+def test_unreferenced_conditional_candidate_requires_every_measured_host_identity(fixture, alternate):
+    f = fixture
+    namespace = conditional_namespace('default.dll', 'special.dll', alternate)
+    write(f.system, 'default.dll', tiny_pe())
+    write(f.system, 'alternate.dll', tiny_pe())
+    write(f.system, 'driver.sys', tiny_pe())
+    loader = lambda: (f.system, namespace, set())
+    result, _ = policy.filter_tocs([f.binaries[0]], [], loader=loader)
+    assert (result == []) is (alternate == 'alternate.dll')
+
+
+@pytest.mark.parametrize('defect', ['ambiguous_default', 'empty_default', 'empty_conditional'])
+def test_unreferenced_identity_never_flattens_ambiguous_or_empty_selector_choices(fixture, defect):
+    f = fixture
+    if defect == 'ambiguous_default':
+        namespace = native.parse_api_set(api_set_fixture('first.dll', 'second.dll',
+            name=CONTRACT[:-4], hashed_prefix=CONTRACT.rsplit('-', 1)[0]))
+    elif defect == 'empty_default':
+        namespace = conditional_namespace('', 'special.dll', 'alternate.dll')
+    else:
+        namespace = conditional_namespace('default.dll', 'special.dll', '')
+    for name in ('first.dll', 'second.dll', 'default.dll', 'alternate.dll'):
+        write(f.system, name, tiny_pe())
+    loader = lambda: (f.system, namespace, set())
+    assert policy.filter_tocs([f.binaries[0]], [], loader=loader)[0] == [f.binaries[0]]
 
 
 def test_generated_wrapper_preserves_entire_current_cli_and_filters_before_exe(tmp_path, monkeypatch):

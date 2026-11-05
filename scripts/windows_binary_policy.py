@@ -88,21 +88,37 @@ class _SystemProof:
                 self.cache[name] = native._pe_metadata(path.read_bytes())
         return self.cache[name]
 
-    def _hosts(self, name):
+    def _hosts(self, name, requester_basename=None):
         if isinstance(self.api_sets, native._ApiSetNamespace):
-            return self.api_sets.hosts_for_name(name)
+            return self.api_sets.hosts_for_name(name, importer_name=requester_basename)
         return self.api_sets.get(name)
 
-    def satisfies(self, name, symbols, *, depth=0, visiting=frozenset()):
+    def unreferenced_identity(self, name):
+        """Unused conditional stubs need every measured OS host, never a guessed parent."""
+        if not name.startswith(('api-ms-', 'ext-ms-')):
+            return self.satisfies(name, [])
+        hosts = (self.api_sets.all_hosts_for_name(name)
+                 if isinstance(self.api_sets, native._ApiSetNamespace) else self.api_sets.get(name))
+        if not isinstance(hosts, tuple) or not 0 < len(hosts) <= 1024:
+            return False
+        for host in hosts:
+            if not native._user_library_name(host):
+                return False
+            metadata = self.metadata(host)
+            if metadata is None or metadata['machine'] != 'AMD64' or metadata['is_dll'] is not True:
+                return False
+        return True
+
+    def satisfies(self, name, symbols, *, requester_basename=None, depth=0, visiting=frozenset()):
         if depth >= MAX_FORWARD_DEPTH:
             return False
         # An unknown API contract must never fall back to a same-named DLL.
-        if name.startswith(('api-ms-', 'ext-ms-')) and not self._hosts(name):
+        if name.startswith(('api-ms-', 'ext-ms-')) and not self._hosts(name, requester_basename):
             return False
         dependency = {'name': name, 'kind': 'regular', '_symbols': list(symbols)}
-        resolution = native.resolve_import({'path': '_policy_importer.pyd', 'provenance': None},
+        resolution = native.resolve_import({'path': requester_basename or '@executable', 'provenance': None},
             dependency, [], system_metadata=self.metadata, api_sets=self.api_sets,
-            known_dlls=self.known, package_dependencies={})
+            known_dlls=self.known, package_dependencies={}, importer_name=requester_basename)
         if resolution['resolution'] not in ('system32', 'api_set') or resolution['missing_symbols_count']:
             return False
         target = resolution['target']
@@ -110,7 +126,7 @@ class _SystemProof:
         if not isinstance(metadata.get('_forwarders'), dict):
             return False
         for symbol in symbols:
-            key = (target, symbol)
+            key = (name, target, symbol, requester_basename)
             if key in self.proven:
                 if not self.proven[key]:
                     return False
@@ -122,8 +138,8 @@ class _SystemProof:
             valid = True
             if forwarder is not None:
                 parsed = _forwarder_target(forwarder)
-                valid = parsed is not None and self.satisfies(parsed[0], [parsed[1]], depth=depth + 1,
-                                                               visiting=visiting | {key})
+                valid = parsed is not None and self.satisfies(parsed[0], [parsed[1]],
+                    requester_basename=target, depth=depth + 1, visiting=visiting | {key})
             self.proven[key] = valid
             if not valid:
                 return False
@@ -168,16 +184,30 @@ def filter_tocs(binaries, datas, *, loader=None):
     proof = _SystemProof(loader)
     # Simultaneous removal is allowed only while every final kept importer is
     # satisfied. A retained candidate becomes an importer in the next pass.
-    removable = {name for name in candidates if proof.satisfies(name, [])}
+    requesters = {name: set() for name in candidates}
+    for name, item in metadata.items():
+        parent = name.rsplit('/', 1)[-1]
+        for dependency in item['imports']:
+            if dependency['name'] in requesters:
+                requesters[dependency['name']].add(parent)
+        for forwarder in set(item['_forwarders'].values()):
+            parsed = _forwarder_target(forwarder)
+            if parsed is not None and parsed[0] in requesters:
+                requesters[parsed[0]].add(parent)
+    removable = {name for name in candidates if
+        (any(proof.satisfies(name, [], requester_basename=parent) for parent in requesters[name])
+         if requesters[name] else proof.unreferenced_identity(name))}
     forwarder_checks = 0
     while True:
         rejected = set()
         for name, item in metadata.items():
             if name in removable:
                 continue
+            parent = name.rsplit('/', 1)[-1]
             for dependency in item['imports']:
                 target = dependency['name']
-                if target in removable and not proof.satisfies(target, dependency['_symbols']):
+                if target in removable and not proof.satisfies(target, dependency['_symbols'],
+                                                               requester_basename=parent):
                     rejected.add(target)
             # Export forwarders are loader edges too, even though there is no
             # import descriptor for them. Named/ordinal aliases share a value.
@@ -188,7 +218,7 @@ def filter_tocs(binaries, datas, *, loader=None):
                     rejected.update(removable)  # cannot rule out a candidate edge
                     break
                 target, symbol = parsed
-                if target in removable and not proof.satisfies(target, [symbol]):
+                if target in removable and not proof.satisfies(target, [symbol], requester_basename=parent):
                     rejected.add(target)
         if not rejected:
             break

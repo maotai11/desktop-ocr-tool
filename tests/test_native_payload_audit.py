@@ -383,8 +383,8 @@ def api_set_fixture(*hosts, name='api-ms-win-test-l1-1-0', hashed_prefix=None):
     return bytes(data)
 
 
-def conditional_api_set_fixture(default_hosts, conditional_values, *, measured_revision=False):
-    name = 'api-ms-win-test-l1-1-2' if measured_revision else 'api-ms-win-test-l1-1-0'
+def conditional_api_set_fixture(default_hosts, conditional_values, *, measured_revision=False, name=None):
+    name = name or ('api-ms-win-test-l1-1-2' if measured_revision else 'api-ms-win-test-l1-1-0')
     data = bytearray(api_set_fixture(*default_hosts, *(host for alias, host in conditional_values),
                                     name=name, hashed_prefix=name.rsplit('-', 1)[0] if measured_revision else None))
     for index, (alias, _host) in enumerate(conditional_values, len(default_hosts)):
@@ -409,7 +409,75 @@ def test_conditional_host_for_another_importer_cannot_create_a_false_proof(measu
     result = audit.resolve_import({'path': 'regular.pyd', 'provenance': {}},
         {'name': 'api-ms-win-test-l1-1-0.dll', 'kind': 'regular', '_symbols': ['Missing']}, [],
         system_metadata=system_metadata, api_sets=namespace, known_dlls=set(), package_dependencies={})
-    assert result['resolution'] == 'unresolved' and result['missing_symbols_count'] == 1 and calls == []
+    assert result['resolution'] == 'unresolved' and result['missing_symbols_count'] == 1 and calls == ['default.dll']
+
+
+@pytest.mark.parametrize('importer,expected', [
+    ('kernel32.dll', ('kernelbase.dll',)), ('KERNEL32.DLL', ('kernelbase.dll',)),
+    ('regular.pyd', ('kernel32.dll',)), ('kernel32', ('kernel32.dll',)),
+    ('kernel32.dll.extra', ('kernel32.dll',)), (None, ()), ('../kernel32.dll', ()),
+])
+def test_measured_windows_conditional_contract_uses_exact_importer_basename(importer, expected):
+    # Actual Windows run 41993201779 observed canonical processthreads revision8,
+    # default kernel32.dll, and only alias kernel32.dll -> kernelbase.dll.
+    canonical = 'api-ms-win-core-processthreads-l1-1-8'
+    namespace = audit.parse_api_set(conditional_api_set_fixture(
+        ['kernel32.dll'], [('kernel32.dll', 'kernelbase.dll')], measured_revision=True, name=canonical))
+    assert namespace.hosts_for_name(canonical + '.dll', importer) == expected
+    assert namespace.hosts_for_name('api-ms-win-core-processthreads-l1-1-0.dll', importer) == expected
+    assert namespace.all_hosts_for_name('api-ms-win-core-processthreads-l1-1-0.dll') == ('kernel32.dll', 'kernelbase.dll')
+
+
+def test_true_logical_parent_is_derived_but_explicit_unknown_overrides_it():
+    namespace = audit.parse_api_set(conditional_api_set_fixture(['default.dll'], [('kernel32.dll', 'alternate.dll')]))
+    dependency = {'name': 'api-ms-win-test-l1-1-0.dll', 'kind': 'regular', '_symbols': ['Entry']}
+    def resolve(path, **kwargs):
+        return audit.resolve_import({'path': path, 'provenance': {}}, dependency, [],
+            system_metadata=lambda _: {'machine': 'AMD64', 'is_dll': True, '_exports': {'Entry'}},
+            api_sets=namespace, known_dlls=set(), package_dependencies={}, **kwargs)
+    assert resolve('package/KERNEL32.DLL')['target'] == 'alternate.dll'
+    assert resolve('package/regular.pyd')['target'] == 'default.dll'
+    assert resolve('package/kernel32.dll', importer_name=None)['resolution'] == 'unresolved'
+    assert resolve('C:/private/kernel32.dll')['resolution'] == 'unresolved'
+    assert resolve('@executable')['resolution'] == 'unresolved'
+    assert resolve('@executable', importer_name='InkPick.exe')['target'] == 'default.dll'
+
+
+def test_selected_importer_alias_must_have_a_single_unambiguous_host():
+    namespace = audit.parse_api_set(conditional_api_set_fixture(
+        ['default.dll'], [('special.dll', 'first.dll'), ('special.dll', 'second.dll')]))
+    assert namespace.hosts_for_name('api-ms-win-test-l1-1-0.dll', 'special.dll') == ()
+    assert namespace.hosts_for_name('api-ms-win-test-l1-1-0.dll', 'regular.pyd') == ('default.dll',)
+    assert namespace.hosts_for_name('api-ms-win-test-l1-1-0.dll') == ()
+    assert namespace.all_hosts_for_name('api-ms-win-test-l1-1-0.dll') == ()
+    no_default = audit.parse_api_set(conditional_api_set_fixture([], [('special.dll', 'selected.dll')]))
+    assert no_default.hosts_for_name('api-ms-win-test-l1-1-0.dll', 'special.dll') == ('selected.dll',)
+    assert no_default.hosts_for_name('api-ms-win-test-l1-1-0.dll', 'regular.pyd') == ()
+    assert no_default.all_hosts_for_name('api-ms-win-test-l1-1-0.dll') == ()
+    conflicting_default = audit.parse_api_set(conditional_api_set_fixture(['first.dll', 'second.dll'], []))
+    assert conflicting_default.hosts_for_name('api-ms-win-test-l1-1-0.dll', 'regular.pyd') == ()
+    assert conflicting_default.all_hosts_for_name('api-ms-win-test-l1-1-0.dll') == ()
+
+
+def test_same_prefix_different_context_maps_cannot_be_guessed_for_another_revision():
+    namespace = audit._ApiSetNamespace()
+    prefix = 'api-ms-win-test-l1-1'
+    namespace.add_record(prefix + '-1.dll', prefix, ('default.dll', 'first.dll'),
+                         selection_hosts={None: ['default.dll'], 'kernel32.dll': ['first.dll']})
+    namespace.add_record(prefix + '-2.dll', prefix, ('default.dll', 'second.dll'),
+                         selection_hosts={None: ['default.dll'], 'kernel32.dll': ['second.dll']})
+    assert namespace.hosts_for_name(prefix + '-1.dll', 'kernel32.dll') == ('first.dll',)
+    assert namespace.hosts_for_name(prefix + '-0.dll', 'kernel32.dll') == ()
+    assert namespace.hosts_for_name(prefix + '-0.dll', 'regular.pyd') == ()
+    assert namespace.all_hosts_for_name(prefix + '-0.dll') == ()
+
+
+def test_all_host_identity_choices_preserve_unusable_and_empty_values():
+    kernel = audit.parse_api_set(conditional_api_set_fixture(['default.dll'], [('special.dll', 'win32k.sys')]))
+    assert kernel.all_hosts_for_name('api-ms-win-test-l1-1-0.dll') == ('default.dll', 'win32k.sys')
+    empty = audit.parse_api_set(conditional_api_set_fixture(['default.dll'], [('special.dll', '')]))
+    assert empty.all_hosts_for_name('api-ms-win-test-l1-1-0.dll') == ('', 'default.dll')
+    assert empty.all_hosts_for_name('api-ms-win-missing-l1-1-0.dll') is None
 
 
 def test_conditional_host_ambiguity_also_blocks_the_build_filter_os_proof(tmp_path):

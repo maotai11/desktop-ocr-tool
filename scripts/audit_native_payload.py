@@ -33,6 +33,7 @@ MAX_EXPORT_SYMBOLS = 131_072
 SHA = re.compile(r'[0-9a-f]{64}')
 COMMIT = re.compile(r'[0-9a-f]{40}')
 NATIVE_SUFFIXES = ('.dll', '.pyd', '.exe')
+_IMPORTER_UNSET = object()
 PROVENANCE_KINDS = {'wheel_record', 'cpython_runtime', 'native_helper_lock',
                     'pyinstaller_bootloader_code', 'windows_system_file'}
 SCANNER_KEYS = ('antivirus_scan_completed', 'antivirus_detections_count',
@@ -100,6 +101,16 @@ def _windows_sxs_target(value):
     require(re.fullmatch(r'WinSxS/amd64_[A-Za-z0-9_.+-]{1,255}/comctl32\.dll', value),
             'Unsupported Windows activation-context target')
     return value
+
+
+def _importer_basename(value):
+    if type(value) is not str or not 0 < len(value) <= 255 or value == '@executable':
+        return None
+    try:
+        safe_path(value)
+    except ValueError:
+        return None
+    return value.casefold() if PurePosixPath(value).name == value else None
 
 
 def _utc(value):
@@ -484,28 +495,67 @@ class _ApiSetNamespace(dict):
     """Canonical records plus revision prefixes measured from the OS schema."""
     def __init__(self):
         super().__init__()
-        self._hashed_hosts = {}
-        self._resolution_hosts = {}
+        self._records = {}
+        self._hashed_records = {}
 
-    def add_record(self, name, prefix, hosts, *, resolution_hosts=None):
-        resolution_hosts = hosts if resolution_hosts is None else resolution_hosts
+    def add_record(self, name, prefix, hosts, *, selection_hosts=None, all_hosts=None):
+        selections = {alias: tuple(sorted(set(values))) for alias, values in
+                      (selection_hosts if selection_hosts is not None else {None: hosts}).items()}
+        default = selections.get(None, ())
+        # Aliases identical to the default do not change selection semantics.
+        selections = {alias: values for alias, values in selections.items() if alias is None or values != default}
+        unknown_hosts = default if len(default) == 1 and default[0] and len(selections) == 1 else ()
+        all_choices = tuple(sorted(set(all_hosts if all_hosts is not None else
+                                      (host for values in selections.values() for host in values))))
+        record = (unknown_hosts, selections, all_choices)
         require(name not in self or self[name] == hosts, 'Conflicting canonical API-set record')
-        require(name not in self._resolution_hosts or self._resolution_hosts[name] == resolution_hosts,
+        require(name not in self._records or self._records[name] == record,
                 'Conflicting canonical API-set host selection')
         self[name] = hosts
-        self._resolution_hosts[name] = resolution_hosts
-        if prefix not in self._hashed_hosts:
-            self._hashed_hosts[prefix] = resolution_hosts
-        elif self._hashed_hosts[prefix] != resolution_hosts:
-            self._hashed_hosts[prefix] = None  # Ambiguous aliases never select an arbitrary host.
+        self._records[name] = record
+        if prefix not in self._hashed_records:
+            self._hashed_records[prefix] = record
+        elif self._hashed_records[prefix] != record:
+            self._hashed_records[prefix] = None  # Never guess among conflicting measured records.
 
-    def hosts_for_name(self, name):
+    def _record_for_name(self, name):
+        if type(name) is not str:
+            return False, None
+        name = name.casefold()
         if name in self:
-            return self._resolution_hosts[name]
+            return True, self._records.get(name)
         match = re.fullmatch(r'((?:api|ext)-ms-(?:[a-z0-9]+-)+l[0-9]+-[0-9]+)-[0-9]+\.dll', name)
-        if match and match[1] in self._hashed_hosts:
-            return self._hashed_hosts[match[1]] or ()
-        return None
+        if match and match[1] in self._hashed_records:
+            return True, self._hashed_records[match[1]]
+        return False, None
+
+    def hosts_for_name(self, name, importer_name=None):
+        found, record = self._record_for_name(name)
+        if not found:
+            return None
+        if record is None:
+            return ()
+        unknown_hosts, selections, _all_choices = record
+        if importer_name is None:
+            return unknown_hosts
+        importer = _importer_basename(importer_name)
+        if importer is None:
+            return ()
+        chosen = selections.get(importer, selections.get(None, ()))
+        return chosen if len(chosen) == 1 and chosen[0] else ()
+
+    def all_hosts_for_name(self, name):
+        """All finite measured choices, for unreferenced identity checks only."""
+        found, record = self._record_for_name(name)
+        if not found:
+            return None
+        if record is None:
+            return ()
+        _unknown, selections, choices = record
+        default = selections.get(None, ())
+        if len(default) != 1 or not default[0] or any(len(hosts) != 1 for hosts in selections.values()):
+            return ()
+        return choices
 
 
 def parse_api_set(data):
@@ -525,7 +575,7 @@ def parse_api_set(data):
         name = string(name_offset, name_size) + '.dll'
         prefix = string(name_offset, hashed_size)
         safe_path(name)
-        hosts, default_hosts, conditional_hosts = [], [], []
+        hosts, selections, all_choices = [], {}, []
         for item in range(value_count):
             _, alias_offset, alias_size, target_offset, target_size = struct.unpack_from('<5I', data, values_offset + item * 20)
             alias = string(alias_offset, alias_size)
@@ -542,14 +592,10 @@ def parse_api_set(data):
                 # contracts. Preserve those records without treating them as
                 # libraries loadable by this desktop application.
                 hosts.append(target)
-            (conditional_hosts if alias else default_hosts).append(target)
-        unique_defaults = tuple(dict.fromkeys(default_hosts))
-        # Conditional values depend on the real importing module. Until that
-        # context is modeled, only a unique nonempty default with equivalent
-        # conditional targets can establish an OS dependency proof.
-        eligible_hosts = unique_defaults if (len(unique_defaults) == 1 and unique_defaults[0]
-                         and all(host == unique_defaults[0] for host in conditional_hosts)) else ()
-        result.add_record(name, prefix, tuple(dict.fromkeys(hosts)), resolution_hosts=eligible_hosts)
+            selections.setdefault(alias or None, []).append(target)
+            all_choices.append(target)
+        result.add_record(name, prefix, tuple(dict.fromkeys(hosts)),
+                          selection_hosts=selections, all_hosts=all_choices)
     return result
 
 
@@ -576,7 +622,7 @@ def _windows_loader():
 
 
 def resolve_import(importer, dependency, files, *, system_metadata, api_sets, known_dlls, package_dependencies,
-                   sxs_metadata=None):
+                   sxs_metadata=None, importer_name=_IMPORTER_UNSET):
     """Resolve explicit directories/owner scopes; never use a global basename glob."""
     name, symbols = dependency['name'], dependency['_symbols']
     paths = {item['path'].casefold(): item for item in files if item['path'] != '@executable'}
@@ -598,7 +644,13 @@ def resolve_import(importer, dependency, files, *, system_metadata, api_sets, kn
         if redirected is not None:
             require('_windows_sxs_target' in redirected, 'Activation-context metadata has no target identity')
             return outcome('system32', name, redirected) if eligible(redirected) else unresolved()
-    api_hosts = api_sets.hosts_for_name(name) if isinstance(api_sets, _ApiSetNamespace) else api_sets.get(name)
+    if importer_name is _IMPORTER_UNSET:
+        logical = importer.get('path')
+        try:
+            importer_name = PurePosixPath(safe_path(logical)).name if logical != '@executable' else None
+        except ValueError:
+            importer_name = None
+    api_hosts = api_sets.hosts_for_name(name, importer_name) if isinstance(api_sets, _ApiSetNamespace) else api_sets.get(name)
     if api_hosts is not None:
         for host in api_hosts:
             if not _user_library_name(host):
@@ -770,7 +822,8 @@ def audit_static(executable, extract_dir, source_commit):
         for item in files:
             item['imports'] = [resolve_import(item, dependency, files, system_metadata=system_metadata,
                  api_sets=api_sets, known_dlls=known, package_dependencies=dependencies,
-                 sxs_metadata=sxs_metadata) for dependency in item['imports']]
+                 sxs_metadata=sxs_metadata, **({'importer_name': executable.name} if item['path'] == '@executable' else {}))
+                 for dependency in item['imports']]
     for item in files:
         _strip_private_pe_metadata(item)
     files.sort(key=lambda item: item['path'].casefold())
