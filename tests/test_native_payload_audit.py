@@ -172,6 +172,35 @@ def test_named_export_aliases_and_ordinal_only_functions_remain_complete():
     assert metadata['_exports'] == {'Export000000', 'Export000001', 'Export000002', 7, 8, 9, 10}
 
 
+@pytest.mark.parametrize('alias', [False, True])
+def test_forwarder_metadata_preserves_export_name_and_ordinal_privately(alias):
+    pytest.importorskip('pefile')
+    data = bytearray(pe_with_exports(3, alias=alias))
+    forwarder = b'KERNEL32.Sleep\0'
+    # A forwarder is an EAT RVA into the export directory, rather than code.
+    data[0x328:0x328 + len(forwarder)] = forwarder
+    struct.pack_into('<I', data, 0x340, 0x1128)
+    metadata = audit._pe_metadata(bytes(data))
+    expected = {7: 'KERNEL32.Sleep', 'Export000000': 'KERNEL32.Sleep'}
+    if alias:
+        expected.update(Export000001='KERNEL32.Sleep', Export000002='KERNEL32.Sleep')
+    assert metadata['_forwarders'] == expected
+    assert 7 in metadata['_exports'] and 'Export000000' in metadata['_exports']
+    audit._strip_private_pe_metadata(metadata)
+    assert not any(key.startswith('_') for key in metadata)
+    assert 'KERNEL32.Sleep' not in json.dumps(metadata)
+
+
+@pytest.mark.parametrize('forwarder', [b'KERNEL32.\xff', b'../escape.Entry', b'KERNEL32.Entry\n', b''])
+def test_malformed_or_path_like_forwarder_metadata_is_rejected(forwarder):
+    pytest.importorskip('pefile')
+    data = bytearray(pe_with_exports(1))
+    data[0x328:0x328 + len(forwarder) + 1] = forwarder + b'\0'
+    struct.pack_into('<I', data, 0x340, 0x1128)
+    with pytest.raises((ValueError, UnicodeDecodeError)):
+        audit._pe_metadata(bytes(data))
+
+
 @pytest.mark.parametrize('defect', ['functions_count', 'names_count', 'function_span', 'name_span',
                                    'ordinal_span', 'ordinal_index', 'directory_span', 'function_address'])
 def test_raw_export_counts_and_spans_are_checked_before_parsing(defect):

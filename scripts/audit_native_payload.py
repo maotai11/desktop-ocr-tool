@@ -342,6 +342,7 @@ def _pe_metadata(data):
                 imports.append({'name': name, 'kind': kind, '_symbols': symbols})
         exports = getattr(pe, 'DIRECTORY_ENTRY_EXPORT', None)
         exported = set()
+        forwarders = {}
         parsed_names = 0
         parsed_ordinals = set()
         if exports is not None:
@@ -351,11 +352,19 @@ def _pe_metadata(data):
                 if symbol.name:
                     exported.add(symbol.name.decode('ascii'))
                     parsed_names += 1
+                if symbol.forwarder is not None:
+                    forwarder = symbol.forwarder.decode('ascii')
+                    require(0 < len(forwarder) <= 4096
+                            and all(33 <= ord(char) <= 126 and char not in '\\/' for char in forwarder),
+                            'Invalid native export forwarder')
+                    forwarders[int(symbol.ordinal)] = forwarder
+                    if symbol.name:
+                        forwarders[symbol.name.decode('ascii')] = forwarder
         require(parsed_names == expected_names and parsed_ordinals == expected_ordinals,
                 'Incomplete native export parsing')
         return {'machine': 'AMD64', 'is_dll': bool(pe.FILE_HEADER.Characteristics & 0x2000),
                 'file_version': versions.get('FileVersion', ''), 'product_version': versions.get('ProductVersion', ''),
-                'imports': imports, '_exports': exported,
+                'imports': imports, '_exports': exported, '_forwarders': forwarders,
                 '_code': [(section.Name.hex(), section.VirtualAddress, hashlib.sha256(section.get_data()).hexdigest())
                           for section in pe.sections if section.Characteristics & 0x20000000]}
     finally:
@@ -676,8 +685,7 @@ def audit_static(executable, extract_dir, source_commit):
         item['imports'] = [resolve_import(item, dependency, files, system_metadata=system_metadata,
              api_sets=api_sets, known_dlls=known, package_dependencies=dependencies) for dependency in item['imports']]
     for item in files:
-        item.pop('_exports')
-        item.pop('_code')
+        _strip_private_pe_metadata(item)
     files.sort(key=lambda item: item['path'].casefold())
     inventory = {'schema': 1, 'probe': 'native_payload_inventory', 'version': APP_VERSION, 'platform': 'win32',
         'source_commit': source_commit, 'source_run_id': os.environ.get('GITHUB_RUN_ID'),
@@ -692,6 +700,12 @@ def audit_static(executable, extract_dir, source_commit):
               'scan_relative_paths': [item['scan_path'] for item in files],
               'scan_scope_files_sha256': scan_scope_digest(files)}
     return static, inventory
+
+
+def _strip_private_pe_metadata(item):
+    """Private symbol/code details are never included in published inventory."""
+    for key in ('_exports', '_forwarders', '_code'):
+        item.pop(key)
 
 
 def finalize(static, inventory, windows, executable):
