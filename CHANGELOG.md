@@ -8,6 +8,8 @@
 - 經發行包 SHA256 核對，舊 OpenSSL 3.0.16 來自 CPython 3.12.10；Windows runtime 改為鎖定的 Astral standalone CPython 3.12.16／20261026 與動態 OpenSSL 3.5.9，建置時核對壓縮包與 PE 清單
 - 另外排除未使用 Qt TLS plugins 及打包時外帶的 OpenSSL，保持來源分開核對；離線使用電腦不需預裝 Python
 - 加入明列面板／操作的 GUI 驗證及封裝 PE 原生元件檢查，分開記錄來源、匯入、簽章與防毒掃描範圍，不將未知或未完成項目當成通過
+- 修正檢查器只解析前 8,192 個匯出項目的限制，以 131,072 上限及原始表／數目核對拒絕不完整解析；API-set 與 Common Controls 6 依實際 Windows namespace／候選 manifest 解析
+- 封裝只在 Windows 10+ 完成系統符號與有界 forwarder 替代證明時排除 43 個 API stub 及 ucrtbase；未知供應來源不獲放行，一般 MSVC／SSL 依賴保留
 - 更新操作說明及版本驗證矩陣，保留原有辨識規則、手動候選、主螢幕／行級定位與離線模型
 
 ## 1.8.0-rc.11 — 2026-11-05

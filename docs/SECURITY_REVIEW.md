@@ -43,6 +43,14 @@ Linux 開發／測試仍使用 Python 3.12，Windows 發布固定 3.12.16；Rapi
 
 rc.12 新增成品 PE 清冊、來源／匯入／簽章及 Windows Defender 檢查，與 Python 套件稽核分開報告。每一項的實際範圍、結果狀態及未完成的原生 SBOM 限制見 [本版驗證範圍](VALIDATION_COVERAGE.md)。清冊完整、簽章存在、掃描無偵測分別回答不同問題，不能合併寫成「全部 DLL 無漏洞」。
 
+原生稽核的 Windows 實跑也暴露出檢查器本身的限制：pefile 預設只解析 8,192 個匯出項目，會截斷 Qt／OpenBLAS 較大的匯出表。現改為 131,072 個符號的有界完整解析，先核對原始表格位址、長度、名稱與 ordinal 數目，再比對解析結果；超界、截斷或數目不符都失敗，不把讀到上限當作已完整檢查。
+
+API-set 依實際 Windows namespace 的 hash／修訂結構解析，不將不同條件的 host 混成可用清單；不能唯一證明的情況保留未解析並拒絕通過。Common Controls 6 的 `comctl32.dll` 則依候選 EXE 實際 manifest 建立 activation context，只查詢中繼資料來選定 WinSxS 元件，不載入待檢查元件或執行其程式碼。清冊以 `windows_sxs` 記錄受限相對 `target` 與 `target_sha256`，目標 PE 另核對 AMD64；不靠搜尋任意 WinSxS 版本替代。
+
+封裝完成 Analysis 後，只對明列的 43 個 `api-ms-win-core`／`api-ms-win-crt` 相容 stub 及 `ucrtbase.dll` 套用條件排除。必須在 Windows 10+ 以實際 API-set／System32 證明保留檔案對這份候選清單的所有顯式匯入，以及保留 bundled DLL 指向候選的相關 export forwarder 鏈都可被系統滿足，並對深度、符號數及循環設限。無法證明的檔案保留，再由嚴格原生來源 gate 阻止未知來源通過；一般 `msvcp`／`vcruntime`／SSL 依賴不在這份排除清單內。
+
+這 44 個舊相容檔的第三方供應來源仍未知，排除依據是可驗證的系統替代，不是對未知供應者的核准。這些規則不刪 Windows 系統檔，也不證明所有 DLL 已載入或所有程式路徑已執行。新解析／SxS／封裝政策及 Defender 是否實際通過，仍須看同版 Windows 報告，不能把規則或測試設計當成已通過。
+
 本次 Windows 只讀診斷確認 Defender 服務及防毒啟用、本機掃描設定符合要求，但病毒碼約 151 小時，超出 72 小時門檻，因此不能當成掃描通過。建置驗證只在病毒碼過期時，先確認服務、隱私設定及官方 `MpCmdRun.exe` 的 Microsoft 有效簽章，再執行 `-SignatureUpdate -MMPC`，最多等待 180 秒；完成後重新讀取狀態，仍須符合原本 72 小時門檻。更新失敗、逾時或仍過期都停止驗證，不降低門檻。
 
 這是建置機的病毒碼維護，不修改 Defender 防護設定、不加入排除，也不建立排程、應用程式更新器或背景工作。原始更新輸出僅留在 runner 的本次暫存並於結束清理。是否實際更新及完成掃描，須讀同次報告；這段機制說明不是更新或掃描已成功的證據。

@@ -95,6 +95,13 @@ def _user_library_name(value):
                 and value.lower().endswith(('.dll', '.drv')))
 
 
+def _windows_sxs_target(value):
+    safe_path(value)
+    require(re.fullmatch(r'WinSxS/amd64_[A-Za-z0-9_.+-]{1,255}/comctl32\.dll', value),
+            'Unsupported Windows activation-context target')
+    return value
+
+
 def _utc(value):
     require(type(value) is str, 'Invalid timestamp type')
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -169,12 +176,16 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
         require(type(item['imports']) is list and len(item['imports']) <= 1024, 'Invalid import list')
         seen_imports = set()
         for dependency in item['imports']:
-            require(type(dependency) is dict and set(dependency) == {'name', 'kind', 'resolution', 'target',
-                'symbols_count', 'missing_symbols_count'}, 'Invalid dependency fields')
+            require(type(dependency) is dict, 'Invalid dependency fields')
+            dependency_keys = {'name', 'kind', 'resolution', 'target', 'symbols_count', 'missing_symbols_count'}
+            if dependency.get('resolution') == 'windows_sxs':
+                dependency_keys.add('target_sha256')
+            require(set(dependency) == dependency_keys, 'Invalid dependency fields')
             name = safe_path(dependency['name'])
             require(_user_library_name(name)
                     and dependency['kind'] in ('regular', 'delay')
-                    and dependency['resolution'] in ('bundled', 'system32', 'api_set'), 'Unresolved native dependency')
+                    and dependency['resolution'] in ('bundled', 'system32', 'api_set', 'windows_sxs'),
+                    'Unresolved native dependency')
             identity = (name.casefold(), dependency['kind'])
             require(identity not in seen_imports, 'Duplicate import descriptor')
             seen_imports.add(identity)
@@ -182,7 +193,11 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
             require(type(dependency['symbols_count']) is int and 0 <= dependency['symbols_count'] <= 65536
                     and type(dependency['missing_symbols_count']) is int
                     and dependency['missing_symbols_count'] == 0, 'Native imported symbol is unresolved')
-            if dependency['resolution'] != 'bundled':
+            if dependency['resolution'] == 'windows_sxs':
+                _windows_sxs_target(target)
+                require(name == 'comctl32.dll' and type(dependency['target_sha256']) is str
+                        and SHA.fullmatch(dependency['target_sha256']), 'Invalid Windows activation-context evidence')
+            elif dependency['resolution'] != 'bundled':
                 require(_user_library_name(target), 'Unsafe system dependency target')
     require('@executable' in paths and next(item for item in files if item['path'] == '@executable')['sha256']
             == executable_sha256, 'Outer executable is absent from inventory')
@@ -470,18 +485,23 @@ class _ApiSetNamespace(dict):
     def __init__(self):
         super().__init__()
         self._hashed_hosts = {}
+        self._resolution_hosts = {}
 
-    def add_record(self, name, prefix, hosts):
+    def add_record(self, name, prefix, hosts, *, resolution_hosts=None):
+        resolution_hosts = hosts if resolution_hosts is None else resolution_hosts
         require(name not in self or self[name] == hosts, 'Conflicting canonical API-set record')
+        require(name not in self._resolution_hosts or self._resolution_hosts[name] == resolution_hosts,
+                'Conflicting canonical API-set host selection')
         self[name] = hosts
+        self._resolution_hosts[name] = resolution_hosts
         if prefix not in self._hashed_hosts:
-            self._hashed_hosts[prefix] = hosts
-        elif self._hashed_hosts[prefix] != hosts:
+            self._hashed_hosts[prefix] = resolution_hosts
+        elif self._hashed_hosts[prefix] != resolution_hosts:
             self._hashed_hosts[prefix] = None  # Ambiguous aliases never select an arbitrary host.
 
     def hosts_for_name(self, name):
         if name in self:
-            return self[name]
+            return self._resolution_hosts[name]
         match = re.fullmatch(r'((?:api|ext)-ms-(?:[a-z0-9]+-)+l[0-9]+-[0-9]+)-[0-9]+\.dll', name)
         if match and match[1] in self._hashed_hosts:
             return self._hashed_hosts[match[1]] or ()
@@ -505,9 +525,14 @@ def parse_api_set(data):
         name = string(name_offset, name_size) + '.dll'
         prefix = string(name_offset, hashed_size)
         safe_path(name)
-        hosts = []
+        hosts, default_hosts, conditional_hosts = [], [], []
         for item in range(value_count):
-            _, _alias_offset, _alias_size, target_offset, target_size = struct.unpack_from('<5I', data, values_offset + item * 20)
+            _, alias_offset, alias_size, target_offset, target_size = struct.unpack_from('<5I', data, values_offset + item * 20)
+            alias = string(alias_offset, alias_size)
+            if alias:
+                safe_path(alias)
+                require(re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}', alias), 'Unsafe API-set importer alias')
+            target = ''
             if target_size:
                 target = string(target_offset, target_size)
                 safe_path(target)
@@ -517,7 +542,14 @@ def parse_api_set(data):
                 # contracts. Preserve those records without treating them as
                 # libraries loadable by this desktop application.
                 hosts.append(target)
-        result.add_record(name, prefix, tuple(dict.fromkeys(hosts)))
+            (conditional_hosts if alias else default_hosts).append(target)
+        unique_defaults = tuple(dict.fromkeys(default_hosts))
+        # Conditional values depend on the real importing module. Until that
+        # context is modeled, only a unique nonempty default with equivalent
+        # conditional targets can establish an OS dependency proof.
+        eligible_hosts = unique_defaults if (len(unique_defaults) == 1 and unique_defaults[0]
+                         and all(host == unique_defaults[0] for host in conditional_hosts)) else ()
+        result.add_record(name, prefix, tuple(dict.fromkeys(hosts)), resolution_hosts=eligible_hosts)
     return result
 
 
@@ -543,19 +575,29 @@ def _windows_loader():
     return system, api_sets, known
 
 
-def resolve_import(importer, dependency, files, *, system_metadata, api_sets, known_dlls, package_dependencies):
+def resolve_import(importer, dependency, files, *, system_metadata, api_sets, known_dlls, package_dependencies,
+                   sxs_metadata=None):
     """Resolve explicit directories/owner scopes; never use a global basename glob."""
     name, symbols = dependency['name'], dependency['_symbols']
     paths = {item['path'].casefold(): item for item in files if item['path'] != '@executable'}
     def outcome(kind, target, metadata):
-        return {'name': name, 'kind': dependency['kind'], 'resolution': kind, 'target': target,
+        result = {'name': name, 'kind': dependency['kind'], 'resolution': kind, 'target': target,
                 'symbols_count': len(symbols), 'missing_symbols_count': sum(symbol not in metadata['_exports'] for symbol in symbols)}
+        if kind in ('system32', 'api_set') and '_windows_sxs_target' in metadata:
+            result.update(resolution='windows_sxs', target=_windows_sxs_target(metadata['_windows_sxs_target']),
+                          target_sha256=metadata['_windows_sxs_sha256'])
+        return result
     def eligible(metadata):
         return metadata is not None and metadata.get('machine') == 'AMD64' and metadata.get('is_dll') is True
     def unresolved():
         return outcome('unresolved', name, {'_exports': set()})
     if not _user_library_name(name):
         return unresolved()
+    if sxs_metadata is not None:
+        redirected = sxs_metadata(name)
+        if redirected is not None:
+            require('_windows_sxs_target' in redirected, 'Activation-context metadata has no target identity')
+            return outcome('system32', name, redirected) if eligible(redirected) else unresolved()
     api_hosts = api_sets.hosts_for_name(name) if isinstance(api_sets, _ApiSetNamespace) else api_sets.get(name)
     if api_hosts is not None:
         for host in api_hosts:
@@ -588,6 +630,53 @@ def resolve_import(importer, dependency, files, *, system_metadata, api_sets, kn
     if eligible(metadata):
         return outcome('system32', name, metadata)
     return unresolved()
+
+
+def _system_metadata_loader(system, context):
+    """Prefer the candidate's actual SxS redirection; never search WinSxS by glob."""
+    system = Path(system).resolve()
+    cache, redirections = {}, {}
+
+    def redirected_metadata(name):
+        require(_user_library_name(name), 'Unsafe system dependency name')
+        if name not in redirections:
+            target = context.resolve_dll(name)
+            metadata = None
+            if target is not None:
+                target = Path(target)
+                windows_root = Path(context.windows_root).resolve()
+                require(target.is_file() and not _redirected(target) and target.resolve().is_relative_to(windows_root),
+                        'Redirected Windows dependency leaves the OS directory')
+                relative = target.resolve().relative_to(windows_root).as_posix()
+                parts = PurePosixPath(relative).parts
+                require(len(parts) == 3 and parts[0].casefold() == 'winsxs',
+                        'Unsupported Windows activation-context target')
+                relative = _windows_sxs_target('WinSxS/' + parts[1].lower() + '/' + parts[2].lower())
+                require(name == 'comctl32.dll' and target.stat().st_size <= MAX_FILE_BYTES,
+                        'Unsupported Windows activation-context dependency')
+                data = target.read_bytes()
+                metadata = _pe_metadata(data)
+                require(metadata['machine'] == 'AMD64' and metadata['is_dll'] is True,
+                        'Windows activation-context target is not an AMD64 DLL')
+                metadata.update(_windows_sxs_target=relative, _windows_sxs_sha256=hashlib.sha256(data).hexdigest())
+            redirections[name] = metadata
+        return redirections[name]
+
+    def system_metadata(name):
+        redirected = redirected_metadata(name)
+        if redirected is not None:
+            return redirected
+        if name not in cache:
+            path = system / name
+            require(not _redirected(path) and path.resolve().parent == system, 'Redirected System32 dependency')
+            if path.is_file():
+                require(path.stat().st_size <= MAX_FILE_BYTES, 'Oversized System32 dependency')
+                cache[name] = _pe_metadata(path.read_bytes())
+            else:
+                cache[name] = None
+        return cache[name]
+
+    return system_metadata, redirected_metadata
 
 
 def _bootloader_provenance(executable_metadata, record_index):
@@ -630,12 +719,6 @@ def audit_static(executable, extract_dir, source_commit):
         'version': 'protocol-' + str(helper_lock['protocol']), 'source_path': 'native/handwriting/runtime/' + helper_lock['name'],
         'source_sha256': digest, 'match': 'sha256'})
     system, api_sets, known = _windows_loader()
-    system_cache = {}
-    def system_metadata(name):
-        if name not in system_cache:
-            path = system / name
-            system_cache[name] = _pe_metadata(path.read_bytes()) if path.is_file() else None
-        return system_cache[name]
     extract_dir.mkdir(parents=True)
     total, seen, files = 0, set(), []
     for packed, entry in reader.toc.items():
@@ -681,9 +764,13 @@ def audit_static(executable, extract_dir, source_commit):
         'size_bytes': executable.stat().st_size, **outer_metadata,
         'component_version': '',
         'provenance': _bootloader_provenance(outer_metadata, index), 'signature_status': 'Pending'})
-    for item in files:
-        item['imports'] = [resolve_import(item, dependency, files, system_metadata=system_metadata,
-             api_sets=api_sets, known_dlls=known, package_dependencies=dependencies) for dependency in item['imports']]
+    from scripts.windows_sxs import candidate_activation_context
+    with candidate_activation_context(executable) as context:
+        system_metadata, sxs_metadata = _system_metadata_loader(system, context)
+        for item in files:
+            item['imports'] = [resolve_import(item, dependency, files, system_metadata=system_metadata,
+                 api_sets=api_sets, known_dlls=known, package_dependencies=dependencies,
+                 sxs_metadata=sxs_metadata) for dependency in item['imports']]
     for item in files:
         _strip_private_pe_metadata(item)
     files.sort(key=lambda item: item['path'].casefold())

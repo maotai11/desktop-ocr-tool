@@ -253,6 +253,104 @@ def test_imported_symbols_are_checked_not_only_dll_basename():
     assert result['missing_symbols_count'] == 1
 
 
+SXS_TARGET = 'WinSxS/amd64_microsoft.windows.common-controls_fixture/comctl32.dll'
+
+
+def test_actual_activation_context_target_has_priority_over_a_same_named_bundle():
+    metadata = {'machine': 'AMD64', 'is_dll': True, '_exports': {380},
+                '_windows_sxs_target': SXS_TARGET, '_windows_sxs_sha256': 'e' * 64}
+    bundled = {'path': 'comctl32.dll', 'machine': 'AMD64', 'is_dll': True,
+               'provenance': None, '_exports': set()}
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': 'comctl32.dll', 'kind': 'regular', '_symbols': [380]}, [bundled],
+        system_metadata=lambda _: pytest.fail('SxS must be resolved before System32/bundle'),
+        sxs_metadata=lambda name: metadata, api_sets={}, known_dlls=set(), package_dependencies={})
+    assert result == {'name': 'comctl32.dll', 'kind': 'regular', 'resolution': 'windows_sxs',
+                      'target': SXS_TARGET, 'target_sha256': 'e' * 64,
+                      'symbols_count': 1, 'missing_symbols_count': 0}
+    metadata['_exports'] = set()
+    assert audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': 'comctl32.dll', 'kind': 'regular', '_symbols': [380]}, [], system_metadata=lambda _: None,
+        sxs_metadata=lambda name: metadata, api_sets={}, known_dlls=set(), package_dependencies={}
+    )['missing_symbols_count'] == 1
+
+
+def test_public_sxs_evidence_requires_canonical_os_relative_identity_and_hash(evidence):
+    inventory, _ = evidence
+    dependency = inventory['files'][1]['imports'][0]
+    dependency.update(name='comctl32.dll', resolution='windows_sxs', target=SXS_TARGET, target_sha256='e' * 64)
+    audit.check_inventory(inventory, executable_sha256='d' * 64, source_commit='a' * 40)
+
+
+@pytest.mark.parametrize('defect', ['missing_hash', 'bad_hash', 'system32_path', 'private_path',
+                                   'wrong_architecture', 'other_dll', 'extra_private_field', 'system32_extra_hash'])
+def test_sxs_public_metadata_cannot_hide_missing_proof_or_private_paths(evidence, defect):
+    inventory, _ = evidence
+    dependency = inventory['files'][1]['imports'][0]
+    dependency.update(name='comctl32.dll', resolution='windows_sxs', target=SXS_TARGET, target_sha256='e' * 64)
+    if defect == 'missing_hash': dependency.pop('target_sha256')
+    if defect == 'bad_hash': dependency['target_sha256'] = False
+    if defect == 'system32_path': dependency['target'] = 'System32/comctl32.dll'
+    if defect == 'private_path': dependency['target'] = 'C:/private/WinSxS/amd64_component/comctl32.dll'
+    if defect == 'wrong_architecture': dependency['target'] = 'WinSxS/x86_component/comctl32.dll'
+    if defect == 'other_dll': dependency.update(name='unrelated.dll', target='WinSxS/amd64_component/unrelated.dll')
+    if defect == 'extra_private_field': dependency['private_path'] = '/private/user'
+    if defect == 'system32_extra_hash': dependency.update(resolution='system32', target='comctl32.dll')
+    with pytest.raises(ValueError):
+        audit.check_inventory(inventory, executable_sha256='d' * 64, source_commit='a' * 40)
+
+
+def test_system_metadata_uses_exact_context_path_and_hash_then_caches_it(tmp_path):
+    pytest.importorskip('pefile')
+    windows = tmp_path / 'Windows'
+    target = windows / SXS_TARGET
+    target.parent.mkdir(parents=True)
+    data = pe_with_exports(1)
+    target.write_bytes(data)
+    system = windows / 'System32'
+    system.mkdir()
+    (system / 'comctl32.dll').write_bytes(tiny_pe())
+    calls = []
+    context = SimpleNamespace(windows_root=windows, resolve_dll=lambda name: calls.append(name) or target)
+    system_metadata, redirected_metadata = audit._system_metadata_loader(system, context)
+    metadata = redirected_metadata('comctl32.dll')
+    assert system_metadata('comctl32.dll') is metadata
+    assert metadata['_windows_sxs_target'] == SXS_TARGET
+    assert metadata['_windows_sxs_sha256'] == hashlib.sha256(data).hexdigest()
+    assert metadata['_exports'] == {7, 8, 'Export000000'} and calls == ['comctl32.dll']
+
+
+@pytest.mark.parametrize('defect', ['outside_windows', 'system32_target', 'not_dll'])
+def test_invalid_context_target_fails_instead_of_falling_back_to_system32(tmp_path, defect):
+    pytest.importorskip('pefile')
+    windows = tmp_path / 'Windows'
+    system = windows / 'System32'
+    system.mkdir(parents=True)
+    target = windows / SXS_TARGET
+    if defect == 'outside_windows': target = tmp_path / SXS_TARGET
+    if defect == 'system32_target': target = system / 'comctl32.dll'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = bytearray(tiny_pe())
+    if defect == 'not_dll': struct.pack_into('<H', data, 0x84 + 18, 0x22)
+    target.write_bytes(data)
+    context = SimpleNamespace(windows_root=windows, resolve_dll=lambda name: target)
+    system_metadata, _ = audit._system_metadata_loader(system, context)
+    with pytest.raises(ValueError):
+        system_metadata('comctl32.dll')
+
+
+def test_no_sxs_redirection_preserves_the_system32_resolution(tmp_path):
+    pytest.importorskip('pefile')
+    system = tmp_path / 'System32'
+    system.mkdir()
+    (system / 'ordinary.dll').write_bytes(tiny_pe())
+    context = SimpleNamespace(windows_root=tmp_path, resolve_dll=lambda name: None)
+    system_metadata, sxs_metadata = audit._system_metadata_loader(system, context)
+    assert sxs_metadata('ordinary.dll') is None
+    assert system_metadata('ordinary.dll')['machine'] == 'AMD64'
+    assert system_metadata('missing.dll') is None
+
+
 def test_api_set_v6_uses_measured_host_mapping_and_rejects_bad_bounds():
     name = 'api-ms-win-core-test-l1-1-0'.encode('utf-16-le')
     host = 'kernelbase.dll'.encode('utf-16-le')
@@ -283,6 +381,62 @@ def api_set_fixture(*hosts, name='api-ms-win-test-l1-1-0', hashed_prefix=None):
         data[position:position + len(raw)] = raw
         position += len(raw)
     return bytes(data)
+
+
+def conditional_api_set_fixture(default_hosts, conditional_values, *, measured_revision=False):
+    name = 'api-ms-win-test-l1-1-2' if measured_revision else 'api-ms-win-test-l1-1-0'
+    data = bytearray(api_set_fixture(*default_hosts, *(host for alias, host in conditional_values),
+                                    name=name, hashed_prefix=name.rsplit('-', 1)[0] if measured_revision else None))
+    for index, (alias, _host) in enumerate(conditional_values, len(default_hosts)):
+        encoded = alias.encode('utf-16-le')
+        offset = len(data)
+        data.extend(encoded)
+        struct.pack_into('<II', data, 52 + index * 20 + 4, offset, len(encoded))
+    struct.pack_into('<I', data, 4, len(data))
+    return bytes(data)
+
+
+@pytest.mark.parametrize('measured_revision', [False, True])
+def test_conditional_host_for_another_importer_cannot_create_a_false_proof(measured_revision):
+    namespace = audit.parse_api_set(conditional_api_set_fixture(
+        ['default.dll'], [('special.dll', 'alternate.dll')], measured_revision=measured_revision))
+    canonical = 'api-ms-win-test-l1-1-2.dll' if measured_revision else 'api-ms-win-test-l1-1-0.dll'
+    assert namespace[canonical] == ('default.dll', 'alternate.dll')  # Preserve the canonical metadata.
+    calls = []
+    def system_metadata(name):
+        calls.append(name)
+        return {'machine': 'AMD64', 'is_dll': True, '_exports': {'Missing'} if name == 'alternate.dll' else set()}
+    result = audit.resolve_import({'path': 'regular.pyd', 'provenance': {}},
+        {'name': 'api-ms-win-test-l1-1-0.dll', 'kind': 'regular', '_symbols': ['Missing']}, [],
+        system_metadata=system_metadata, api_sets=namespace, known_dlls=set(), package_dependencies={})
+    assert result['resolution'] == 'unresolved' and result['missing_symbols_count'] == 1 and calls == []
+
+
+def test_conditional_host_ambiguity_also_blocks_the_build_filter_os_proof(tmp_path):
+    from scripts.windows_binary_policy import _SystemProof
+    system = tmp_path / 'System32'
+    system.mkdir()
+    namespace = audit.parse_api_set(conditional_api_set_fixture(['default.dll'], [('special.dll', 'alternate.dll')]))
+    proof = _SystemProof(loader=lambda: (system, namespace, set()))
+    proof.metadata = lambda _: pytest.fail('Context-required contracts cannot select a host')
+    assert proof.satisfies('api-ms-win-test-l1-1-0.dll', ['Missing']) is False
+
+
+@pytest.mark.parametrize('defaults,conditional,expected', [
+    (['default.dll'], [('special.dll', 'default.dll')], ('default.dll',)),
+    (['default.dll', 'default.dll'], [('special.dll', 'default.dll')], ('default.dll',)),
+    ([], [('special.dll', 'alternate.dll')], ()),
+    (['first.dll', 'second.dll'], [], ()),
+])
+def test_only_equivalent_conditional_hosts_and_a_unique_default_are_provable(defaults, conditional, expected):
+    namespace = audit.parse_api_set(conditional_api_set_fixture(defaults, conditional))
+    assert namespace.hosts_for_name('api-ms-win-test-l1-1-0.dll') == expected
+
+
+def test_conditional_importer_alias_is_validated_even_when_its_host_is_not_provable():
+    data = conditional_api_set_fixture(['default.dll'], [('../private.dll', 'alternate.dll')])
+    with pytest.raises(ValueError, match='path|alias'):
+        audit.parse_api_set(data)
 
 
 def test_observed_windows_kernel_and_winspool_hosts_parse_without_global_failure():
@@ -386,7 +540,7 @@ def test_kernel_only_api_set_never_resolves_a_user_mode_import():
 @pytest.mark.parametrize('via_api_set', [False, True])
 @pytest.mark.parametrize('kind', ['regular', 'delay'])
 def test_winspool_drv_resolves_only_as_an_actual_user_dll(via_api_set, kind):
-    namespace = audit.parse_api_set(api_set_fixture('win32kfull.sys', 'winspool.drv')) if via_api_set else {}
+    namespace = audit.parse_api_set(api_set_fixture('winspool.drv')) if via_api_set else {}
     name = 'api-ms-win-test-l1-1-0.dll' if via_api_set else 'winspool.drv'
     calls = []
     def system_metadata(target):

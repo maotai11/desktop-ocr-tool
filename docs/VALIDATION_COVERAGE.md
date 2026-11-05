@@ -44,7 +44,8 @@ B 區 A／B 文字卡片、僅 B 標示置頂、普通控制窗及畫面變動�
 | Windows runtime bootstrap | 鎖定 Astral archive SHA256／PE 清單；隔離 smoke 的 Python／OpenSSL 版本、`_ssl`／`_hashlib` 來源及 pip 可用 | 不是全部內嵌元件 CVE 審查，也不能代替 frozen 功能或 Defender 完成 |
 | Python 安裝清單＋pip-audit | 實際 distribution 及當時 Python 公告資料庫的已知命中 | Qt、PDFium 等原生公告或靜態嵌入元件的完整 CVE 掃描 |
 | 實際成品 PE 清冊 | 外層 EXE 加所有封裝 PE（含 DLL／PYD／helper），逐檔雜湊與來源可對應，並重新核對 CArchive 實際內容 | 每個 PE 內部所有靜態庫的完整 SBOM，或整台電腦的檔案清查 |
-| PE 匯入檢查 | regular／delay imports 與符號能解析至 bundled、System32 或 API-set，缺符號必須為零 | 任意字串拼成的動態載入、所有執行路徑、惡意行為或引用系統 DLL 的完整安全性 |
+| PE 匯出表完整性 | 上限 131,072 個符號，核對原始表範圍／數目與解析結果，拒絕截斷 | 不是無限大小 PE 的支援，也不是 DLL 程式碼行為驗證 |
+| PE 匯入檢查 | regular／delay imports 能解析至 bundled、System32、實際 API-set 或候選 manifest 選定的 `windows_sxs`；缺符號必須為零 | 任意動態載入、所有執行路徑，或引用系統 DLL 的完整安全性 |
 | 簽章檢查 | 每個 PE 必須得到 `Valid` 或明確的 `NotSigned`；來源為 Windows 系統檔時要求有效簽章 | `NotSigned` 不是有效簽章，也不是惡意結論；其他未知／不可用／無效狀態不能冒充通過，有簽章也不代表無漏洞 |
 | Qt 原生公告核對 | 實際模組及版本是否落入已查到的受影響區間 | 不把未封裝模組的公告算成產品漏洞，也不推論未知公告不存在 |
 | Defender 外層 EXE＋解出的全部 PE | 記錄引擎／病毒碼／時間與掃描範圍雜湊；檔數必須等於 PE 清冊，掃描完成且無偵測 | 不代表所有非 PE 資源都已獨立解包掃描，也不是永久無毒保證；不可用、未掃描、逾時或資源限制不能當零偵測通過 |
@@ -53,9 +54,15 @@ rc.12 將 PySide6-Essentials／shiboken6 鎖定至 6.11.3。舊 OpenSSL 3.0.16 �
 
 Astral 是該 Windows 發行包供應者，並非 python.org 官方安裝器；建置 bootstrap 核對整包 SHA256 與 PE 清單，來源雜湊詳見 [資安檢查](SECURITY_REVIEW.md)。這不代表新 runtime 已通過 Windows 執行／Defender，仍須由同版成品報告確認。Qt TLS plugins 與外帶 OpenSSL 另行排除，不靠移除 Python 必要 SSL 依賴代替 runtime 修補，也不修改使用者系統。Qt5Compat 是否封裝以清冊為準，不能由套件名稱推論；版本核對仍是有限範圍，未完成所有內嵌元件 CVE／SBOM 審查。
 
+### 相容 stub 只在有系統替代證據時排除
+
+舊封裝中的 43 個 API 相容 stub 加 `ucrtbase.dll`，供應來源仍未確認。最終 Analysis 只在 Windows 10+ 以實際 namespace／System32 證明保留檔案對這份候選清單的顯式匯入及有界 forwarder 鏈（含保留 bundled DLL 的相關轉送）都可滿足時，才不帶入這份明確清單。不能證明則保留，後續嚴格來源 gate 不因此放行未知來源；一般 `msvcp`／`vcruntime`／SSL 依賴保留。
+
+排除不是核准這 44 個舊檔的來源，也不是刪除系統檔。匯出表上限由 pefile 預設 8,192 改為 131,072，且必須通過原始表範圍與解析數目一致性檢查；超界或截斷直接拒絕。SxS 中繼資料只證明實際 manifest 選定的 Common Controls 6 目標，不代表掃描整個 WinSxS、任意 SxS 元件或所有執行路徑。新增規則的 Windows／Defender 完成狀態仍以同版報告為準。
+
 ### 哪些報告與欄位必須對得上
 
-`artifacts/native-payload-inventory.json` 逐檔列出相對路徑、SHA256、AMD64 PE 身分、檔案／元件版本、來源類別、匯入與簽章狀態。來源限定可核對的 wheel RECORD、鎖定的 Astral CPython runtime、鎖定的原生 helper、PyInstaller bootloader 程式區段或 Windows 系統檔；不把任意 PATH 中同名 DLL 當成可信來源。System32／API-set 解析使用實際 Windows 的 apisetschema v6、KnownDLLs 及檔案 exports；package scope 中能找到 DLL，不代表它或所有匯入分支已實際載入執行。
+`artifacts/native-payload-inventory.json` 逐檔列出相對路徑、SHA256、AMD64 PE 身分、檔案／元件版本、來源類別、匯入與簽章狀態。來源限定可核對的 wheel RECORD、鎖定的 Astral CPython runtime、鎖定的原生 helper、PyInstaller bootloader 程式區段或 Windows 系統檔；不把任意 PATH 中同名 DLL 當成可信來源。System32／API-set 解析使用實際 Windows 的 apisetschema v6 hash／修訂結構、KnownDLLs 及完整檔案 exports；不同條件 host 不能混成一份可用列表，無法證明時拒絕。Common Controls 6 依候選 EXE manifest 的 activation context 選定 WinSxS 中繼資料，`windows_sxs` 目標須為受限相對路徑、SHA256 相符且為 AMD64。此過程不載入待檢查元件；package scope 中能找到 DLL，也不代表它或所有匯入分支已實際載入執行。
 
 `artifacts/native-payload-audit.json` 必須與清冊、EXE、來源 commit 及同次工作流程一致，且：
 
