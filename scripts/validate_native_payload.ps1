@@ -34,6 +34,27 @@ function Get-NativeField($Object, [string]$Name) {
     return $Object.$Name
 }
 
+function Resolve-NativeApplication([string]$Name) {
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name.IndexOf([char]0) -ge 0) {
+        throw 'NATIVE_APPLICATION_UNAVAILABLE'
+    }
+    if ([IO.Path]::IsPathRooted($Name) -or $Name.Contains('/') -or $Name.Contains('\')) {
+        # Explicit overrides are literal paths, including spaces and brackets.
+        $source = (Get-Item -LiteralPath $Name -Force -ErrorAction Stop).FullName
+    } else {
+        # Get-Command can return several PATH matches. A .Source projection on
+        # that collection creates an array, which is not an executable path.
+        $commands = @(Get-Command -Name $Name -CommandType Application -ErrorAction Stop)
+        if ($commands.Count -eq 0) { throw 'NATIVE_APPLICATION_UNAVAILABLE' }
+        $source = $commands[0].Source
+    }
+    if ($source -isnot [string] -or [string]::IsNullOrWhiteSpace($source) -or
+        -not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw 'NATIVE_APPLICATION_UNAVAILABLE'
+    }
+    return (Get-Item -LiteralPath $source -Force -ErrorAction Stop).FullName
+}
+
 function Assert-NativePlainPath([string]$Path, [string]$Root) {
     $full = [IO.Path]::GetFullPath($Path)
     $base = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
@@ -230,7 +251,7 @@ try {
         throw 'NATIVE_OUTPUT_PATH_COLLISION'
     }
     [void](New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($inventoryPath)) -Force)
-    $python = (Get-Command $PythonExecutable -CommandType Application -ErrorAction Stop).Source
+    $python = Resolve-NativeApplication $PythonExecutable
     $auditor = Join-Path $PSScriptRoot 'audit_native_payload.py'
     $scratch = Join-Path ([IO.Path]::GetTempPath()) ('InkPick-native-audit-' + [guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $scratch)
