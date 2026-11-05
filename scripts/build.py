@@ -43,7 +43,9 @@ RELEASE_DOCUMENTATION = {
     "docs/ui/comparison-window.png": "docs/ui/comparison-window.png",
     "docs/ui/comparison-compact.png": "docs/ui/comparison-compact.png",
     "docs/SHARED_SEARCH.md": "docs/SHARED_SEARCH.md",
+    "docs/VALIDATION_COVERAGE.md": "docs/VALIDATION_COVERAGE.md",
     "docs/ui/shared-search-window.png": "docs/ui/shared-search-window.png",
+    "docs/ui/b-inline-callouts.png": "docs/ui/b-inline-callouts.png",
 }
 
 # Exact root-level outputs written by the validation workflow. Tracked files
@@ -52,6 +54,7 @@ GENERATED_VALIDATION_FILES = frozenset({
     'test-results.xml', 'source-selftest.json', 'source-app-smoke.json',
     'source-handwriting.json', 'source-handwriting-image.json', 'source-comparison.json',
     'source-shared-search.json',
+    'source-gui.json',
 })
 
 
@@ -351,6 +354,14 @@ def validate_candidate(paths):
         check_shared_search_probe(report, {'version': APP_VERSION, 'executable_sha256': expected_hash}, True)
     except ValueError as exc:
         raise RuntimeError('Incomplete shared-search candidate gate') from exc
+    reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
+    from scripts.verify_candidate_bundle import check_gui_probe
+    path = paths['validation_dir'] / 'frozen-gui.json'
+    report = _run_probe(paths['out_exe'], '--self-test-gui', path)
+    try:
+        check_gui_probe(report, {'version': APP_VERSION, 'executable_sha256': expected_hash}, True)
+    except ValueError as exc:
+        raise RuntimeError('Incomplete GUI candidate gate') from exc
     reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
     return reports
 

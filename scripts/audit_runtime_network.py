@@ -14,7 +14,7 @@ from pathlib import Path
 
 MODES = ('--self-test', '--smoke-app', '--self-test-handwriting',
          '--self-test-handwriting-image', '--self-test-documents', '--self-test-comparison',
-         '--self-test-shared-search')
+         '--self-test-shared-search', '--self-test-gui')
 
 
 def internet_calls(trace):

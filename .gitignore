@@ -122,3 +122,4 @@ models/handwriting/source/*.xml
 /source-handwriting-image.json
 /source-comparison.json
 /source-shared-search.json
+/source-gui.json

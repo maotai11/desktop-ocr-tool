@@ -108,7 +108,7 @@ def valid_reports(paths):
                                   'offscreen', 'model_hash', 'thread_running', 'claimed_clean',
                                   'maintenance_missing', 'maintenance_running', 'shared_missing', 'shared_running'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
-    from handwriting_release_fixtures import identity, image_probe, probe, shared_search_probe
+    from handwriting_release_fixtures import identity, image_probe, probe, shared_search_probe, gui_probe
 
     from scripts import handwriting_bundle
     monkeypatch.setattr(handwriting_bundle, 'identity', lambda _: identity())
@@ -119,6 +119,7 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     reports['--self-test-handwriting'] = probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     reports['--self-test-handwriting-image'] = image_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']), build.bundled_model_profiles(build.ROOT))
     reports['--self-test-shared-search'] = shared_search_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
+    reports['--self-test-gui'] = gui_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     if defect == 'wrong_hash': reports['--self-test']['executable_sha256'] = '0' * 64
     if defect == 'not_frozen': reports['--self-test']['frozen'] = False
     if defect == 'wrong_version': reports['--self-test']['version'] = '0.0.0'
@@ -135,7 +136,7 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
         return reports[mode]
     monkeypatch.setattr(build, '_run_probe', run)
     if defect == 'none':
-        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json'}
+        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json', 'frozen-gui.json'}
     else:
         with pytest.raises(RuntimeError):
             build.validate_candidate(paths)

@@ -14,6 +14,7 @@ CHECK_NAMES = (
     'blue_calibration', 'blue_follow_stable', 'same_y_scroll_refreshed',
     'stale_rows_discarded', 'capture_overlay_hidden', 'close_stops_polling',
     'workers_stopped', 'clipboard_history_untouched', 'temporary_files_cleaned',
+    'b_inline_comparison', 'b_pin_independent',
 )
 
 
@@ -64,6 +65,7 @@ def _row(text, y):
 def _logical_checks(app):
     """Drive real MSS cropping, controllers and the shared worker queue."""
     import numpy as np
+    from PySide6.QtCore import Qt
     from .comparison import shared_capture as capture_module
     from .comparison.shared_controller import SharedSearchController
     from .ui.shared_search_window import SharedSearchWindow
@@ -79,7 +81,7 @@ def _logical_checks(app):
     clipboard = app.clipboard().text()
 
     class Screen:
-        monitors = ({'left': 0, 'top': 0, 'width': 400, 'height': 240},) * 2
+        monitors = ({'left': 0, 'top': 0, 'width': 1200, 'height': 1000},) * 2
         def __enter__(self):
             return self
         def __exit__(self, *args):
@@ -88,12 +90,12 @@ def _logical_checks(app):
             if not hidden.is_set():
                 raise ValueError('Capture preceded overlay hide')
             captures.append(dict(region))
-            canvas = np.full((240, 400, 4), 25, np.uint8)
+            canvas = np.full((1000, 1200, 4), 25, np.uint8)
             canvas[:, :, 3] = 255
             for y in (40, 60):
                 for x, value in zip((20, 100), pixels[f'a{y}']):
                     canvas[y:y + 12, x:x + 50, :3] = value
-            canvas[20:200, 230:380, :3] = pixels['b']
+            canvas[20:720, 230:780, :3] = pixels['b']
             x, y, w, h = (region[name] for name in ('left', 'top', 'width', 'height'))
             return canvas[y:y + h, x:x + w].copy()
 
@@ -156,7 +158,7 @@ def _logical_checks(app):
         assert second is not None
         assert controller.set_a_region(first, (20, 40, 50, 12, 1))
         assert controller.set_a_region(second, (100, 40, 50, 12, 1))
-        assert controller.set_b_region((230, 20, 150, 180, 1))
+        assert controller.set_b_region((230, 20, 550, 700, 1))
         assert controller.set_row_pitch(20)
         controller.set_interval(1)
         initial = ready(controller.start)
@@ -173,6 +175,36 @@ def _logical_checks(app):
         checks['shared_b_reused'] = (calls.count(200) == 1 and calls.count(13) == 1
             and all(field['result']['status'] == 'matched' for field in reused)
             and reused[0]['result']['selected_id'] == reused[1]['result']['selected_id'])
+        callouts = window.highlight_overlay.callouts
+        fields_by_name = {field['name']: field for field in reused}
+        bx, by, bw, bh, _ = controller.b_region
+        dpr = app.primaryScreen().devicePixelRatio()
+        checks['b_inline_comparison'] = len(callouts) == 2 and all(
+            card['name'] in fields_by_name
+            and card['a_text'] == fields_by_name[card['name']]['result']['text']
+            and card['b_text'] == '訂單AB123' and card['status'] == 'matched'
+            and card['bounds'] == (bx, by, bw, bh)
+            and card['rect'][0] * dpr >= bx and card['rect'][1] * dpr >= by
+            and (card['rect'][0] + card['rect'][2]) * dpr <= bx + bw
+            and (card['rect'][1] + card['rect'][3]) * dpr <= by + bh
+            and len(card['display_lines']) == 3 for card in callouts)
+        pin_ok = not bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+        for pinned in (False, True):
+            window.set_pinned(pinned)
+            pin_ok &= (bool(window.highlight_overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == pinned
+                       and not bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
+        checks['b_pin_independent'] = bool(pin_ok)
+        # The controller clears outdated marks at the start of a new cycle.
+        # Exercise the valid same-epoch hook contract while current B callouts
+        # are visible as well, using the real cropper and synthetic MSS pixels.
+        if not before():
+            raise ValueError('Visible callout guard refused')
+        try:
+            regions = {field['id']: field['region'] for field in controller.fields}
+            regions['B'] = controller.b_region
+            capture_module.capture_shared(regions)
+        finally:
+            after()
 
         controller.pause()
         pixels['b'] = 201
@@ -318,6 +350,8 @@ def run_shared_search_probe(report_path):
     from .core.version import APP_VERSION
 
     app = QApplication.instance() or QApplication([])
+    previous_quit_on_close = app.quitOnLastWindowClosed()
+    app.setQuitOnLastWindowClosed(False)
     report = dict(schema=1, probe='shared_search_lifecycle', version=APP_VERSION,
         platform=sys.platform, frozen=bool(getattr(sys, 'frozen', False)),
         qt_platform=app.platformName(), executable_sha256=None,
@@ -331,6 +365,7 @@ def run_shared_search_probe(report_path):
         write_validation_report(report_path, report)
         report['executable_sha256'] = executable_sha256()
     except (OSError, ValueError, TypeError):
+        app.setQuitOnLastWindowClosed(previous_quit_on_close)
         return 1
     previous_home = os.environ.get('DESKTOP_OCR_HOME')
     previous_clipboard = app.clipboard().text()
@@ -351,6 +386,7 @@ def run_shared_search_probe(report_path):
     except Exception:  # noqa: BLE001 - never export pixels, recognized strings or private diagnostics
         report['passed'] = False
     finally:
+        app.setQuitOnLastWindowClosed(previous_quit_on_close)
         if previous_home is None:
             os.environ.pop('DESKTOP_OCR_HOME', None)
         else:

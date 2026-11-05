@@ -100,6 +100,8 @@ jobs:
         run: python src/main.py --self-test-comparison source-comparison.json
       - id: source_shared_search
         run: python src/main.py --self-test-shared-search source-shared-search.json
+      - id: source_gui
+        run: python src/main.py --self-test-gui source-gui.json
       - name: Trace synthetic application process trees for network activity
         id: network_audit
         if: runner.os == 'Linux'
@@ -107,6 +109,18 @@ jobs:
       - if: runner.os == 'Windows'
         id: build
         run: python scripts/build.py
+      - name: Audit all bundled native files and scan with Microsoft Defender
+        if: runner.os == 'Windows'
+        id: native_audit
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $bundles = @(Get-ChildItem artifacts/release-* -Directory)
+          if ($bundles.Count -ne 1) { throw 'Expected exactly one current release directory' }
+          $manifest = Get-Content (Join-Path $bundles[0].FullName 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          $exe = Join-Path $bundles[0].FullName $manifest.executable_name
+          & ./scripts/validate_native_payload.ps1 -Executable $exe -Output artifacts/native-payload-audit.json -SourceCommit $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Native payload provenance or antivirus gate failed' }
       - if: runner.os == 'Windows'
         id: firewall
         shell: pwsh
@@ -227,7 +241,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.11'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.12'
     runs-on: ubuntu-latest
     permissions:
       contents: write

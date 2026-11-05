@@ -1,6 +1,6 @@
 # Core runtime, validated with Python 3.12. Separate optional providers are not bundled.
-PySide6-Essentials==6.11.2
-shiboken6==6.11.2
+PySide6-Essentials==6.11.3
+shiboken6==6.11.3
 onnxruntime==1.30.0
 opencv-python==5.0.0.93
 numpy==2.2.6

@@ -13,7 +13,7 @@ def test_cli_shared_search_probe_keeps_private_state_and_proves_logical_lifecycl
     before_home = os.environ.get('DESKTOP_OCR_HOME')
     report_path = tmp_path / 'shared.json'
     assert probe.run_shared_search_probe(report_path) == 0
-    report = json.loads(report_path.read_text())
+    report = json.loads(report_path.read_text(encoding='utf-8'))
     assert report['passed'] is True and report['checks'] == dict.fromkeys(probe.CHECK_NAMES, True)
     assert report['probe'] == 'shared_search_lifecycle'
     assert report['model_inference_tested'] is False and report['ocr_accuracy_tested'] is False
@@ -25,7 +25,7 @@ def test_cli_shared_search_probe_keeps_private_state_and_proves_logical_lifecycl
     assert shared_capture.mss.mss is provider
     assert qapp.clipboard().text() == before_clipboard
     assert os.environ.get('DESKTOP_OCR_HOME') == before_home
-    assert not any(word in report_path.read_text() for word in ('訂單AB', '新捲動', '過期列'))
+    assert not any(word in report_path.read_text(encoding='utf-8') for word in ('訂單AB', '新捲動', '過期列'))
 
 
 def test_capture_failure_replaces_old_success_without_private_paths(qapp, tmp_path, monkeypatch):
@@ -37,9 +37,9 @@ def test_capture_failure_replaces_old_success_without_private_paths(qapp, tmp_pa
     path = tmp_path / 'shared.json'
     path.write_text('{"passed": true, "text": "old PRIVATE_WORDS"}')
     assert probe.run_shared_search_probe(path) == 1
-    report = json.loads(path.read_text())
+    report = json.loads(path.read_text(encoding='utf-8'))
     assert report['passed'] is False and report['error_code'] == 'SHARED_SEARCH_PROBE_CHECK_FAILED'
-    assert not any(word in path.read_text() for word in ('PRIVATE_SEARCH', 'SECRET_SCREEN', 'PRIVATE_WORDS'))
+    assert not any(word in path.read_text(encoding='utf-8') for word in ('PRIVATE_SEARCH', 'SECRET_SCREEN', 'PRIVATE_WORDS'))
     assert shared_capture.mss.mss is factory
 
 
@@ -59,6 +59,6 @@ def test_windows_run_requires_actual_native_pixel_proof(qapp, tmp_path, monkeypa
     monkeypatch.setattr(native, 'verify_overlay_capture', lambda app: False)
     path = tmp_path / 'native-refused.json'
     assert probe.run_shared_search_probe(path) == 1
-    report = json.loads(path.read_text())
+    report = json.loads(path.read_text(encoding='utf-8'))
     assert report['overlay_capture_verified'] is False and report['passed'] is False
     assert report['error_code'] == 'SHARED_SEARCH_PROBE_CHECK_FAILED'

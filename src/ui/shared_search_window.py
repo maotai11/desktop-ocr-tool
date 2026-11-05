@@ -151,9 +151,9 @@ class SharedSearchWindow(QWidget):
     closed = Signal()
 
     def __init__(self, controller, parent=None):
-        super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.WindowTitleHint
+        super().__init__(parent, Qt.WindowType.Window | Qt.WindowType.WindowTitleHint
                          | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowCloseButtonHint
-                         | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowStaysOnTopHint)
+                         | Qt.WindowType.WindowMinimizeButtonHint)
         self.controller = controller
         self.highlight_overlay = SearchHighlightOverlay()
         self._closing = self._closed_by_user = self._selection_active = False
@@ -194,7 +194,8 @@ class SharedSearchWindow(QWidget):
         self._status = _label('先選 B，再新增 A 欄位')
         self._status.setStyleSheet('font-size: 15px; font-weight: 600;')
         title.addWidget(self._status, 1)
-        self._pin = QCheckBox('置頂')
+        self._pin = QCheckBox('標示置頂')
+        self._pin.setToolTip('只讓 B 區的文字標示置頂；搜尋面板維持一般視窗。')
         self._pin.setChecked(True)
         self._pin.toggled.connect(self.set_pinned)
         title.addWidget(self._pin)
@@ -491,7 +492,7 @@ class SharedSearchWindow(QWidget):
                 self._activity.setText(f'{datetime.fromisoformat(stamp).strftime("%H:%M:%S")} · 第 {snapshot.get("cycle", 0)} 次搜尋')
             except (ValueError, TypeError):
                 pass
-        self._note.setText('標記顯示辨識行的位置；有多個候選時，每個 A 只採用一處。')
+        self._note.setText('在 B 旁直接查看 A／B 文字；框線代表辨識行。')
         b_region = snapshot.get('b_region', self.controller.b_region)
         marks = []
         if self.controller.running and b_region is not None:
@@ -511,13 +512,11 @@ class SharedSearchWindow(QWidget):
                         self.pause()
                         self._failed('辨識位置無效，請調整 B 範圍後重試。')
                         return
-                    marks.append({'name': field['name'], 'kind': 'match' if result.get('status') == 'matched' else 'uncertain',
+                    status = ('similar' if selected.get('match_type') == 'similar' else
+                              'uncertain' if selected.get('needs_review') or result.get('status') != 'matched' else 'matched')
+                    marks.append({'name': field['name'], 'status': status, 'a_text': result.get('text', ''),
+                                  'b_text': selected.get('text', ''), 'bounds': tuple(b_region[:4]),
                                   'boxes': [[[x + bx, y + by] for x, y in box] for box in polygons]})
-                region = field.get('region')
-                if region is not None:
-                    x, y, width, height, _ = region
-                    marks.append({'name': field['name'], 'kind': 'source',
-                                  'boxes': [[[x, y], [x + width, y], [x + width, y + height], [x, y + height]]]})
         if not self.highlight_overlay.set_marks(marks):
             self.pause()
             self._failed('標記過多或位置無效，請縮小 B 範圍後重試。')
@@ -580,14 +579,9 @@ class SharedSearchWindow(QWidget):
         return False
 
     def set_pinned(self, pinned):
-        visible, position = self.isVisible(), self.pos()
         with QSignalBlocker(self._pin):
             self._pin.setChecked(bool(pinned))
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(pinned))
-        self.move(position)
         self.highlight_overlay.set_pinned(pinned)
-        if visible and not self._closing and not self._closed_by_user:
-            self.show()
 
     def _bind_screen(self, screen, initial=False):
         if self._screen is not None:

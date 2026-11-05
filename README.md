@@ -2,31 +2,31 @@
 
 Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可框選螢幕辨識文字、手寫單字找候選，也能匯入 PDF／圖片，把固定位置的欄位逐頁填入文字模板，最後複製或匯出 TXT。
 
-本版為 **1.8.0-rc.11 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
+本版為 **1.8.0-rc.12 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
 
-本版新增「整列搜尋」：在來源表格框選同一列的多個 A 欄位，到一個 B 範圍尋找各欄文字；每個 A 最多選定一處結果。可手動換列，或校正表格的選取列底色後跟隨其他軟體換列。原有 A／B 固定位置核對、90 天自動封存、文件套版及複製模式保留。
+本版把整列搜尋結果直接放到 B 區：每張標示列出欄位名稱、A 原文、B 候選文字及狀態。只有 B 標示置頂，控制窗維持一般視窗，方便切回其他軟體。原有多 A 共用 B、換列跟隨、固定位置 A／B 核對、90 天封存及文件套版保留。
 
-沿用前版的套件修補與背景工作回收：手寫完成後結束輔助程序，OCR 閒置時停用 CPU 忙等。A／B 連續辨識只有在使用者開始核對後才執行。套件掃描及網路觀察的範圍見 [資安與背景工作檢查](docs/SECURITY_REVIEW.md)，設定、旁支與停用節點的掃描範圍見 [設定接線與節點稽核](docs/CONFIG_WIRING_MATRIX.md)。
+沿用前版的套件修補與背景工作回收：手寫完成後結束輔助程序，OCR 閒置時停用 CPU 忙等。A／B 連續辨識只有在使用者開始核對後才執行。GUI、PE 原生元件、套件與防毒的檢查項目及尚未證明的範圍見 [本版驗證範圍](docs/VALIDATION_COVERAGE.md)。套件掃描及網路觀察方法見 [資安與背景工作檢查](docs/SECURITY_REVIEW.md)，設定、旁支與停用節點的掃描範圍見 [設定接線與節點稽核](docs/CONFIG_WIRING_MATRIX.md)。
 
 ## 下載與第一次執行
 
-從 [v1.8.0-rc.11 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.11) 下載：
+從 [v1.8.0-rc.12 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.12) 下載：
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.11.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.11/InkPick-v1.8.0-rc.11.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
-| [InkPick-v1.8.0-rc.11.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.11/InkPick-v1.8.0-rc.11.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
-| [InkPick-v1.8.0-rc.11-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.11/InkPick-v1.8.0-rc.11-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
-| InkPick-v1.8.0-rc.11-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
-| InkPick-v1.8.0-rc.11-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
+| [InkPick-v1.8.0-rc.12.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.12/InkPick-v1.8.0-rc.12.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.12.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.12/InkPick-v1.8.0-rc.12.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.12-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.12/InkPick-v1.8.0-rc.12-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
+| InkPick-v1.8.0-rc.12-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
+| InkPick-v1.8.0-rc.12-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 
 1. 在可上網的電腦下載 ZIP，再用隨身碟帶到離線電腦。
 2. 解壓到自己有寫入權限的資料夾，例如 `D:\Tools\InkPick`。不要直接從 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 `InkPick-v1.8.0-rc.11.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
+3. 執行 `InkPick-v1.8.0-rc.12.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
 4. 首次開啟會解開內含資源並載入模型。浮動窗顯示「可擷取文字」後，即可使用。
 5. 結束程式請用系統匣的結束選項，讓尚未完成的辨識與儲存先結束。
 
-核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.11.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.12.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
 
 ## 整列搜尋：多個 A，到一個 B 範圍找文字
 
@@ -40,13 +40,17 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 
 西文詞與識別碼要求完整邊界：`Ann` 不命中 `Anna`，`123` 不命中 `INV123`；中文可在行內找子字串。
 
-控制窗可切換置頂；桌面標示點擊穿透，「標記填色濃度」可調。要改位置請回控制窗按框選，Esc 取消。擷取時暫時隱藏標示，可能短暫閃動。自動跟隨依賴一致的選取底色；多處高亮、白底、斑馬紋或超出範圍時不能可靠定位，請改手動換列或重新校正。
+B 區內直接顯示「欄位名稱／狀態、A 文字、B 文字」三行標示，預設不畫 A 區框線。「標示置頂」只控制 B 標示，控制窗維持一般視窗、可被其他軟體蓋住；B 標示仍可保留在上層。標示點擊穿透，「標記填色濃度」可調。長文會省略，B 太小放不下全部標示時顯示「另有幾筆」，回搜尋面板查看。要改位置請回控制窗按框選，Esc 取消。擷取時暫時隱藏標示，可能短暫閃動。自動跟隨依賴一致的選取底色；多處高亮、白底、斑馬紋或超出範圍時不能可靠定位，請改手動換列或重新校正。
 
 開窗不自動搜尋；「開始搜尋」或手動換列才啟動搜尋，校正另做一次取樣。暫停／關閉取消後續工作及標示；單次原生 OCR 需先返回。設定、位置和結果僅保留於本次執行，不寫歷史、剪貼簿、匯出或內容 Log，也不產生搜尋截圖檔。不能讀取未顯示或被遮住的文字，不會自動捲頁。完整步驟、比對規則與暫存範圍見 [整列搜尋操作說明](docs/SHARED_SEARCH.md)。
 
-![整列搜尋控制窗的合成示例：姓名有多處候選，金額已找到](docs/ui/shared-search-window.png)
+![B 區 A／B 文字卡片的合成版面示例](docs/ui/b-inline-callouts.png)
 
-合成資料示例：姓名「王小明」有多處候選待選，金額「1,250」已找到。桌面標示依 OCR 文字行定位，不代表儲存格或字元座標。
+合成版面示例：B 區同時列出欄位、狀態與 A／B 文字；框線只定位到 OCR 行，不代表儲存格或字元座標。這張圖示範狀態呈現，不是 OCR 準確率或 95% 門檻的測試結果。
+
+![整列搜尋一般控制窗的合成示例](docs/ui/shared-search-window.png)
+
+控制窗維持一般視窗，「標示置頂」只控制 B 區標示。
 
 ## A／B 核對：同時查看多組結果
 
@@ -203,13 +207,15 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 
 發布前會對 Linux／Windows 的實際 Python 套件清單執行 pip-audit；有漏洞、漏掃或查詢失敗即停止發布。這不涵蓋所有原生 DLL 或未知漏洞。Linux 另追蹤合成操作及其子程序的網路系統呼叫；Windows 使用同版 EXE 的防火牆阻擋測試。整列搜尋等新增路徑的覆蓋與結果，見同版 validation metadata，不沿用舊版數量作為通過證據。
 
+這次另外查到實際舊 Qt 6.11.2 的 Core／Network 原生公告，將 Qt 綁定升至 6.11.3，並移除未使用、由打包環境外帶的 OpenSSL 3.0.16。Python 套件零發現不能替代這些 DLL 檢查；逐項來源與成品掃描範圍見上方驗證說明。
+
 手寫完成後會結束輔助程序；新筆畫會取消過期工作。系統匣、快捷鍵與載入的 OCR 模型仍保留，讓下次操作可用；剪貼簿監看預設關閉。文件按停止或清空後不再處理後續頁面，但已進入原生 PDF／OCR 的運算需先返回。要完全結束請從系統匣選「退出」。
 
 OCR 有 PP-OCRv6 Small／Medium 辨字模型可選，兩者都已內含；Medium 較耗記憶體，不代表每字較準。請核對姓名、日期、金額與帳號。
 
 筆畫字庫共 11,853 字，含「龘」，不含「尞、𠮷、𠀋」，也缺少「內、吳、戶、辦、嚐」等常用字。影像補辨使用另一套 OCR 字庫。候選排序與分數不是正確率，不會自動把缺字猜成其他字。
 
-發布檢查對同次 Windows 建置的 EXE 執行 OCR、資料庫、手寫、PDF／圖片文件、啟閉與防火牆阻擋對外連線測試，並核對模型、PDFium、內嵌資源與成品雜湊。獨立資料夾、空白使用者資料與縮減 PATH 的測試用於檢查開發機依賴；仍不等於真實乾淨 Windows 10／11 的現場驗收。真人筆跡、觸控、混合 DPI 與多螢幕仍須實機核對，見 [驗證狀態](https://github.com/maotai11/desktop-ocr-tool/blob/master/docs/VALIDATION_STATUS.md)。
+發布檢查對同次 Windows 建置的 EXE 執行 OCR、資料庫、手寫、PDF／圖片文件、啟閉與防火牆阻擋對外連線測試，並核對模型、PDFium、內嵌資源與成品雜湊。獨立資料夾、空白使用者資料與縮減 PATH 的測試用於檢查開發機依賴；仍不等於真實乾淨 Windows 10／11 的現場驗收。真人筆跡、觸控、混合 DPI 與多螢幕仍須實機核對。逐項自動化範圍、原生元件與防毒結果的判讀，見 [本版驗證範圍](docs/VALIDATION_COVERAGE.md)；較早版本的紀錄另見 [歷史驗收狀態](docs/VALIDATION_STATUS.md)。
 
 ## 原始碼開發與建置
 
@@ -227,6 +233,9 @@ python src/main.py --smoke-app source-app-smoke.json
 python src/main.py --self-test-handwriting source-handwriting.json
 python src/main.py --self-test-handwriting-image source-handwriting-image.json
 python src/main.py --self-test-documents source-documents.json
+python src/main.py --self-test-comparison source-comparison.json
+python src/main.py --self-test-shared-search source-shared-search.json
+python src/main.py --self-test-gui source-gui.json
 # Windows only:
 python scripts/build.py
 ```

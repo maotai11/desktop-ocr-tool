@@ -52,7 +52,7 @@ def test_comparison_runs_on_source_frozen_portable_and_network_paths():
     portable = (root / 'scripts/validate_portable_profile.ps1').read_text(encoding='utf-8')
     assert "mode = '--self-test-comparison'; name = 'isolated-comparison.json'" in portable
     assert 'cancelled_results_ignored' in portable and 'workers_stopped' in portable
-    assert '--self-test-comparison' in MODES and len(MODES) == 7
+    assert '--self-test-comparison' in MODES and '--self-test-gui' in MODES and len(MODES) == 8
     sources = {name for name, _, _ in public.sources()}
     assert {'source-comparison.json', 'artifacts/firewall-validation/frozen-comparison.json',
             'artifacts/portable-validation/isolated-comparison.json'} <= sources

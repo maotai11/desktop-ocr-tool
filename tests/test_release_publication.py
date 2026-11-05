@@ -10,11 +10,12 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts import publish_prerelease as publisher
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe, gui_probe
 from scripts.verify_candidate_bundle import verify_candidate
 
 COMMIT = "a" * 40
 CONTEXT = publisher.RunnerContext(COMMIT, "1234", "1")
+EXE_BYTES = b'same-exe-fixture'.ljust(128, b'\0')
 
 
 @pytest.fixture
@@ -345,6 +346,9 @@ def candidate(tmp_path, monkeypatch):
     frozen.mkdir()
     source = {"commit": COMMIT, "head_tree": "b" * 40, "working_tree_sha256": "c" * 64,
               "dirty": False, "files": {"src/main.py": {"sha256": "d" * 64}}}
+    from scripts.audit_native_payload import ROOT, file_digest
+    source['files']['scripts/native_security_policy.py'] = {
+        'sha256': file_digest(ROOT / 'scripts/native_security_policy.py')}
     encoded = lambda data: json.dumps(data, sort_keys=True).encode()
     # Small synthetic source bytes for publication integration. Real pinned
     # model/native sources are covered by the separate source-distribution gate.
@@ -376,7 +380,7 @@ def candidate(tmp_path, monkeypatch):
         origin = origins.get(name, name.replace('handwriting-source/zinnia/', 'native/handwriting/'))
         source['files'][origin] = {'sha256': hashlib.sha256(raw).hexdigest()}
     source_bytes = encoded(source)
-    exe = b"same-exe-fixture"
+    exe = EXE_BYTES
     profiles, _ = fixture_profiles()
     models = profiles['v6-small']
     common = {"schema": 2, "passed": True, "frozen": True, "platform": "win32", "qt_platform": "windows",
@@ -390,6 +394,7 @@ def candidate(tmp_path, monkeypatch):
     probes["frozen-handwriting.json"] = handwriting_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
     probes["frozen-handwriting-image.json"] = image_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest(), profiles)
     probes["frozen-shared-search.json"] = shared_search_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
+    probes["frozen-gui.json"] = gui_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
     manifest = {"handwriting": handwriting_identity(), "schema": 2, "platform": "win32", "version": publisher.VERSION,
                 "executable_name": publisher.EXE_NAME, "executable_sha256": hashlib.sha256(exe).hexdigest(),
                 "models": models, "model_profiles": profiles, "default_model_profile": "v6-small",
@@ -410,7 +415,7 @@ def candidate(tmp_path, monkeypatch):
     for name, probe in probes.items():
         (frozen / name).write_bytes(encoded(probe))
         (firewall / name).write_bytes(encoded(probe))
-        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json", "frozen-handwriting-image.json": "source-handwriting-image.json", "frozen-shared-search.json": "source-shared-search.json"}[name]
+        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json", "frozen-handwriting-image.json": "source-handwriting-image.json", "frozen-shared-search.json": "source-shared-search.json", "frozen-gui.json": "source-gui.json"}[name]
         (root / source_name).write_bytes(encoded(dict(probe, frozen=False, executable_sha256=None)))
     gate = {"schema": 1, "passed": True, "version": publisher.VERSION,
             "executable_sha256": manifest["executable_sha256"], "clean_machine_verified": False,
@@ -423,6 +428,7 @@ def candidate(tmp_path, monkeypatch):
         report = verify_candidate(root, COMMIT)
         report["workflow"] = {"repository": publisher.REPOSITORY, "run_id": "1234", "run_attempt": "1", "source_commit": COMMIT}
         report["frozen_payload"] = {"inspected": True, "embedded_model_hashes_verified": True, "embedded_handwriting_verified": True,
+                                    "native_archive_coverage_verified": True,
                                     "required_payload": ["python312.dll", "qwindows.dll", "onnxruntime_pybind11_state.pyd"],
                                     "system_dll_closure": "NOT_A_CLEAN_HOST_CERTIFICATION"}
         report_path.write_bytes(encoded(report))
@@ -437,10 +443,10 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     assert {asset.name for asset in prepared.assets} == {
         publisher.EXE_NAME, publisher.ZIP_NAME, publisher.CHECKSUM_NAME, publisher.METADATA_NAME,
         publisher.README_NAME}
-    assert (tmp_path / "upload" / publisher.EXE_NAME).read_bytes() == b"same-exe-fixture"
+    assert (tmp_path / "upload" / publisher.EXE_NAME).read_bytes() == EXE_BYTES
     with zipfile.ZipFile(tmp_path / "upload" / publisher.ZIP_NAME) as archive:
         prefix = 'release-' + publisher.TAG + '/'
-        assert archive.read(prefix + publisher.EXE_NAME) == b'same-exe-fixture'
+        assert archive.read(prefix + publisher.EXE_NAME) == EXE_BYTES
         assert prefix + 'BUILD_MANIFEST.json' not in archive.namelist()
         assert not any('/candidate-validation/' in n for n in archive.namelist())
         public_manifest = json.loads(archive.read(prefix + 'PUBLIC_MANIFEST.json'))
@@ -603,11 +609,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.12'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.13'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.11'
+    assert publisher.VERSION == '1.8.0-rc.12'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -615,7 +621,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.12'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.13'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
@@ -913,3 +919,82 @@ def test_comparison_reports_publish_fixed_checks_without_captured_text(candidate
             assert public['checks']['same_snapshot_pairs'] is True
             assert public['checks']['workers_stopped'] is True
             assert public['model_inference_tested'] is False
+
+
+@pytest.mark.parametrize('relative', [
+    'source-gui.json', 'artifacts/firewall-validation/frozen-gui.json',
+    'artifacts/portable-validation/isolated-gui.json',
+])
+@pytest.mark.parametrize('defect', ['missing', 'false_check', 'missing_check', 'wrong_executable'])
+def test_gui_control_evidence_is_mandatory_for_every_published_runtime(candidate, tmp_path, relative, defect):
+    root, report_path, _, _, _ = candidate
+    path = root / relative
+    if defect == 'missing':
+        path.unlink()
+    else:
+        report = json.loads(path.read_bytes())
+        if defect == 'false_check':
+            report['checks']['settings_cancel_and_apply'] = False
+        elif defect == 'missing_check':
+            del report['checks']['windows_and_workers_closed']
+        else:
+            report['executable_sha256'] = '0' * 64
+        path.write_text(json.dumps(report), encoding='utf-8')
+        if relative.startswith('artifacts/'):
+            gate_path = path.parent / ('isolated-profile-gate.json' if 'portable-validation' in relative
+                                       else 'candidate-gate.json')
+            gate = json.loads(gate_path.read_bytes())
+            gate['probes'][path.name]['sha256'] = publisher.sha256_file(path)
+            gate_path.write_text(json.dumps(gate), encoding='utf-8')
+    output = tmp_path / 'gui-evidence-refused'
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, report_path, output, CONTEXT)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('defect', [
+    'missing_report', 'scan_incomplete', 'detected_file', 'wrong_executable',
+    'wrong_source', 'wrong_run', 'inventory_hash',
+])
+def test_native_security_evidence_cannot_be_omitted_replayed_or_claimed_without_scan(candidate, tmp_path, defect):
+    root, saved, _, _, save_report = candidate
+    path = root / 'artifacts/native-payload-audit.json'
+    report = json.loads(path.read_bytes())
+    if defect == 'missing_report':
+        path.unlink()
+    else:
+        if defect == 'scan_incomplete': report['antivirus_scan_completed'] = False
+        elif defect == 'detected_file': report['antivirus_detections_count'] = 1
+        elif defect == 'wrong_executable': report['executable_sha256'] = '0' * 64
+        elif defect == 'wrong_source': report['source_commit'] = '0' * 40
+        elif defect == 'inventory_hash': report['files_inventory_sha256'] = '0' * 64
+        elif defect == 'wrong_run':
+            from scripts.audit_native_payload import inventory_digest
+            inventory_path = root / 'artifacts/native-payload-inventory.json'
+            inventory = json.loads(inventory_path.read_bytes())
+            inventory['source_run_id'] = '9999'
+            inventory_path.write_text(json.dumps(inventory), encoding='utf-8')
+            report['source_run_id'] = '9999'
+            report['files_inventory_sha256'] = inventory_digest(inventory)
+        path.write_text(json.dumps(report), encoding='utf-8')
+        if defect == 'wrong_run':
+            # Keep the actual-byte metadata consistent to exercise the
+            # independent workflow binding rather than a stale summary hash.
+            save_report()
+    output = tmp_path / 'native-evidence-refused'
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, saved, output, CONTEXT)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('value', [False, None])
+def test_publisher_requires_complete_archive_coverage_from_windows_payload_inspection(candidate, tmp_path, value):
+    root, saved, _, _, _ = candidate
+    report = json.loads(saved.read_bytes())
+    if value is None:
+        report['frozen_payload'].pop('native_archive_coverage_verified')
+    else:
+        report['frozen_payload']['native_archive_coverage_verified'] = value
+    saved.write_text(json.dumps(report), encoding='utf-8')
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, saved, tmp_path / 'missing-native-coverage', CONTEXT)
