@@ -120,7 +120,8 @@ def test_actual_pe_parser_records_architecture_and_does_not_load_dll():
 def test_dependency_does_not_accept_an_unrelated_same_basename():
     source = {'package': 'owner'}
     importer = {'path': 'owner/module.pyd', 'provenance': source}
-    wrong = {'path': 'unrelated/wanted.dll', 'provenance': {'package': 'unrelated'}, '_exports': {'symbol'}}
+    wrong = {'path': 'unrelated/wanted.dll', 'provenance': {'package': 'unrelated'}, '_exports': {'symbol'},
+             'machine': 'AMD64', 'is_dll': True}
     dependency = {'name': 'wanted.dll', 'kind': 'regular', '_symbols': ['symbol']}
     result = audit.resolve_import(importer, dependency, [wrong], system_metadata=lambda _: None,
                                   api_sets={}, known_dlls=set(), package_dependencies={})
@@ -133,7 +134,8 @@ def test_dependency_does_not_accept_an_unrelated_same_basename():
 def test_imported_symbols_are_checked_not_only_dll_basename():
     dependency = {'name': 'kernel32.dll', 'kind': 'delay', '_symbols': ['NotAnExport']}
     result = audit.resolve_import({'path': '@executable', 'provenance': {}}, dependency, [],
-        system_metadata=lambda _: {'_exports': {'RealExport'}}, api_sets={}, known_dlls={'kernel32.dll'},
+        system_metadata=lambda _: {'_exports': {'RealExport'}, 'machine': 'AMD64', 'is_dll': True},
+        api_sets={}, known_dlls={'kernel32.dll'},
         package_dependencies={})
     assert result['missing_symbols_count'] == 1
 
@@ -151,6 +153,118 @@ def test_api_set_v6_uses_measured_host_mapping_and_rejects_bad_bounds():
     struct.pack_into('<I', data, 28 + 4, 999999)
     with pytest.raises(ValueError, match='API-set'):
         audit.parse_api_set(data)
+
+
+def api_set_fixture(*hosts):
+    name = 'api-ms-win-test-l1-1-0'.encode('utf-16-le')
+    encoded = [host.encode('utf-16-le') for host in hosts]
+    strings = 52 + 20 * len(hosts)
+    data = bytearray(strings + len(name) + sum(map(len, encoded)))
+    struct.pack_into('<7I', data, 0, 6, len(data), 0, 1, 28, 0, 0)
+    struct.pack_into('<6I', data, 28, 0, strings, len(name), len(name), 52, len(hosts))
+    data[strings:strings + len(name)] = name
+    position = strings + len(name)
+    for index, raw in enumerate(encoded):
+        struct.pack_into('<5I', data, 52 + 20 * index, 0, 0, 0, position, len(raw))
+        data[position:position + len(raw)] = raw
+        position += len(raw)
+    return bytes(data)
+
+
+def test_observed_windows_kernel_and_winspool_hosts_parse_without_global_failure():
+    # Windows Server 2025 diagnostic run 41983531330 observed .sys records and
+    # winspool.drv in the real v6 schema. The synthetic contract keeps no host paths.
+    result = audit.parse_api_set(api_set_fixture('win32kfull.sys', 'winspool.drv', 'kernelbase.dll'))
+    assert result['api-ms-win-test-l1-1-0.dll'] == ('win32kfull.sys', 'winspool.drv', 'kernelbase.dll')
+
+
+def test_kernel_only_api_set_never_resolves_a_user_mode_import():
+    calls = []
+    namespace = audit.parse_api_set(api_set_fixture('win32kfull.sys'))
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': 'api-ms-win-test-l1-1-0.dll', 'kind': 'regular', '_symbols': ['KernelEntry']}, [],
+        system_metadata=lambda name: calls.append(name), api_sets=namespace,
+        known_dlls=set(), package_dependencies={})
+    assert result['resolution'] == 'unresolved' and result['missing_symbols_count'] == 1
+    assert calls == []
+
+
+@pytest.mark.parametrize('via_api_set', [False, True])
+@pytest.mark.parametrize('kind', ['regular', 'delay'])
+def test_winspool_drv_resolves_only_as_an_actual_user_dll(via_api_set, kind):
+    namespace = audit.parse_api_set(api_set_fixture('win32kfull.sys', 'winspool.drv')) if via_api_set else {}
+    name = 'api-ms-win-test-l1-1-0.dll' if via_api_set else 'winspool.drv'
+    calls = []
+    def system_metadata(target):
+        calls.append(target)
+        return {'machine': 'AMD64', 'is_dll': True, '_exports': {'OpenPrinterW'}}
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': name, 'kind': kind, '_symbols': ['OpenPrinterW']}, [], system_metadata=system_metadata,
+        api_sets=namespace, known_dlls=set(), package_dependencies={})
+    assert result == {'name': name, 'kind': kind, 'resolution': 'api_set' if via_api_set else 'system32',
+                      'target': 'winspool.drv', 'symbols_count': 1, 'missing_symbols_count': 0}
+    assert calls == ['winspool.drv']
+
+
+@pytest.mark.parametrize('defect', ['driver_image', 'wrong_architecture', 'missing_export'])
+def test_special_library_host_does_not_bypass_pe_or_symbol_validation(defect):
+    metadata = {'machine': 'AMD64', 'is_dll': True, '_exports': {'OpenPrinterW'}}
+    if defect == 'driver_image': metadata['is_dll'] = False
+    if defect == 'wrong_architecture': metadata['machine'] = 'I386'
+    if defect == 'missing_export': metadata['_exports'] = set()
+    result = audit.resolve_import({'path': '@executable', 'provenance': {}},
+        {'name': 'api-ms-win-test-l1-1-0.dll', 'kind': 'delay', '_symbols': ['OpenPrinterW']}, [],
+        system_metadata=lambda _: metadata, api_sets=audit.parse_api_set(api_set_fixture('winspool.drv')),
+        known_dlls=set(), package_dependencies={})
+    assert result['resolution'] == 'unresolved'
+
+
+@pytest.mark.parametrize('host', ['../escape.dll', '/outside.dll', 'C:\\private.dll', 'bad.dll:stream',
+                                 'unknown.exe', 'unknown.bin'])
+def test_api_set_host_path_and_unobserved_extensions_remain_rejected(host):
+    with pytest.raises(ValueError):
+        audit.parse_api_set(api_set_fixture(host))
+
+
+def tiny_pe_with_import(name):
+    data = bytearray(tiny_pe())
+    struct.pack_into('<II', data, 0x98 + 112 + 8, 0x1100, 40)
+    struct.pack_into('<5I', data, 0x300, 0x1180, 0, 0, 0x1140, 0x1190)
+    raw = name.encode('ascii') + b'\0'
+    data[0x340:0x340 + len(raw)] = raw
+    struct.pack_into('<Q', data, 0x380, 0x11A0)
+    struct.pack_into('<Q', data, 0x390, 0x11A0)
+    data[0x3A0:0x3A0 + 15] = b'\0\0OpenPrinterW\0'
+    return bytes(data)
+
+
+def test_real_pe_parser_accepts_drv_import_without_accepting_kernel_imports():
+    pytest.importorskip('pefile')
+    metadata = audit._pe_metadata(tiny_pe_with_import('WINSPOOL.DRV'))
+    assert metadata['imports'] == [{'name': 'winspool.drv', 'kind': 'regular', '_symbols': ['OpenPrinterW']}]
+    for name in ('win32kfull.sys', 'ntoskrnl.exe'):
+        with pytest.raises(ValueError, match='user-mode'):
+            audit._pe_metadata(tiny_pe_with_import(name))
+
+
+def test_public_dependency_shape_accepts_drv_but_rejects_kernel_and_executable(evidence):
+    inventory, _ = evidence
+    dependency = inventory['files'][1]['imports'][0]
+    dependency.update(name='winspool.drv', target='winspool.drv')
+    audit.check_inventory(inventory, executable_sha256='d' * 64, source_commit='a' * 40)
+    for name in ('win32kfull.sys', 'ntoskrnl.exe'):
+        dependency.update(name=name, target=name)
+        with pytest.raises(ValueError):
+            audit.check_inventory(inventory, executable_sha256='d' * 64, source_commit='a' * 40)
+
+
+def test_bundled_executable_image_cannot_be_claimed_as_a_dll(evidence):
+    inventory, _ = evidence
+    inventory['files'][1]['is_dll'] = False
+    inventory['files'][0]['imports'] = [{'name': 'python312.dll', 'kind': 'regular', 'resolution': 'bundled',
+        'target': 'python312.dll', 'symbols_count': 1, 'missing_symbols_count': 0}]
+    with pytest.raises(ValueError, match='not a DLL'):
+        audit.check_inventory(inventory, executable_sha256='d' * 64, source_commit='a' * 40)
 
 
 def test_record_hash_must_match_installed_bytes(tmp_path):
