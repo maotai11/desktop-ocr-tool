@@ -84,6 +84,16 @@ def _short_text(value, maximum=160):
         ord(char) < 32 or char in '\\/' for char in value)
 
 
+def _user_library_name(value):
+    """Windows user-mode import names; .drv includes the real Winspool DLL."""
+    try:
+        safe_path(value)
+    except ValueError:
+        return False
+    return bool(re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}', value)
+                and value.lower().endswith(('.dll', '.drv')))
+
+
 def _utc(value):
     require(type(value) is str, 'Invalid timestamp type')
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -161,7 +171,7 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
             require(type(dependency) is dict and set(dependency) == {'name', 'kind', 'resolution', 'target',
                 'symbols_count', 'missing_symbols_count'}, 'Invalid dependency fields')
             name = safe_path(dependency['name'])
-            require('/' not in name and name.lower().endswith('.dll')
+            require(_user_library_name(name)
                     and dependency['kind'] in ('regular', 'delay')
                     and dependency['resolution'] in ('bundled', 'system32', 'api_set'), 'Unresolved native dependency')
             identity = (name.casefold(), dependency['kind'])
@@ -172,14 +182,17 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
                     and type(dependency['missing_symbols_count']) is int
                     and dependency['missing_symbols_count'] == 0, 'Native imported symbol is unresolved')
             if dependency['resolution'] != 'bundled':
-                require('/' not in target and target.lower().endswith('.dll'), 'Unsafe system dependency target')
+                require(_user_library_name(target), 'Unsafe system dependency target')
     require('@executable' in paths and next(item for item in files if item['path'] == '@executable')['sha256']
             == executable_sha256, 'Outer executable is absent from inventory')
+    by_path = {item['path'].casefold(): item for item in files}
     for item in files:
         for dependency in item['imports']:
             if dependency['resolution'] == 'bundled':
                 require(dependency['target'].casefold() in paths and dependency['target'] != '@executable',
                         'Bundled import points outside inventory')
+                require(by_path[dependency['target'].casefold()]['is_dll'] is True,
+                        'Bundled dependency is not a DLL image')
     from scripts.native_security_policy import check_inventory_policy
     check_inventory_policy(files)
 
@@ -280,7 +293,7 @@ def _pe_metadata(data):
             for entry in getattr(pe, attribute, []):
                 name = entry.dll.decode('ascii').lower()
                 safe_path(name)
-                require('/' not in name and name.endswith('.dll'), 'Import descriptor is not a DLL basename')
+                require(_user_library_name(name), 'Import descriptor is not a user-mode library basename')
                 symbols = [symbol.name.decode('ascii') if symbol.name is not None else int(symbol.ordinal)
                            for symbol in entry.imports]
                 imports.append({'name': name, 'kind': kind, '_symbols': symbols})
@@ -415,7 +428,11 @@ def parse_api_set(data):
             if target_size:
                 target = string(target_offset, target_size)
                 safe_path(target)
-                require('/' not in target and target.endswith('.dll'), 'Unsafe API-set host')
+                require(re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}', target)
+                        and target.endswith(('.dll', '.drv', '.sys')), 'Unsafe API-set host')
+                # The actual Windows v6 namespace also describes kernel .sys
+                # contracts. Preserve those records without treating them as
+                # libraries loadable by this desktop application.
                 hosts.append(target)
         result[name] = tuple(dict.fromkeys(hosts))
     return result
@@ -438,7 +455,7 @@ def _windows_loader():
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs') as key:
         for index in range(winreg.QueryInfoKey(key)[1]):
             _name, value, kind = winreg.EnumValue(key, index)
-            if kind == winreg.REG_SZ and value.lower().endswith('.dll'):
+            if kind == winreg.REG_SZ and _user_library_name(value):
                 known.add(value.lower())
     return system, api_sets, known
 
@@ -450,16 +467,23 @@ def resolve_import(importer, dependency, files, *, system_metadata, api_sets, kn
     def outcome(kind, target, metadata):
         return {'name': name, 'kind': dependency['kind'], 'resolution': kind, 'target': target,
                 'symbols_count': len(symbols), 'missing_symbols_count': sum(symbol not in metadata['_exports'] for symbol in symbols)}
+    def eligible(metadata):
+        return metadata is not None and metadata.get('machine') == 'AMD64' and metadata.get('is_dll') is True
+    def unresolved():
+        return outcome('unresolved', name, {'_exports': set()})
+    if not _user_library_name(name):
+        return unresolved()
     if name in api_sets:
         for host in api_sets[name]:
+            if not _user_library_name(host):
+                continue  # A kernel-only contract cannot satisfy a user-mode import.
             metadata = system_metadata(host)
-            if metadata is not None and all(symbol in metadata['_exports'] for symbol in symbols):
+            if eligible(metadata) and all(symbol in metadata['_exports'] for symbol in symbols):
                 return outcome('api_set', host, metadata)
-        return outcome('unresolved', name, {'_exports': set()})
+        return unresolved()
     if name in known_dlls:
         metadata = system_metadata(name)
-        if metadata is not None:
-            return outcome('system32', name, metadata)
+        return outcome('system32', name, metadata) if eligible(metadata) else unresolved()
     parent = PurePosixPath(importer['path']).parent
     candidates = [str(parent / name) if str(parent) != '.' else name, name]
     source = importer['provenance'] or {}
@@ -475,11 +499,11 @@ def resolve_import(importer, dependency, files, *, system_metadata, api_sets, kn
     for candidate in dict.fromkeys(candidates):
         if candidate.casefold() in paths:
             target = paths[candidate.casefold()]
-            return outcome('bundled', target['path'], target)
+            return outcome('bundled', target['path'], target) if eligible(target) else unresolved()
     metadata = system_metadata(name)
-    if metadata is not None:
+    if eligible(metadata):
         return outcome('system32', name, metadata)
-    return outcome('unresolved', name, {'_exports': set()})
+    return unresolved()
 
 
 def _bootloader_provenance(executable_metadata, record_index):
