@@ -23,6 +23,11 @@ def _require(condition):
         raise ValueError('GUI control evidence did not satisfy its invariant')
 
 
+def _require_owned_fixture(path, owned_root):
+    """Keep oracle reads inside the canonical temporary root owned by this run."""
+    _require(Path(path).resolve().is_relative_to(owned_root))
+
+
 def _until(predicate, timeout=8000):
     from PySide6.QtCore import QEventLoop, QTimer
     if predicate():
@@ -178,7 +183,7 @@ def _exercise_gui(app, directory, checks):
         def run_ocr(self, image, mode):
             return {'text': 'GUI DOCUMENT', 'confidence': .99, 'status': 'done', 'detail': []}
         def run_ocr_from_path(self, path, mode):
-            _require(Path(path).resolve().is_relative_to(directory))
+            _require_owned_fixture(path, directory)
             return {'text': 'GUI ALPHA\nGUI BETA', 'confidence': .99, 'status': 'done',
                     'detail': [{'text': text, 'confidence': .99,
                                 'box': [[1, y], [60, y], [60, y + 10], [1, y + 10]]}
@@ -507,8 +512,11 @@ def run_gui_probe(report_path):
     temporary = None
     try:
         with tempfile.TemporaryDirectory(prefix='inkpick-gui-probe-') as directory:
-            temporary = Path(directory)
-            os.environ['DESKTOP_OCR_HOME'] = directory
+            # Windows TEMP may use an 8.3 name while fixture paths resolve to
+            # the long name. Compare canonical paths on both sides; do not
+            # weaken the oracle's owned-file boundary to a string prefix.
+            temporary = Path(directory).resolve()
+            os.environ['DESKTOP_OCR_HOME'] = str(temporary)
             _exercise_gui(app, temporary, report['checks'])
         report['checks']['temporary_files_cleaned'] = not temporary.exists()
         report['passed'] = all(value is True for value in report['checks'].values())
