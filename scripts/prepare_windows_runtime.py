@@ -186,7 +186,7 @@ def verify_native_files(root, lock, *, immutable_only=False):
 
 SMOKE = '''import hashlib,json,ssl,sys,_ssl,_hashlib
 print(json.dumps({'python_version':'.'.join(map(str,sys.version_info[:3])),
- 'openssl_version':'.'.join(map(str,ssl.OPENSSL_VERSION_INFO[:3])),
+ 'openssl_version':ssl.OPENSSL_VERSION.split()[1],
  'openssl_library':ssl.OPENSSL_VERSION,'executable':sys.executable,
  'prefix':sys.prefix,'base_prefix':sys.base_prefix,'ssl_module':getattr(_ssl,'__file__',''),
  'hashlib_module':getattr(_hashlib,'__file__',''),

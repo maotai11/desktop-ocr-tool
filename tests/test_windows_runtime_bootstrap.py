@@ -142,7 +142,7 @@ def test_smoke_program_executes_in_real_isolated_host_process():
     result = json.loads(completed.stdout)
     assert result['python_version'] == '.'.join(map(str, sys.version_info[:3]))
     assert result['hashlib_ok'] is True
-    assert result['openssl_version'] == '.'.join(map(str, ssl.OPENSSL_VERSION_INFO[:3]))
+    assert result['openssl_version'] == ssl.OPENSSL_VERSION.split()[1]
     assert result['openssl_library'] == ssl.OPENSSL_VERSION
     assert set(result) == {'python_version', 'openssl_version', 'openssl_library',
                           'executable', 'prefix', 'base_prefix', 'ssl_module',
