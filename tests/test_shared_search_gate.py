@@ -75,10 +75,10 @@ def test_shared_search_runs_on_source_build_firewall_portable_and_network_routes
     assert not steps['source_shared_search'].get('continue-on-error')
     assert '--self-test-shared-search' in MODES and len(MODES) == 7
     for name in ('scripts/build.py', 'scripts/validate_windows_bundle.ps1', 'scripts/validate_portable_profile.ps1'):
-        assert '--self-test-shared-search' in (root / name).read_text()
+        assert '--self-test-shared-search' in (root / name).read_text(encoding='utf-8')
     for name in ('scripts/validate_windows_bundle.ps1', 'scripts/validate_portable_profile.ps1'):
-        assert 'Assert-SharedSearchProbe' in (root / name).read_text()
-    guard = (root / 'scripts/assert_shared_search_probe.ps1').read_text()
+        assert 'Assert-SharedSearchProbe' in (root / name).read_text(encoding='utf-8')
+    guard = (root / 'scripts/assert_shared_search_probe.ps1').read_text(encoding='utf-8')
     assert 'overlay_capture_verified' in guard
     assert all(name in guard for name in CHECK_NAMES)
     expected = {'source-shared-search.json', 'artifacts/candidate-validation/frozen-shared-search.json',
@@ -86,3 +86,11 @@ def test_shared_search_runs_on_source_build_firewall_portable_and_network_routes
                 'artifacts/portable-validation/isolated-shared-search.json'}
     assert expected <= {name for name, _, _ in public.sources()}
     assert public.source_step('source-shared-search.json') == 'source_shared_search'
+
+
+def test_workflow_checks_read_utf8_even_when_system_default_is_cp1252(monkeypatch):
+    original = Path.read_text
+    def windows_read(path, encoding=None, errors=None):
+        return original(path, encoding=encoding or 'cp1252', errors=errors)
+    monkeypatch.setattr(Path, 'read_text', windows_read)
+    test_shared_search_runs_on_source_build_firewall_portable_and_network_routes()

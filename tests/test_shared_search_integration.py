@@ -124,15 +124,17 @@ def test_other_inkpick_window_prevents_capture_before_hiding_overlay(qtbot, tmp_
     qtbot.addWidget(window)
     blocker = QWidget()
     qtbot.addWidget(blocker)
-    blocker.setGeometry(QRect(20, 20, 100, 50))
+    # Native title bars extend above the client area on Windows. Keep the
+    # whole frame on-screen so the valid target reaches the overlap guard.
+    blocker.setGeometry(QRect(120, 140, 100, 50))
     blocker.show()
     QApplication.processEvents()
     screen = QApplication.primaryScreen()
     origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
     frame = blocker.frameGeometry()
-    controller.set_a_region(controller.fields[0]['id'],
-                            (round((frame.x() - origin.x()) * dpr),
-                             round((frame.y() - origin.y()) * dpr), 30, 20, 1))
+    assert controller.set_a_region(controller.fields[0]['id'],
+                                   (round((frame.x() - origin.x()) * dpr),
+                                    round((frame.y() - origin.y()) * dpr), 30, 20, 1))
     calls = []
     monkeypatch.setattr(window, 'can_capture', lambda: True)
     monkeypatch.setattr(window, 'before_capture', lambda: calls.append('hide') or True)
