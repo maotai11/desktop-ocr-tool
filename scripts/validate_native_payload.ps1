@@ -94,7 +94,6 @@ function Assert-NativeDefenderReadiness($Status, $Preference, [DateTime]$Now) {
     try { $updated = ([DateTime](Get-NativeField $Status 'AntivirusSignatureLastUpdated')).ToUniversalTime() }
     catch { throw 'NATIVE_DEFENDER_SIGNATURE_DATE_INVALID' }
     $age = ($Now.ToUniversalTime() - $updated).TotalHours
-    if ($age -lt 0 -or $age -gt 72) { throw 'NATIVE_DEFENDER_SIGNATURE_STALE' }
     $samples = [int](Get-NativeField $Preference 'SubmitSamplesConsent')
     $maps = [int](Get-NativeField $Preference 'MAPSReporting')
     # Read existing policy only. Do not disable cloud protection or add exclusions.
@@ -104,12 +103,34 @@ function Assert-NativeDefenderReadiness($Status, $Preference, [DateTime]$Now) {
     if ($realtime -isnot [bool] -or $mode -notmatch '^[A-Za-z][A-Za-z ._-]{0,63}$') {
         throw 'NATIVE_DEFENDER_STATUS_INVALID'
     }
+    # A stale-date exception is refreshable only after the service, engine and
+    # existing local-only policy passed. Future/invalid dates never refresh.
+    if ($age -lt 0) { throw 'NATIVE_DEFENDER_SIGNATURE_DATE_INVALID' }
+    if ($age -gt 72) { throw 'NATIVE_DEFENDER_SIGNATURE_STALE' }
     return [ordered]@{
         scanner = 'Microsoft Defender Antivirus'; scanner_version = $engine
         antivirus_signature_version = $signature; signature_updated_at = $updated.ToString('o')
         am_running_mode = $mode; real_time_protection_enabled = $realtime
         sample_submission_consent = $samples; maps_reporting = $maps
     }
+}
+
+function Get-NativeFreshDefenderReadiness(
+        [Parameter(Mandatory = $true)][string]$LogPrefix,
+        [ValidateRange(1, 180)][int]$MaxSeconds = 180) {
+    try {
+        return Assert-NativeDefenderReadiness (Get-MpComputerStatus) (Get-MpPreference) ([DateTime]::UtcNow)
+    } catch {
+        if ($_.Exception.Message -cne 'NATIVE_DEFENDER_SIGNATURE_STALE') { throw }
+    }
+    # Build-only definition download from Microsoft's official source. No
+    # application/model update, preference change or sample submission occurs.
+    $scanner = Get-NativeDefenderScanner
+    $code = Invoke-NativeBoundedProcess $scanner @('-SignatureUpdate', '-MMPC') $LogPrefix $MaxSeconds
+    if ($code -ne 0) { throw 'NATIVE_DEFENDER_SIGNATURE_UPDATE_FAILED' }
+    # Do not infer freshness from the updater's exit code: reread the same
+    # complete readiness policy, including the unchanged 72-hour requirement.
+    return Assert-NativeDefenderReadiness (Get-MpComputerStatus) (Get-MpPreference) ([DateTime]::UtcNow)
 }
 
 function Get-NativeDefenderScanner {
@@ -243,7 +264,7 @@ try {
         $signatures += [ordered]@{ path = Get-NativeField $file 'path'; sha256 = $hash; status = $status }
     }
     $windows.signatures = @($signatures)
-    $readiness = Assert-NativeDefenderReadiness (Get-MpComputerStatus) (Get-MpPreference) ([DateTime]::UtcNow)
+    $readiness = Get-NativeFreshDefenderReadiness -LogPrefix (Join-Path $scratch 'definition-update')
     foreach ($key in $readiness.Keys) { $windows[$key] = $readiness[$key] }
     $scanner = Get-NativeDefenderScanner
     $before = Get-NativeScopedThreatIds @(Get-MpThreatDetection) $scanRoot $exe
