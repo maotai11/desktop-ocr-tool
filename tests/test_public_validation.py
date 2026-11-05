@@ -27,6 +27,40 @@ def record(report, source):
     return next(r for r in report['evidence'] if r['source'] == source)
 
 
+def test_actual_public_metadata_preserves_payload_coverage_without_paths_or_members():
+    from scripts import publish_prerelease as publisher
+    flags = dict(inspected=True, embedded_model_hashes_verified=True,
+                 embedded_handwriting_verified=True, native_archive_coverage_verified=True)
+    raw = dict(passed=True, version=public.VERSION,
+               workflow=dict(repository=publisher.REPOSITORY, run_id='1234', run_attempt='1',
+                             source_commit=COMMIT),
+               frozen_payload=dict(flags, required_payload=['/home/PRIVATE_MACHINE/python.dll'],
+                                   absolute_path='C:/Users/PRIVATE_MACHINE',
+                                   diagnostic='PRIVATE_MACHINE', nested={'secret': 'PRIVATE_MACHINE'}))
+    output = publisher.public_validation_report('verified-bundle.json', json.dumps(raw).encode())
+    result = json.loads(output)
+    assert result['frozen_payload'] == flags
+    assert b'PRIVATE_MACHINE' not in output
+    assert 'required_payload' not in result['frozen_payload']
+    assert result['workflow']['source_commit'] == COMMIT
+
+
+@pytest.mark.parametrize('value', ['true', 1, None, {'passed': True}])
+def test_payload_coverage_flag_requires_real_boolean_and_does_not_hide_invalidity(value):
+    result = public.safe_fields({'passed': True, 'frozen_payload': {
+        'native_archive_coverage_verified': value, 'absolute_path': 'PRIVATE_PATH'}})
+    assert result['frozen_payload'] == {}
+    assert public.observed_result(result) == 'INVALID_FIELDS'
+    assert 'PRIVATE_PATH' not in json.dumps(result)
+
+
+def test_failed_payload_coverage_is_preserved_in_public_evidence():
+    result = public.safe_fields({'passed': False, 'frozen_payload': {
+        'inspected': True, 'native_archive_coverage_verified': False}})
+    assert result['frozen_payload']['native_archive_coverage_verified'] is False
+    assert public.observed_result(result) == 'FAIL_AS_RECORDED'
+
+
 def test_portable_profile_export_keeps_only_fixed_flags_and_fingerprints(tmp_path):
     relative = 'artifacts/portable-validation/isolated-profile-gate.json'
     raw = json.dumps(dict(schema=1, probe='isolated_profile', passed=True,
