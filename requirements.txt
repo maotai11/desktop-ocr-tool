@@ -1,4 +1,5 @@
-# Core runtime, validated with Python 3.12. Separate optional providers are not bundled.
+# Python 3.12; Windows release runtime is pinned in scripts/windows_runtime.lock.json.
+# Separate optional providers are not bundled.
 PySide6-Essentials==6.11.3
 shiboken6==6.11.3
 onnxruntime==1.30.0

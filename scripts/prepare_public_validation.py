@@ -20,16 +20,17 @@ OUTPUT = 'artifacts/public-validation'
 VERSION = '1.8.0-rc.12'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
-STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
+STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
     'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'source_shared_search', 'source_gui', 'network_audit', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify')
-WINDOWS_ONLY = {'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify'}
+WINDOWS_ONLY = {'runtime_preparation', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
 BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed worker_pid_verified '
     'job_assigned cancelled_and_reaped children_reaped queue_latest_only clipboard_roundtrip '
-    'history_maintenance shared_search '
+    'history_maintenance shared_search download_verified extraction_verified runtime_version_verified '
+    'openssl_verified hashlib_verified ensurepip_completed environment_exported '
     'self_mime_preserved helper_stopped firewall_gate_acknowledged helper_outbound_blocked '
     'executable_outbound_blocked firewall_service_running firewall_profiles_enabled started '
     'timed_out output_limit_exceeded direct_child_reaped owned_tree_exited '
@@ -60,14 +61,16 @@ NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_c
 HASHES = frozenset(('sha256 executable_sha256 bundle_sha256 model_sha256 character_sha256 '
     'helper_sha256 helper_source_sha256 alphabet_sha256 validation_sha256 '
     'source_manifest_sha256 report_sha256 working_tree_sha256 decoder_sha256 dependency_inventory_sha256 '
-    'files_inventory_sha256 scan_scope_files_sha256 native_security_policy_sha256').split())
+    'files_inventory_sha256 scan_scope_files_sha256 native_security_policy_sha256 archive_sha256').split())
 COMMITS = {'commit', 'source_commit', 'head_tree', 'source_tree', 'upstream_commit'}
 ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle', 'comparison_lifecycle', 'shared_search_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'dependency_vulnerabilities', 'runtime_network'},
+              'document_template_lifecycle', 'comparison_lifecycle', 'shared_search_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'windows_runtime_preparation', 'dependency_vulnerabilities', 'runtime_network'},
     'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
+    'python_version': {'3.12.16'}, 'openssl_version': {'3.5.9'},
+    'provider': {'astral-sh/python-build-standalone'},
     'scanner': {'pip-audit', 'Microsoft Defender Antivirus'},
     'scanner_version': {'2.10.1'},
     'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS', 'SYNTHETIC_SHARED_SEARCH', 'SYNTHETIC_GUI_CONTROLS'},
@@ -300,6 +303,9 @@ def observed_result(value):
     failed = any(r.get('passed') is False or (r.get('probe') == 'shared_search_lifecycle'
         and r.get('platform') == 'win32' and r.get('overlay_capture_verified') is False)
         or (r.get('probe') == 'native_payload_audit' and (r.get('antivirus_scan_completed') is not True or r.get('native_security_policy_passed') is not True))
+        or (r.get('probe') == 'windows_runtime_preparation' and any(r.get(key) is not True for key in
+            ('download_verified','extraction_verified','runtime_version_verified','openssl_verified',
+             'hashlib_verified','ensurepip_completed','environment_exported')))
         or any(r.get(k) is True for k in ('timed_out','output_limit_exceeded','nonpublic_error_present')) or (type(r.get('exit_code')) is int and r['exit_code'] != 0) or any(r.get(k, 0) > 0 for k in
         ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls',
          'unmapped_count', 'unresolved_dependencies_count', 'invalid_signatures_count', 'antivirus_detections_count')) or
@@ -335,6 +341,7 @@ def sources():
         ('source-gui.json', 'json', False),
         ('artifacts/firewall-validation/frozen-comparison.json', 'json', True),
         ('artifacts/security-audit.json', 'json', False),
+        ('artifacts/windows-runtime-inventory.json', 'json', True),
         ('artifacts/native-payload-audit.json', 'json', True),
         ('artifacts/native-payload-inventory.json', 'hash', True),
         ('artifacts/runtime-network-audit.json', 'json', False),
@@ -374,6 +381,7 @@ def source_step(relative):
         'source-shared-search.json':'source_shared_search',
         'source-gui.json':'source_gui',
         'artifacts/security-audit.json':'security_audit',
+        'artifacts/windows-runtime-inventory.json':'runtime_preparation',
         'artifacts/native-payload-audit.json':'native_audit',
         'artifacts/native-payload-inventory.json':'native_audit',
         'artifacts/runtime-network-audit.json':'network_audit',

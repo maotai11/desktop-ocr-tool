@@ -19,7 +19,7 @@ rc.5 本機更新後的 31 個 Python distribution 掃描結果為 0 個已知�
 
 Python 公告資料庫不等於所有原生 DLL 的完整 CVE 覆蓋；rc.12 實際查到舊 Qt 6.11.2 的原生公告，修補與新增檢查詳見下一節。PDFium、ONNX Runtime、影像編解碼器及靜態嵌入庫仍需逐項辨識與追蹤。PE 清冊或防毒掃描不等於完整 SBOM／二進位漏洞認證；未命中不代表不存在未知漏洞。
 
-## rc.12 原生 Qt 漏洞與修補基準
+## rc.12 原生元件修補與來源核對
 
 這次檢查實際舊版 payload，發現 Qt6Core／Gui／Network／Svg／Widgets 為 6.11.2。Python 的 pip-audit 沒有完整涵蓋這些原生 Qt 公告；先前 Python distribution 零發現不能替代 DLL 的版本核對。rc.12 將 `PySide6-Essentials` 及 `shiboken6` 鎖定至 6.11.3，並要求建置時核對 Qt runtime 與成品 PE 版本，不能只修改 requirements 就宣稱 EXE 已修好。
 
@@ -31,9 +31,15 @@ Python 公告資料庫不等於所有原生 DLL 的完整 CVE 覆蓋；rc.12 實
 
 來源：[Qt 官方已知漏洞表](https://wiki.qt.io/List_of_known_vulnerabilities_in_Qt_products)、[Core CBOR 公告](https://www.qt.io/blog/security-advisory-cve-2026-107157)、[Network HTTP/2 公告](https://www.qt.io/blog/security-advisory-cve-2026-95620)。本工具沒有主動使用 HTTP/2 或 CBOR 不代表可以忽略已封裝的受影響元件；會修補版本，同時保留功能測試與路徑檢查的範圍。舊 payload 未包含 Qt5Compat，不能把只影響該模組的公告列成此成品已帶入的漏洞。這份清單針對實際存在的模組及已確認公告，不是所有 Qt、第三方原生庫或未知漏洞的完整證明。
 
-原生來源檢查也查到兩份不同的 OpenSSL：CPython 的 `libcrypto-3-x64.dll` 3.5.9，以及由 Qt Network 打包 hook 從外部 PATH 帶入的 `libcrypto-3.dll` 3.0.16。兩者不能因名稱相似就當成同一版本，也不能用 CPython 的版本替較舊 DLL 背書。上游 [OpenSSL 3.5 公告](https://www.openssl-library.org/news/vulnerabilities-3.5/) 列出 2026-09-29 修正在 3.5.9 的問題；較舊的 3.0.16 不能當成已含後續修正。
+重新以發行包 SHA256 核對來源後，確認舊 EXE 的檔名未帶 `-x64` 的 `libcrypto-3.dll`／`libssl-3.dll` 3.0.16 隨 CPython 3.12.10 而來；相關檔案與 python.org 官方嵌入包相符。舊包另有的 `libcrypto-3-x64.dll`／`libssl-3-x64.dll` 3.5.9 才是 Qt 打包時外帶的另一份依賴。兩者必須分別記錄來源，不能以檔名、PATH 或另一份 OpenSSL 的新版本代證。上游 [OpenSSL 3.5 公告](https://www.openssl-library.org/news/vulnerabilities-3.5/) 列出 2026-09-29 修正在 3.5.9 的問題；較舊的 3.0.16 不能當成已含後續修正。
 
-本工具不需要 Qt TLS 路徑，rc.12 停止收集外部 Qt Network OpenSSL 檔，並排除未使用的 Qt TLS plugins、`libcrypto-3.dll`／`libssl-3.dll`；保留 CPython SSL 使用的 3.5.9 及必要 Qt 6.11.3 元件，成品清冊要確認舊檔沒有再被 PATH 帶回。這是移除本成品不需要的舊依賴，沒有修改使用者系統上的 OpenSSL，也沒有觀察到利用這些漏洞的事件；發現的是曾封裝未含後續修正的版本。
+rc.12 更換 Windows 的 Python 執行環境，採 [Astral python-build-standalone](https://github.com/astral-sh/python-build-standalone) 的 CPython 3.12.16／20261026 Windows 發行包；供應來源為 Astral，並非 python.org 官方安裝器。鎖定壓縮包 SHA256 為 `1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149`，包內 `python312.dll` 為 3.12.16，動態 `libcrypto-3-x64.dll`／`libssl-3-x64.dll` 為 3.5.9。建置 bootstrap 要求整包 SHA256 與 PE 清單相符，再用隔離的 runtime smoke 核對 Python／OpenSSL 版本及 `_ssl`／`_hashlib` 來源；這些條件不能代替新 Windows 成品的功能或 Defender 掃描通過。
+
+更換 runtime 修補 Python SSL 依賴；排除未使用的 Qt TLS plugins 與外帶 OpenSSL 是另一項縮減封裝範圍的措施。成品清冊仍須確認每個 DLL 確實來自新鎖定來源，不能直接沿用舊包中相同名稱的 3.5.9。沒有修改使用者系統的 OpenSSL，也沒有觀察到漏洞利用；發現的是舊成品曾包含未含後續修正的版本。
+
+Windows 建置入口為 `scripts/prepare_windows_runtime.py --destination <系統暫存新目錄> --report artifacts/windows-runtime-inventory.json`，成功後只印出已驗證的絕對 `python.exe` 路徑，後續 pip／prepare／build 使用該路徑。本機不修改全域環境；CI 只寫入當次 job 的 GitHub 環境檔。
+
+Linux 開發／測試仍使用 Python 3.12，Windows 發布固定 3.12.16；RapidOCR 1.4.4 要求 Python < 3.13。發行包下載及核對只在建置機執行，離線使用電腦不需安裝 Python，也不啟動 runtime 下載器。這份版本選擇與已確認公告核對，不代表所有 CPython 內嵌元件的完整 CVE／SBOM 審查。
 
 rc.12 新增成品 PE 清冊、來源／匯入／簽章及 Windows Defender 檢查，與 Python 套件稽核分開報告。每一項的實際範圍、結果狀態及未完成的原生 SBOM 限制見 [本版驗證範圍](VALIDATION_COVERAGE.md)。清冊完整、簽章存在、掃描無偵測分別回答不同問題，不能合併寫成「全部 DLL 無漏洞」。
 

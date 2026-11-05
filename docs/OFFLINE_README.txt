@@ -479,8 +479,11 @@ PySide6-Essentials 與 shiboken6 鎖定 6.11.3，成品必須核對實際 Qt 版
 包含 Core CBOR 的 CVE-2026-107157／CVE-2026-105924，
 以及 Network HTTP/2 的 CVE-2026-95620；不把未封裝 Qt5Compat 的公告算成產品命中。
 Python 套件零發現不能替代這些原生 DLL 檢查。
-另移除 Qt 打包 hook 外帶的舊 OpenSSL 3.0.16 與未使用的 TLS plugins，
-保留 CPython SSL 所需的 3.5.9；沒有修改使用者系統的 OpenSSL。
+舊 OpenSSL 3.0.16 經 SHA256 核對來自 CPython 3.12.10；
+舊包另有檔名帶 -x64 的 OpenSSL 3.5.9，是 Qt 打包時外帶，不能混成同一來源。
+Windows runtime 改用 Astral standalone CPython 3.12.16／20261026，
+使用該鎖定發行包的動態 OpenSSL 3.5.9，建置時核對壓縮包 SHA256 與 PE 清單。
+未使用的 Qt TLS plugins 與外帶 OpenSSL 另行排除，不修改使用者系統的 OpenSSL。
 
 手寫回傳候選後會結束輔助程序，下一次書寫再啟動。
 新筆畫、清除或重新辨識會取消過期手寫工作；OCR 閒置時改採阻塞等待。
@@ -527,27 +530,43 @@ Python／快取的獨立乾淨 Windows 10／11 電腦，也不代替觸控、混
 十一、僅供原始碼開發／建置者
 ----------------------------------------
 一般離線使用電腦不需要執行這一節，也不要在使用電腦另外安裝依賴。
-建置機使用 Python 3.12。Windows 另需 Microsoft x64 C++ 編譯器，
-手寫 helper 使用 Release／MT 靜態 CRT。
+Linux 開發／測試使用 Python 3.12。Windows 發布固定使用 Astral
+python-build-standalone 的 CPython 3.12.16／20261026 發行包，
+供應來源是 Astral，並非 python.org 官方安裝器；RapidOCR 1.4.4 要求 Python < 3.13。
+發行包只在建置時下載與核對，不在使用電腦下載或要求預裝 Python。
+Windows 另需 Microsoft x64 C++ 編譯器，手寫 helper 使用 Release／MT 靜態 CRT。
 
-在原始碼目錄依序執行：
-python -m pip install -r requirements-dev.txt
-python scripts/prepare_models.py
-python scripts/prepare_handwriting_model.py
-python scripts/build_handwriting_helper.py
-python scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
-python scripts/run_bounded_pytest.py --report artifacts/pytest-bounds.json --memory-mib 4096 --timeout 1800 -- -q
-python src/main.py --self-test source-selftest.json
-python src/main.py --smoke-app source-app-smoke.json
-python src/main.py --self-test-handwriting source-handwriting.json
-python src/main.py --self-test-handwriting-image source-handwriting-image.json
-python src/main.py --self-test-documents source-documents.json
-python src/main.py --self-test-comparison source-comparison.json
-python src/main.py --self-test-shared-search source-shared-search.json
-python src/main.py --self-test-gui source-gui.json
-python scripts/build.py
+Windows 發布建置請在原始碼目錄的 PowerShell 逐步執行，遇到錯誤即停止。
+既有 Windows Python 3.12 只用來啟動 bootstrap；後續全部使用它印出的已驗證 python.exe。
+目的地必須是系統暫存下的新目錄、不能位於 Repo 內，以下使用隨機新目錄：
 
-最後一項建置指令僅用於 Windows。
+$inkpickRuntimeDir = Join-Path ([IO.Path]::GetTempPath()) ('inkpick-python-' + [guid]::NewGuid().ToString('N'))
+$inkpickPython = python scripts/prepare_windows_runtime.py --destination $inkpickRuntimeDir --report artifacts/windows-runtime-inventory.json
+if ($LASTEXITCODE -ne 0) { throw 'Windows Python runtime verification failed' }
+& $inkpickPython -m pip install --upgrade pip==26.2.2
+& $inkpickPython -m pip install -r requirements-dev.txt
+& $inkpickPython scripts/prepare_models.py
+& $inkpickPython scripts/prepare_handwriting_model.py
+& $inkpickPython scripts/build_handwriting_helper.py
+& $inkpickPython scripts/probe_handwriting_helper.py --report artifacts/handwriting-native-probe.json
+& $inkpickPython scripts/run_bounded_pytest.py --report artifacts/pytest-bounds.json --memory-mib 4096 --timeout 1800 -- -q
+& $inkpickPython src/main.py --self-test source-selftest.json
+& $inkpickPython src/main.py --smoke-app source-app-smoke.json
+& $inkpickPython src/main.py --self-test-handwriting source-handwriting.json
+& $inkpickPython src/main.py --self-test-handwriting-image source-handwriting-image.json
+& $inkpickPython src/main.py --self-test-documents source-documents.json
+& $inkpickPython src/main.py --self-test-comparison source-comparison.json
+& $inkpickPython src/main.py --self-test-shared-search source-shared-search.json
+& $inkpickPython src/main.py --self-test-gui source-gui.json
+& $inkpickPython scripts/build.py
+
+CI 的 bootstrap 使用：
+python scripts/prepare_windows_runtime.py --destination "$env:RUNNER_TEMP/inkpick-python-runtime" --report artifacts/windows-runtime-inventory.json
+GITHUB_PATH／GITHUB_ENV 只供同一 job 使用，不改全域 Python 或 PATH。
+本機沒有這些 GitHub 檔案時不匯出環境，因此 pip／prepare／build 必須全程用 $inkpickPython。
+Linux 來源驗證可使用 Python 3.12 執行上面相同的依賴、模型與探針指令，
+將「& $inkpickPython」換成自己的 Python 3.12；不執行 Windows bootstrap 或 EXE build.py。
+
 模型只在建置時從固定官方來源下載並核對 SHA256，應用程式首次執行不補下載。
 Linux 無桌面測試可設定 QT_QPA_PLATFORM=offscreen。
 

@@ -1,4 +1,14 @@
-# Third-party model notices
+# Third-party notices
+
+
+## Pinned Windows Python and OpenSSL runtime
+
+- The Windows build uses CPython **3.12.16**, supplied by Astral's `python-build-standalone` **20261026**, x86-64 MSVC `install_only_stripped` distribution. This is a third-party CPython build, rather than the PSF Windows installer. The OCR package versions are unchanged.
+- Exact build input: `cpython-3.12.16+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz`, SHA256 `1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149`; [provider release](https://github.com/astral-sh/python-build-standalone/releases/tag/20261026). The checked-in `scripts/windows_runtime.lock.json` records the archive and runtime file identities used during the build.
+- Python's PSF license and included component notices are copied byte-for-byte from that archive's `python/LICENSE.txt` into [licenses/python-3.12.16-LICENSE.txt](licenses/python-3.12.16-LICENSE.txt), SHA256 `886a0ead2d89030ee62dbff52b04e47ab91998341295bb9c56fb952b4e081c7a`.
+- The runtime's dynamic OpenSSL libraries are **3.5.9**. The complete upstream Apache-2.0 license is included in [licenses/openssl-3.5.9-LICENSE.txt](licenses/openssl-3.5.9-LICENSE.txt), SHA256 `7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a`. Source: [OpenSSL commit 45e844fa2a14ec92d146bd8f5778ac130b6625fb](https://github.com/openssl/openssl/tree/45e844fa2a14ec92d146bd8f5778ac130b6625fb), the `openssl-3.5.9` release tag. That source root has no separate NOTICE file.
+- OpenSSL's upstream README copyright notice is retained here: **Copyright (c) 1998-2026 The OpenSSL Project Authors. Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson. All rights reserved.**
+- These files identify the newly selected runtime and OpenSSL components. The native payload inventory separately records the files actually shipped; neither this notice nor the vulnerability scan is a complete license review of every transitive component.
 
 ## Image processing runtime
 

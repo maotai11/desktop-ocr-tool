@@ -110,6 +110,8 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
     require(type(count) is int and 2 <= count <= MAX_NATIVE_FILES and type(entries) is int
             and 1 <= entries <= MAX_ENTRIES and count <= entries + 1
             and type(files) is list and len(files) == count, 'Incomplete native inventory coverage')
+    from scripts.prepare_windows_runtime import load_runtime_lock
+    runtime_lock = load_runtime_lock()
     paths, scan_paths = set(), set()
     for item in files:
         require(type(item) is dict and set(item) == {'path', 'scan_path', 'sha256', 'size_bytes',
@@ -147,6 +149,12 @@ def check_inventory(inventory, *, executable_sha256, source_commit):
                     and source['source_sha256'] == item['sha256'], 'Native source hash mismatch')
         if source['kind'] == 'windows_system_file':
             require(item['signature_status'] == 'Valid', 'Bundled Windows source must have a valid signature')
+        if source['kind'] == 'cpython_runtime':
+            locked = runtime_lock['files'].get(source['source_path'])
+            require(_runtime_path(source['source_path']) and source['package'] == 'CPython'
+                    and source['version'] == runtime_lock['python_version'] and locked is not None
+                    and source['source_sha256'] == locked['sha256'] and item['size_bytes'] == locked['size_bytes'],
+                    'CPython native provenance differs from the committed runtime lock')
         require(type(item['imports']) is list and len(item['imports']) <= 1024, 'Invalid import list')
         seen_imports = set()
         for dependency in item['imports']:
@@ -320,17 +328,70 @@ def _record_sources(distributions=None):
     return index, dependencies
 
 
-def _runtime_sources(index):
-    for base in {Path(sys.base_prefix).resolve(), Path(sys.prefix).resolve()}:
-        for directory in (base, base / 'DLLs'):
-            if not directory.is_dir():
-                continue
-            for source in directory.iterdir():
-                if source.is_file() and source.suffix.lower() in NATIVE_SUFFIXES:
-                    digest = file_digest(source)
-                    index.setdefault(digest, []).append({'kind': 'cpython_runtime', 'package': 'CPython',
-                        'version': '.'.join(map(str, sys.version_info[:3])), 'source_path': source.relative_to(base).as_posix(),
-                        'source_sha256': digest, 'match': 'sha256'})
+def _runtime_path(relative):
+    """Runtime areas exclude packages that pip legitimately replaces via RECORD."""
+    parts = PurePosixPath(safe_path(relative)).parts
+    return (len(parts) == 1 or parts[0].casefold() in ('dlls', 'tcl')
+            or (parts[0].casefold() == 'lib'
+                and (len(parts) == 1 or parts[1].casefold() != 'site-packages')))
+
+
+def _redirected(path):
+    return path.is_symlink() or getattr(path, 'is_junction', lambda: False)()
+
+
+def _runtime_walk_failed(_error):
+    raise ValueError('Unable to verify CPython runtime directories') from None
+
+
+def _runtime_sources(index, *, runtime_root=None, runtime_version=None, lock_path=None):
+    """Index only native bytes attested by the committed, pinned PBS archive.
+
+    The bootstrap's mutable installation report is deliberately not consulted.
+    Installed wheels own site-packages through RECORD; neither those files nor
+    an unrelated sys.prefix can become trusted CPython runtime provenance.
+    """
+    from scripts.prepare_windows_runtime import load_runtime_lock
+    lock = load_runtime_lock() if lock_path is None else load_runtime_lock(lock_path)
+    version = runtime_version or '.'.join(map(str, sys.version_info[:3]))
+    require(version == lock['python_version'], 'Wrong Windows CPython runtime version')
+    base = Path(runtime_root if runtime_root is not None else sys.base_prefix).resolve()
+    require(base.is_dir(), 'Pinned CPython runtime directory is absent')
+    expected = {relative: value for relative, value in lock['files'].items() if _runtime_path(relative)}
+    require(bool(expected), 'Committed CPython runtime PE map is empty')
+    prepared = []
+    for relative, info in expected.items():
+        source = base / relative
+        require(source.is_file() and not _redirected(source)
+                and source.resolve().is_relative_to(base), 'Pinned CPython native file is absent or redirected')
+        require(source.stat().st_size == info['size_bytes'] and file_digest(source) == info['sha256'],
+                'Installed CPython native bytes differ from the committed runtime lock')
+        prepared.append((info['sha256'], {'kind': 'cpython_runtime', 'package': 'CPython',
+            'version': lock['python_version'], 'source_path': relative,
+            'source_sha256': info['sha256'], 'match': 'sha256'}))
+    expected_names = {relative.casefold() for relative in expected}
+    # Examine the actual runtime areas too: an unlisted or disguised PE must not
+    # evade provenance merely because it was omitted from an installation report.
+    for current, directories, files in os.walk(base, followlinks=False, onerror=_runtime_walk_failed):
+        parent = Path(current)
+        relative_parent = parent.relative_to(base)
+        if relative_parent == Path('.'):
+            directories[:] = [name for name in directories if name.casefold() in ('dlls', 'lib', 'tcl')]
+        else:
+            directories[:] = [name for name in directories
+                               if _runtime_path((relative_parent / name).as_posix() + '/_runtime_file')]
+        require(not any(_redirected(parent / name) for name in directories), 'Redirected CPython runtime directory')
+        for name in files:
+            source = parent / name
+            relative = source.relative_to(base).as_posix()
+            require(not _redirected(source) and source.resolve().is_relative_to(base),
+                    'Redirected CPython runtime file')
+            with source.open('rb') as handle:
+                native = handle.read(2) == b'MZ' or source.suffix.casefold() in NATIVE_SUFFIXES
+            if native:
+                require(relative.casefold() in expected_names, 'Unknown PE in CPython runtime areas')
+    for digest, source in prepared:
+        index.setdefault(digest, []).append(source)
 
 
 def parse_api_set(data):

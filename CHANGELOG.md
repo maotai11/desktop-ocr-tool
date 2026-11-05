@@ -5,7 +5,8 @@
 - 整列搜尋在 B 區直接顯示欄位名稱、A 原文、B 候選及狀態；長文省略，空間不足明示其餘筆數，預設不再畫 A 框
 - 「標示置頂」只控制 B 框線與文字卡片；搜尋控制窗維持一般視窗，可退到其他軟體後方
 - 針對實際舊 payload 的 Qt Core／Network 原生漏洞，將 PySide6-Essentials 與 shiboken6 鎖定至 6.11.3；不以 Python 套件零發現替代 DLL 檢查
-- 移除未使用 Qt TLS plugins 與打包 hook 外帶的舊 OpenSSL 3.0.16，保留 CPython SSL 所需依賴並禁止 PATH 重新帶入舊檔
+- 經發行包 SHA256 核對，舊 OpenSSL 3.0.16 來自 CPython 3.12.10；Windows runtime 改為鎖定的 Astral standalone CPython 3.12.16／20261026 與動態 OpenSSL 3.5.9，建置時核對壓縮包與 PE 清單
+- 另外排除未使用 Qt TLS plugins 及打包時外帶的 OpenSSL，保持來源分開核對；離線使用電腦不需預裝 Python
 - 加入明列面板／操作的 GUI 驗證及封裝 PE 原生元件檢查，分開記錄來源、匯入、簽章與防毒掃描範圍，不將未知或未完成項目當成通過
 - 更新操作說明及版本驗證矩陣，保留原有辨識規則、手動候選、主螢幕／行級定位與離線模型
 

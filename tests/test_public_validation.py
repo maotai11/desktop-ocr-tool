@@ -330,3 +330,41 @@ def test_linux_development_helper_architecture_remains_explicit():
     assert result['helper_architecture'] == 'LINUX_X64_ASSESSMENT'
     assert public.observed_result(result) == 'PASS_AS_RECORDED_NOT_OVERALL_APPROVAL'
     assert public.observed_result(public.safe_fields({'helper_architecture': '/home/PRIVATE'})) == 'INVALID_FIELDS'
+
+
+@pytest.mark.parametrize('platform,expected,outcome', [('Windows',True,'success'),('Linux',False,'skipped')])
+def test_runtime_step_is_expected_only_for_windows_and_failure_metadata_survives(tmp_path,platform,expected,outcome):
+    result=export(tmp_path,steps={'runtime_preparation':{'outcome':outcome,'conclusion':outcome}},platform=platform)
+    assert result['steps']['runtime_preparation']==dict(expected_on_platform=expected,outcome=outcome,conclusion=outcome)
+    assert record(result,'artifacts/windows-runtime-inventory.json')['expected_on_platform'] is expected
+
+
+def test_pinned_runtime_metadata_has_only_fixed_identity_and_typed_checks():
+    report=dict(schema=1,probe='windows_runtime_preparation',version=public.VERSION,platform='win32',
+        python_version='3.12.16',openssl_version='3.5.9',provider='astral-sh/python-build-standalone',
+        archive_sha256='a'*64,files_inventory_sha256='b'*64,native_files_count=42,
+        download_verified=True,extraction_verified=True,runtime_version_verified=True,openssl_verified=True,
+        hashlib_verified=True,ensurepip_completed=True,environment_exported=True,passed=True,
+        files={'C:/Users/PRIVATE_RUNTIME/python.dll':{'sha256':'c'*64}},destination='PRIVATE_DESTINATION')
+    safe=public.safe_fields(report)
+    assert not safe.get('invalid_allowlisted_fields')
+    for key in ('python_version','openssl_version','provider','archive_sha256','files_inventory_sha256',
+                'download_verified','extraction_verified','runtime_version_verified','openssl_verified',
+                'hashlib_verified','ensurepip_completed','environment_exported','native_files_count'):
+        assert safe[key]==report[key]
+    assert 'files' not in safe and 'destination' not in safe
+    assert 'PRIVATE' not in json.dumps(safe)
+    report.update(passed=False,error='C:/Users/PRIVATE_FAILURE')
+    assert public.observed_result(public.safe_fields(report))=='FAIL_AS_RECORDED'
+
+
+@pytest.mark.parametrize('flag', ['download_verified','extraction_verified','runtime_version_verified',
+    'openssl_verified','hashlib_verified','ensurepip_completed','environment_exported'])
+def test_runtime_partial_checks_cannot_appear_as_success_in_public_summary(flag):
+    data=dict(probe='windows_runtime_preparation',passed=True,download_verified=True,
+        extraction_verified=True,runtime_version_verified=True,openssl_verified=True,
+        hashlib_verified=True,ensurepip_completed=True,environment_exported=True)
+    data[flag]=False
+    assert public.observed_result(public.safe_fields(data))=='INCONSISTENT_AS_RECORDED'
+    del data[flag]
+    assert public.observed_result(public.safe_fields(data))=='INCONSISTENT_AS_RECORDED'
