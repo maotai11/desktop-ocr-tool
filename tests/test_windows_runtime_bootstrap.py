@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import tarfile
+import subprocess
+import sys
+import ssl
 
 import pytest
 
@@ -132,6 +135,20 @@ def test_smoke_requires_exact_runtime_library_and_executable(tmp_path, monkeypat
     with pytest.raises(ValueError): runtime.smoke_runtime(root, runtime.load_runtime_lock())
 
 
+def test_smoke_program_executes_in_real_isolated_host_process():
+    # Exercise the actual child source; mocked subprocess responses hide syntax failures.
+    completed = subprocess.run([sys.executable, '-I', '-c', runtime.SMOKE],
+                               capture_output=True, timeout=30, check=True)
+    result = json.loads(completed.stdout)
+    assert result['python_version'] == '.'.join(map(str, sys.version_info[:3]))
+    assert result['hashlib_ok'] is True
+    assert result['openssl_version'] == '.'.join(map(str, ssl.OPENSSL_VERSION_INFO[:3]))
+    assert result['openssl_library'] == ssl.OPENSSL_VERSION
+    assert set(result) == {'python_version', 'openssl_version', 'openssl_library',
+                          'executable', 'prefix', 'base_prefix', 'ssl_module',
+                          'hashlib_module', 'hashlib_ok'}
+
+
 def test_existing_destination_replaces_stale_pass_without_deleting_user_files(tmp_path):
     target = tmp_path / 'existing'
     target.mkdir()
@@ -180,3 +197,60 @@ def test_main_preflight_failure_cannot_leave_stale_pass(tmp_path, monkeypatch):
     assert runtime.main(['--destination', str(tmp_path / 'runtime'), '--report', str(report)]) == 1
     assert json.loads(report.read_bytes()) == {'schema': 1, 'probe': 'windows_runtime_preparation',
         'platform': 'win32', 'passed': False, 'error_code': 'WINDOWS_RUNTIME_PREPARATION_FAILED'}
+
+
+def test_main_preserves_earned_preparation_failure_flags(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime.sys, 'platform', 'win32')
+    report = tmp_path / 'report.json'
+    report.write_text('{"passed":true}')
+    earned = {'schema': 1, 'probe': 'windows_runtime_preparation', 'platform': 'win32',
+              'passed': False, 'download_verified': True, 'extraction_verified': True,
+              'runtime_version_verified': True, 'ensurepip_completed': False,
+              'error_code': 'WINDOWS_RUNTIME_PREPARATION_FAILED'}
+    def failed_prepare(destination, report_path):
+        assert json.loads(report_path.read_bytes())['passed'] is False
+        report_path.write_text(json.dumps(earned))
+        raise ValueError('private diagnostic must not be exported')
+    monkeypatch.setattr(runtime, 'prepare', failed_prepare)
+    assert runtime.main(['--destination', str(tmp_path / 'runtime'), '--report', str(report)]) == 1
+    assert json.loads(report.read_bytes()) == earned
+
+
+def test_main_lock_failure_before_prepare_report_still_replaces_old_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime.sys, 'platform', 'win32')
+    report = tmp_path / 'report.json'
+    report.write_text('{"passed":true}')
+    def bad_prepare(*args):
+        raise ValueError('lock preflight failed')
+    monkeypatch.setattr(runtime, 'prepare', bad_prepare)
+    assert runtime.main(['--destination', str(tmp_path / 'runtime'), '--report', str(report)]) == 1
+    assert json.loads(report.read_bytes())['passed'] is False
+
+
+def test_post_ensurepip_launchers_are_tools_not_immutable_runtime(tmp_path, monkeypatch):
+    data = b'MZ' + b'fake runtime' * 10
+    path, minimal = archive(tmp_path, [member('python/python.exe', data)])
+    lock = dict(runtime.IDENTITY, **minimal, files={'python.exe': {
+        'sha256': hashlib.sha256(data).hexdigest(), 'size_bytes': len(data)}})
+    monkeypatch.setattr(runtime, 'load_runtime_lock', lambda: lock)
+    monkeypatch.setattr(runtime, 'download_archive', lambda destination, _: destination.write_bytes(path.read_bytes()))
+    monkeypatch.setattr(runtime, 'smoke_runtime', lambda *args: None)
+    target = tmp_path / 'runtime'
+    def ensurepip(arguments, **kwargs):
+        if 'ensurepip' in arguments:
+            scripts = target / 'Scripts'
+            scripts.mkdir()
+            for name in ('pip.exe', 'pip3.exe', 'pip3.12.exe'):
+                (scripts / name).write_bytes(b'MZgenerated console launcher')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(runtime.subprocess, 'run', ensurepip)
+    result = runtime.prepare(target, tmp_path / 'inventory.json', environment={'RUNNER_TEMP': str(tmp_path)})
+    assert result['passed'] and result['ensurepip_completed']
+    assert (target / 'Scripts/pip.exe').exists()
+    # Initial extraction remains exact; tool exclusion is only post-ensurepip.
+    with pytest.raises(ValueError):
+        runtime.verify_native_files(target, lock)
+    (target / 'DLLs').mkdir()
+    (target / 'DLLs/unknown.pyd').write_bytes(b'MZunapproved DLL')
+    with pytest.raises(ValueError):
+        runtime.verify_native_files(target, lock, immutable_only=True)
