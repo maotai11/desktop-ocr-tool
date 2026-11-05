@@ -232,6 +232,62 @@ def test_native_scanner_requires_trusted_signature_and_latest_version(tmp_path, 
         assert '4.18.10.0' in result.stdout.splitlines()[-1]
 
 
+@pytest.mark.parametrize('mode', ['path_first', 'explicit_second', 'literal_brackets'])
+def test_native_application_resolves_one_real_path_match_and_runs_it(tmp_path, mode):
+    # Directory links preserve Python's neighboring runtime files on Windows;
+    # copying only python.exe would test an incomplete Python installation.
+    executable = Path(getattr(sys, '_base_executable', sys.executable))
+    output = tmp_path / 'resolved-process.json'
+    code = 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"ran":True}))'
+    body = r'''
+$first = Join-Path $PSScriptRoot 'first tools'
+$second = Join-Path $PSScriptRoot 'second [chosen] tools'
+$kind = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'Junction' } else { 'SymbolicLink' }
+[void](New-Item -ItemType $kind -Path $first -Value $fixture.parent)
+[void](New-Item -ItemType $kind -Path $second -Value $fixture.parent)
+$env:PATH = $first + [IO.Path]::PathSeparator + $second + [IO.Path]::PathSeparator + $env:PATH
+$matches = @(Get-Command -Name $fixture.name -CommandType Application -ErrorAction Stop)
+if ($matches.Count -lt 2) { throw 'MULTIPLE_REAL_PATH_MATCHES_REQUIRED' }
+$requested = if ($fixture.mode -eq 'path_first') { $fixture.name } else { Join-Path $second $fixture.name }
+if ($fixture.mode -eq 'explicit_second') {
+    # Keep this override independent of bracket handling in the next case.
+    $requested = Join-Path $first $fixture.name
+    $env:PATH = $second + [IO.Path]::PathSeparator + $first + [IO.Path]::PathSeparator + $env:PATH
+}
+$expected = if ($fixture.mode -eq 'path_first') { $matches[0].Source } else { $requested }
+$selected = Resolve-NativeApplication $requested
+if ($selected -isnot [string] -or $selected -cne $expected) { throw 'SINGLE_EXPLICIT_APPLICATION_REQUIRED' }
+$exitCode = Invoke-NativeBoundedProcess $selected ([string[]]$fixture.arguments) (Join-Path $PSScriptRoot 'resolved') 5
+if ($exitCode -ne 0) { throw 'RESOLVED_PROCESS_FAILED' }
+Write-Output 'SINGLE_APPLICATION_INVOKED'
+'''
+    result = run_helpers(tmp_path, body, {
+        'parent': str(executable.parent), 'name': executable.name, 'mode': mode,
+        'arguments': ['-c', code, str(output)],
+    })
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'SINGLE_APPLICATION_INVOKED' in result.stdout.splitlines()
+    assert json.loads(output.read_text(encoding='utf-8')) == {'ran': True}
+
+
+@pytest.mark.parametrize('case', ['array_source', 'missing_file', 'directory', 'empty_name'])
+def test_native_application_rejects_non_scalar_or_non_file_sources(tmp_path, case):
+    body = r'''
+function Get-Command {
+    [CmdletBinding()]param([string]$Name, [string]$CommandType)
+    $source = if ($fixture.case -eq 'array_source') { @($fixture.executable, $fixture.executable) } else { $fixture.missing }
+    return [pscustomobject]@{ Source=$source }
+}
+$requested = if ($fixture.case -eq 'directory') { $PSScriptRoot } elseif ($fixture.case -eq 'empty_name') { '' } else { 'synthetic-tool' }
+$selected = Resolve-NativeApplication $requested
+throw 'UNUSABLE_APPLICATION_WAS_ACCEPTED'
+'''
+    result = run_helpers(tmp_path, body, {'case': case, 'executable': sys.executable,
+                                        'missing': str(tmp_path / 'missing.exe')})
+    assert result.returncode != 0
+    assert 'NATIVE_APPLICATION_UNAVAILABLE' in result.stderr
+
+
 def test_native_process_roundtrips_literal_arguments_without_shell(tmp_path):
     arguments = ['', 'a b', 'quote"inside', 'trailing\\', 'two\\\\"quote', '中文',
                  '$HOME', '`echo hello`', '$(echo nope)', 'line\nnew']
