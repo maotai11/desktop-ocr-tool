@@ -29,6 +29,7 @@ MAX_ENTRIES = 10_000
 MAX_FILE_BYTES = 512 * 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 MAX_NATIVE_FILES = 2048
+MAX_EXPORT_SYMBOLS = 131_072
 SHA = re.compile(r'[0-9a-f]{64}')
 COMMIT = re.compile(r'[0-9a-f]{40}')
 NATIVE_SUFFIXES = ('.dll', '.pyd', '.exe')
@@ -271,13 +272,55 @@ def check_audit_report(report, inventory, *, executable_sha256, source_commit):
             and abs(duration - (end - start).total_seconds()) <= 5, 'Invalid native scan duration')
 
 
+def _export_expectations(pe, data):
+    """Bound raw export tables before pefile walks them; reject partial parsing."""
+    directory = pe.OPTIONAL_HEADER.DATA_DIRECTORY[0]
+    if not directory.VirtualAddress:
+        require(directory.Size == 0, 'Invalid native export directory')
+        return 0, set()
+    image_size = pe.OPTIONAL_HEADER.SizeOfImage
+    require(directory.Size >= 40 and directory.VirtualAddress + directory.Size <= image_size,
+            'Invalid native export directory bounds')
+
+    def read_table(rva, count, width):
+        require(0 <= count <= MAX_EXPORT_SYMBOLS, 'Native export table exceeds bounded symbol count')
+        if not count:
+            return b''
+        size = count * width
+        require(rva > 0 and size <= len(data) and rva + size <= image_size,
+                'Invalid native export table bounds')
+        raw = pe.get_data(rva, size)
+        require(len(raw) == size, 'Truncated native export table')
+        return raw
+
+    raw = pe.get_data(directory.VirtualAddress, 40)
+    require(len(raw) == 40, 'Truncated native export directory')
+    (_flags, _time, _major, _minor, _name, base, functions_count, names_count,
+     functions_rva, names_rva, ordinals_rva) = struct.unpack('<IIHHIIIIIII', raw)
+    require(functions_count <= MAX_EXPORT_SYMBOLS and names_count <= MAX_EXPORT_SYMBOLS
+            and base + functions_count <= 0x1_0000_0000,
+            'Native export table exceeds bounded symbol count')
+    functions_raw = read_table(functions_rva, functions_count, 4)
+    names_raw = read_table(names_rva, names_count, 4)
+    ordinals_raw = read_table(ordinals_rva, names_count, 2)
+    functions = [value[0] for value in struct.iter_unpack('<I', functions_raw)]
+    require(all(address == 0 or address < image_size for address in functions),
+            'Invalid native export function address')
+    require(all(0 < value[0] < image_size for value in struct.iter_unpack('<I', names_raw)),
+            'Invalid native export name address')
+    require(all(value[0] < functions_count and functions[value[0]] != 0
+                for value in struct.iter_unpack('<H', ordinals_raw)), 'Invalid native export ordinal')
+    return names_count, {base + index for index, address in enumerate(functions) if address}
+
+
 def _pe_metadata(data):
     import pefile
     require(len(data) <= MAX_FILE_BYTES, 'Native PE file is too large')
-    pe = pefile.PE(data=data, fast_load=True)
+    pe = pefile.PE(data=data, fast_load=True, max_symbol_exports=MAX_EXPORT_SYMBOLS)
     try:
         require(pe.FILE_HEADER.Machine == 0x8664 and pe.OPTIONAL_HEADER.Magic == 0x20B,
                 'Native payload is not AMD64 PE32+')
+        expected_names, expected_ordinals = _export_expectations(pe, data)
         pe.parse_data_directories(directories=[1, 13, 0, 2])
         versions = {}
         for block in getattr(pe, 'FileInfo', []):
@@ -299,11 +342,17 @@ def _pe_metadata(data):
                 imports.append({'name': name, 'kind': kind, '_symbols': symbols})
         exports = getattr(pe, 'DIRECTORY_ENTRY_EXPORT', None)
         exported = set()
+        parsed_names = 0
+        parsed_ordinals = set()
         if exports is not None:
             for symbol in exports.symbols:
                 exported.add(int(symbol.ordinal))
+                parsed_ordinals.add(int(symbol.ordinal))
                 if symbol.name:
                     exported.add(symbol.name.decode('ascii'))
+                    parsed_names += 1
+        require(parsed_names == expected_names and parsed_ordinals == expected_ordinals,
+                'Incomplete native export parsing')
         return {'machine': 'AMD64', 'is_dll': bool(pe.FILE_HEADER.Characteristics & 0x2000),
                 'file_version': versions.get('FileVersion', ''), 'product_version': versions.get('ProductVersion', ''),
                 'imports': imports, '_exports': exported,

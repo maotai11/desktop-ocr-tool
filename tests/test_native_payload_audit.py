@@ -117,6 +117,90 @@ def test_actual_pe_parser_records_architecture_and_does_not_load_dll():
         audit._pe_metadata(tiny_pe(0x14c))
 
 
+def pe_with_exports(names_count, *, ordinal_only=True, alias=False):
+    """Real, never-executed PE tables exceeding pefile's default 8192 exports."""
+    functions_count = names_count + (2 if ordinal_only else 0)
+    base = 7
+    functions_offset = 0x340
+    names_offset = functions_offset + functions_count * 4
+    ordinals_offset = names_offset + names_count * 4
+    strings_offset = ordinals_offset + names_count * 2
+    strings = [f'Export{index:06d}'.encode('ascii') + b'\0' for index in range(names_count)]
+    size = ((strings_offset + sum(map(len, strings)) + 511) // 512) * 512
+    data = bytearray(tiny_pe())
+    data.extend(bytes(max(0, size - len(data))))
+    raw_size = len(data) - 512
+    struct.pack_into('<II', data, 0x98 + 56, ((raw_size + 8191) // 4096) * 4096, 512)
+    struct.pack_into('<II', data, 0x98 + 240 + 8, raw_size, 0x1000)
+    struct.pack_into('<I', data, 0x98 + 240 + 16, raw_size)
+    def rva(offset):
+        return 0x1000 + offset - 512
+    struct.pack_into('<II', data, 0x98 + 112, 0x1100, len(data) - 0x300)
+    struct.pack_into('<IIHHIIIIIII', data, 0x300, 0, 0, 0, 0, 0, base, functions_count,
+                     names_count, rva(functions_offset), rva(names_offset), rva(ordinals_offset))
+    position = strings_offset
+    for index, name in enumerate(strings):
+        struct.pack_into('<I', data, functions_offset + index * 4, 0x1000)
+        struct.pack_into('<I', data, names_offset + index * 4, rva(position))
+        struct.pack_into('<H', data, ordinals_offset + index * 2, 0 if alias else index)
+        data[position:position + len(name)] = name
+        position += len(name)
+    if ordinal_only:
+        # An ordinal-only function followed by an unused EAT slot are both valid.
+        struct.pack_into('<I', data, functions_offset + names_count * 4, 0x1000)
+    return bytes(data)
+
+
+def test_large_real_export_tables_are_complete_including_ordinal_only_and_holes():
+    pefile = pytest.importorskip('pefile')
+    data = pe_with_exports(9000)
+    default = pefile.PE(data=data, fast_load=True)
+    try:
+        default.parse_data_directories(directories=[0])
+        assert sum(symbol.name is not None for symbol in default.DIRECTORY_ENTRY_EXPORT.symbols) == 8192
+    finally:
+        default.close()
+    metadata = audit._pe_metadata(data)
+    assert {name for name in metadata['_exports'] if isinstance(name, str)} == {
+        f'Export{index:06d}' for index in range(9000)}
+    assert {ordinal for ordinal in metadata['_exports'] if isinstance(ordinal, int)} == set(range(7, 9008))
+
+
+def test_named_export_aliases_and_ordinal_only_functions_remain_complete():
+    pytest.importorskip('pefile')
+    metadata = audit._pe_metadata(pe_with_exports(3, alias=True))
+    assert metadata['_exports'] == {'Export000000', 'Export000001', 'Export000002', 7, 8, 9, 10}
+
+
+@pytest.mark.parametrize('defect', ['functions_count', 'names_count', 'function_span', 'name_span',
+                                   'ordinal_span', 'ordinal_index', 'directory_span', 'function_address'])
+def test_raw_export_counts_and_spans_are_checked_before_parsing(defect):
+    pefile = pytest.importorskip('pefile')
+    data = bytearray(pe_with_exports(3))
+    image_size = struct.unpack_from('<I', data, 0x98 + 56)[0]
+    if defect == 'functions_count': struct.pack_into('<I', data, 0x300 + 20, audit.MAX_EXPORT_SYMBOLS + 1)
+    if defect == 'names_count': struct.pack_into('<I', data, 0x300 + 24, audit.MAX_EXPORT_SYMBOLS + 1)
+    if defect == 'function_span': struct.pack_into('<I', data, 0x300 + 28, image_size - 4)
+    if defect == 'name_span': struct.pack_into('<I', data, 0x300 + 32, image_size - 4)
+    if defect == 'ordinal_span': struct.pack_into('<I', data, 0x300 + 36, image_size - 2)
+    if defect == 'ordinal_index': struct.pack_into('<H', data, 0x340 + 5 * 4 + 3 * 4, 65535)
+    if defect == 'directory_span': struct.pack_into('<I', data, 0x98 + 112 + 4, image_size)
+    if defect == 'function_address': struct.pack_into('<I', data, 0x340, image_size)
+    with pytest.raises((ValueError, pefile.PEFormatError), match='export|RVA'):
+        audit._pe_metadata(bytes(data))
+
+
+def test_silent_export_parser_truncation_is_a_failure(monkeypatch):
+    pefile = pytest.importorskip('pefile')
+    original = pefile.PE.parse_data_directories
+    def truncate(pe, *args, **kwargs):
+        original(pe, *args, **kwargs)
+        pe.DIRECTORY_ENTRY_EXPORT.symbols.pop()
+    monkeypatch.setattr(pefile.PE, 'parse_data_directories', truncate)
+    with pytest.raises(ValueError, match='Incomplete native export parsing'):
+        audit._pe_metadata(pe_with_exports(3))
+
+
 def test_dependency_does_not_accept_an_unrelated_same_basename():
     source = {'package': 'owner'}
     importer = {'path': 'owner/module.pyd', 'provenance': source}
