@@ -1,6 +1,6 @@
 # 套件與背景工作檢查
 
-套件修補基準：rc.5（2026-11-02）；背景工作說明更新：rc.11（2026-11-05）。本文件說明修正與檢查方法；每次正式發布的實際結果以同一來源版本的 validation metadata 為準。
+Python 套件歷史修補基準：rc.5（2026-11-02）；原生修補與背景工作說明更新：rc.12（2026-11-05）。本文件說明修正與檢查方法；每次正式發布的實際結果以同一來源版本的 validation metadata 為準。
 
 ## 已知漏洞與套件更新
 
@@ -17,7 +17,25 @@ rc.5 本機更新後的 31 個 Python distribution 掃描結果為 0 個已知�
 
 發布器會核對 Windows 掃描的來源 commit、安裝清單 SHA256、套件數量、掃描器版本及零發現結果。公開摘要提供套件數與清單雜湊；原始建置路徑及診斷輸出不放入公開 ZIP。
 
-Python 公告資料庫不等於所有原生 DLL 的完整 CVE 覆蓋。PDFium、Qt、ONNX Runtime、影像編解碼器及原生手寫引擎仍須持續跟進上游；本次未完成逐一原生元件的完整 SBOM／二進位漏洞認證。檢查通過只代表當時資料庫未命中，不代表不存在未知漏洞。
+Python 公告資料庫不等於所有原生 DLL 的完整 CVE 覆蓋；rc.12 實際查到舊 Qt 6.11.2 的原生公告，修補與新增檢查詳見下一節。PDFium、ONNX Runtime、影像編解碼器及靜態嵌入庫仍需逐項辨識與追蹤。PE 清冊或防毒掃描不等於完整 SBOM／二進位漏洞認證；未命中不代表不存在未知漏洞。
+
+## rc.12 原生 Qt 漏洞與修補基準
+
+這次檢查實際舊版 payload，發現 Qt6Core／Gui／Network／Svg／Widgets 為 6.11.2。Python 的 pip-audit 沒有完整涵蓋這些原生 Qt 公告；先前 Python distribution 零發現不能替代 DLL 的版本核對。rc.12 將 `PySide6-Essentials` 及 `shiboken6` 鎖定至 6.11.3，並要求建置時核對 Qt runtime 與成品 PE 版本，不能只修改 requirements 就宣稱 EXE 已修好。
+
+| 舊版實際元件 | 官方公告／影響 | rc.12 要求 |
+| --- | --- | --- |
+| Qt Core 6.11.2（64 位元） | CVE-2026-107157：`QCborValue::fromCbor()` 越界讀取；官方列 6.11.2 及之前的受影響分支 | Qt 6.11.3，並核對封裝版本 |
+| Qt Network 6.11.2 | CVE-2026-95620：HTTP/2 use-after-free，可造成應用程式崩潰 | Qt 6.11.3，並核對封裝版本 |
+| Qt Core 6.11.2 | CVE-2026-105924：CBOR 轉 JSON 的空指標問題；6.12.0 也在受影響範圍 | 採已修正的 6.11.3，沒有直接改用 6.12.0 |
+
+來源：[Qt 官方已知漏洞表](https://wiki.qt.io/List_of_known_vulnerabilities_in_Qt_products)、[Core CBOR 公告](https://www.qt.io/blog/security-advisory-cve-2026-107157)、[Network HTTP/2 公告](https://www.qt.io/blog/security-advisory-cve-2026-95620)。本工具沒有主動使用 HTTP/2 或 CBOR 不代表可以忽略已封裝的受影響元件；會修補版本，同時保留功能測試與路徑檢查的範圍。舊 payload 未包含 Qt5Compat，不能把只影響該模組的公告列成此成品已帶入的漏洞。這份清單針對實際存在的模組及已確認公告，不是所有 Qt、第三方原生庫或未知漏洞的完整證明。
+
+原生來源檢查也查到兩份不同的 OpenSSL：CPython 的 `libcrypto-3-x64.dll` 3.5.9，以及由 Qt Network 打包 hook 從外部 PATH 帶入的 `libcrypto-3.dll` 3.0.16。兩者不能因名稱相似就當成同一版本，也不能用 CPython 的版本替較舊 DLL 背書。上游 [OpenSSL 3.5 公告](https://www.openssl-library.org/news/vulnerabilities-3.5/) 列出 2026-09-29 修正在 3.5.9 的問題；較舊的 3.0.16 不能當成已含後續修正。
+
+本工具不需要 Qt TLS 路徑，rc.12 停止收集外部 Qt Network OpenSSL 檔，並排除未使用的 Qt TLS plugins、`libcrypto-3.dll`／`libssl-3.dll`；保留 CPython SSL 使用的 3.5.9 及必要 Qt 6.11.3 元件，成品清冊要確認舊檔沒有再被 PATH 帶回。這是移除本成品不需要的舊依賴，沒有修改使用者系統上的 OpenSSL，也沒有觀察到利用這些漏洞的事件；發現的是曾封裝未含後續修正的版本。
+
+rc.12 新增成品 PE 清冊、來源／匯入／簽章及 Windows Defender 檢查，與 Python 套件稽核分開報告。每一項的實際範圍、結果狀態及未完成的原生 SBOM 限制見 [本版驗證範圍](VALIDATION_COVERAGE.md)。清冊完整、簽章存在、掃描無偵測分別回答不同問題，不能合併寫成「全部 DLL 無漏洞」。
 
 ## rc.10 自動封存與資料保留
 
@@ -37,11 +55,11 @@ Python 公告資料庫不等於所有原生 DLL 的完整 CVE 覆蓋。PDFium、
 
 浮窗、主控台、編輯器及標籤變更共用歷史失效通知，封存／刪除／釘選／編輯後同步刷新已開視窗，保留主控台的搜尋、分類及仍有效的選取。標籤管理原本即時寫入的操作也會立即通知；取消其他設定不會把已完成的標籤變更當作未發生。
 
-本次掃描範圍包含設定消費點、UI action／signal、工作者生命週期、CLI、工作流程及 Git 旁支。以 rc.9 `92c2972` 為掃描起點，當時 15 個分支中的 14 個舊分支 head 都是 master 祖先、沒有分支獨有提交；PR #1–#12 均已合併，沒有自動重併或刪除遠端分支。已移除未被引用的舊 AppSignals bus 與已完成任務的 rc.3 README 單次 workflow；現行固定版本發布 marker 是刻意的發布限制。
+rc.10 的掃描範圍包含設定消費點、UI action／signal、工作者生命週期、CLI、工作流程及 Git 旁支。以 rc.9 `92c2972` 為掃描起點，當時 15 個分支中的 14 個舊分支 head 都是 master 祖先、沒有分支獨有提交；PR #1–#12 均已合併，沒有自動重併或刪除遠端分支。已移除未被引用的舊 AppSignals bus 與已完成任務的 rc.3 README 單次 workflow；現行固定版本發布 marker 是刻意的發布限制。
 
 27 個沒有接入 Core 的新預設設定已退休，原因列在 `RETIRED_CORE_SETTINGS`；舊 JSON 額外欄位仍可讀回與儲存，不會因此啟用實驗引擎或刪掉舊設定。可選 Paddle／CnOCR 及舊預處理 API 是保留的擴充介面，核心 EXE 不會因掃描而載入它們。主題、字體與圖片剪貼簿的未支援控制維持明確停用。詳細分類見 [設定接線與節點稽核](CONFIG_WIRING_MATRIX.md)。這是針對已列路徑的有限檢查，不能當作所有動態分支的形式證明。
 
-## rc.11 整列搜尋與選取列跟隨
+## 整列搜尋與選取列跟隨（rc.11 加入，rc.12 更新標示）
 
 「整列搜尋」是與原有固定位置 A／B 核對分開的控制流程。最多 20 個 A 欄位共用一個 B 範圍，每個 A 最多採用一個位置；重複候選由使用者選取。全部 A 共用比對方式；一般模式的數字片段仍保留正負號、小數點、千分位、百分號及前導零，不將 O／I 猜成 0／1。文字相似門檻固定 95%，與 OCR 信心分開判斷；逐字模式停用近似，原有複製清理設定不會先改掉待比對原文。近似候選即使唯一或經手選也維持需要確認，A／B 原始 OCR 的 needs_review 分別阻擋確定命中；行級框不宣稱行內重複數字的逐字定位。
 
@@ -49,7 +67,7 @@ Python 公告資料庫不等於所有原生 DLL 的完整 CVE 覆蓋。PDFium、
 
 自動跟隨限使用者框選的表格範圍，需先校正當前選取列及 A 的相對位置。新選取底色連續兩次畫面檢查穩定後才跟隨；同一 Y 座標的新內容仍重新辨識。這是畫面底色追蹤，不是其他軟體的資料庫／控制項存取，不自動替目標軟體按鍵、點列或捲頁。底色不明、多處候選或越界不採用猜測位置，應重新校正或手動換列。主題、斑馬紋及不等高列會影響可靠性。位置不明時仍可能按間隔擷取、等待穩定，並非已暫停；使用者按暫停／關閉才停止後續檢查。此功能沒有全鍵盤記錄 hook。
 
-桌面標示平時點擊穿透，只在明確框選時使用既有框選工具。標示填色透明度可調，擷取前暫時隱藏標示以免讀到本工具，因此可能閃動；透明不等於能讀取被遮住的原畫面。本版沿用主螢幕框選限制，不宣稱支援任意混合 DPI 多螢幕追蹤。
+rc.12 的桌面卡片只放在 B 區，列出欄名／狀態、A、B 文字，預設不畫 A 框。「標示置頂」只控制 B 標示，控制窗維持一般視窗；卡片過多會明示未顯示筆數，長文省略，不能把省略當成結果不存在。標示點擊穿透，只在明確框選時使用既有工具。填色濃度可調，擷取前暫時隱藏以免讀到本工具，因此可能閃動；透明不等於能讀取被遮住的原畫面。本版沿用主螢幕框選限制，不宣稱支援任意混合 DPI 多螢幕追蹤。
 
 暫停、改框、清除或關閉會撤銷當前工作、清除過期結果及標示，停止後續列與輪次；已進入原生 OCR 的單次呼叫仍需返回。遲到結果不恢復舊標示或重開視窗。關閉後不持續追蹤，退出由原有 Pipeline 管理工作者停止。進行中需要定期擷取／摘要及定位，並非零背景成本。
 
@@ -111,4 +129,6 @@ python scripts/audit_dependencies.py --inventory artifacts/dependency-inventory.
 python scripts/audit_runtime_network.py --report artifacts/runtime-network-audit.json
 ```
 
-CI 會自動設定來源版本並執行相同指令；離線使用者不需執行或安裝掃描工具。
+CI 會自動設定來源版本並執行相同指令；離線使用者不需執行或安裝掃描工具。這些 GUI／原生／Defender 探針只在建置與驗證時執行，應用程式一般使用流程不會在背景啟動它們。
+
+GUI 操作使用 `python src/main.py --self-test-gui source-gui.json`，報告 12 個具名控制流程；固定位置核對及整列搜尋另用 `--self-test-comparison`、`--self-test-shared-search`。Windows 建置後由 `scripts/validate_native_payload.ps1` 對同版 EXE 執行原生清冊、來源／匯入／簽章及 Defender，再由發佈器重新核對檔案與範圍雜湊。只跑 `audit_native_payload.py` 的靜態階段，不能代替 Windows 簽章與防毒完成。具體欄位、12 項 GUI 操作與人工剩餘在 [驗證矩陣](VALIDATION_COVERAGE.md)。

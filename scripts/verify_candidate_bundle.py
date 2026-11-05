@@ -202,6 +202,25 @@ def check_shared_search_probe(report, manifest, frozen):
         raise ValueError('Shared-search lifecycle includes a failure diagnostic')
 
 
+def check_gui_probe(report, manifest, frozen):
+    """Require real Qt control/effect checks without claiming model accuracy."""
+    from src.gui_probe import GUI_CHECK_NAMES
+    expected = dict(schema=1, probe='gui_feature_lifecycle', passed=True,
+        version=manifest['version'], frozen=frozen, platform='win32', qt_platform='windows',
+        executable_sha256=manifest['executable_sha256'] if frozen else None,
+        clean_machine_verified=False, fixture_kind='SYNTHETIC_GUI_CONTROLS',
+        ocr_accuracy_tested=False, model_inference_tested=False)
+    if (type(report) is not dict or any(type(report.get(key)) is not type(value)
+            or report.get(key) != value for key, value in expected.items())):
+        raise ValueError('Incomplete GUI lifecycle identity')
+    checks = report.get('checks')
+    if (type(checks) is not dict or set(checks) != set(GUI_CHECK_NAMES)
+            or not all(value is True for value in checks.values())):
+        raise ValueError('Incomplete GUI lifecycle checks')
+    if any(key in report for key in ('error', 'error_code', 'traceback')):
+        raise ValueError('GUI lifecycle includes a failure diagnostic')
+
+
 def _json(data):
     return json.loads(data.decode('utf-8-sig'))
 
@@ -358,6 +377,9 @@ def inspect_frozen_payload(path, model_profiles, source_files=None, validation_f
     if 'rapidocr_onnxruntime/config.yaml' not in names:
         raise ValueError('Frozen RapidOCR runtime config absent')
     lower = [name.lower() for name in names]
+    if any(PurePosixPath(value).name in ('libcrypto-3.dll', 'libssl-3.dll')
+           or ('/plugins/tls/' in '/' + value or value.startswith('tls/')) for value in lower):
+        raise ValueError('Unneeded TLS plugin or foreign legacy OpenSSL DLL in offline OCR payload')
     unused_media = ('ffmpeg', 'avcodec', 'avformat', 'avutil', 'swscale', 'swresample', 'openexr', 'ilmimf')
     if any(value.endswith(('.dll', '.pyd')) and any(word in value for word in unused_media) for value in lower):
         raise ValueError('Unneeded video or legacy OpenEXR library in offline OCR payload')
@@ -551,6 +573,17 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
                                               manifest['ocr_validation_fixtures'],
                                               handwriting=manifest.get('handwriting')) if inspect_payload else
                        {'inspected': False, 'system_dll_closure': 'NOT_RUN'})
+            native_report = _json((artifacts / 'native-payload-audit.json').read_bytes())
+            native_inventory = _json((artifacts / 'native-payload-inventory.json').read_bytes())
+            from scripts.audit_native_payload import check_audit_report, check_archive_coverage
+            check_audit_report(native_report, native_inventory,
+                executable_sha256=manifest['executable_sha256'], source_commit=expected_commit)
+            if source.get('files', {}).get('scripts/native_security_policy.py') != {
+                    'sha256': native_report['native_security_policy_sha256']}:
+                raise ValueError('Native security policy differs from source manifest')
+            if inspect_payload:
+                check_archive_coverage(executable, native_inventory)
+                payload['native_archive_coverage_verified'] = True
             executable_size = executable.stat().st_size
         probes = {}
         for report_name in ('frozen-selftest.json', 'frozen-app-smoke.json'):
@@ -581,6 +614,13 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             raise ValueError('Embedded shared-search probe checksum mismatch')
         check_shared_search_probe(_json(raw), manifest, True)
         probes[report_name] = 'PASSED'
+        report_name = 'frozen-gui.json'
+        raw = archive.read(prefix + 'candidate-validation/' + report_name)
+        if manifest['candidate_probes'][report_name] != {
+                'sha256': hashlib.sha256(raw).hexdigest(), 'status': 'PASSED'}:
+            raise ValueError('Embedded GUI probe checksum mismatch')
+        check_gui_probe(_json(raw), manifest, True)
+        probes[report_name] = 'PASSED'
     gate = _json((artifacts / 'firewall-validation/candidate-gate.json').read_bytes())
     if (gate.get('passed') is not True or gate.get('executable_sha256') != executable_hash.hexdigest()
             or gate.get('version') != VERSION or gate.get('clean_machine_verified') is not False):
@@ -595,6 +635,8 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
             check_handwriting_image_probe(_json(path.read_bytes()), manifest, True)
         elif name == 'frozen-shared-search.json':
             check_shared_search_probe(_json(path.read_bytes()), manifest, True)
+        elif name == 'frozen-gui.json':
+            check_gui_probe(_json(path.read_bytes()), manifest, True)
         else:
             _check_probe(_json(path.read_bytes()), manifest, True)
     handwriting_path = artifacts / 'firewall-validation/frozen-handwriting.json'
@@ -619,6 +661,10 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
     check_shared_search_probe(shared_source, manifest, False)
     if shared_source.get('source_commit') != expected_commit:
         raise ValueError('Shared-search source commit mismatch')
+    gui_source = _json((root / 'source-gui.json').read_bytes())
+    check_gui_probe(gui_source, manifest, False)
+    if gui_source.get('source_commit') != expected_commit:
+        raise ValueError('GUI source commit mismatch')
     stress_path = artifacts / 'firewall-validation/frozen-runtime-stress.json'
     check_frozen_stress(_json(stress_path.read_bytes()), manifest)
     suites = ET.parse(root / 'test-results.xml').getroot()
@@ -649,6 +695,11 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
                          'run_id': os.environ.get('GITHUB_RUN_ID'),
                          'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
                          'source_commit': expected_commit},
+            'native_payload_audit': {
+                'status': 'PASSED', 'native_files_count': native_report['native_files_count'],
+                'report_sha256': sha256_file(artifacts / 'native-payload-audit.json'),
+                'files_inventory_sha256': native_report['files_inventory_sha256'],
+                'antivirus_scan_completed': True, 'antivirus_detections_count': 0},
             'clean_machine_verified': False, 'mixed_dpi_gate': 'NOT_RUN'}
 
 

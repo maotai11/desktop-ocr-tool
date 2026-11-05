@@ -73,7 +73,7 @@ def test_shared_search_runs_on_source_build_firewall_portable_and_network_routes
     steps = {step.get('id'): step for step in workflow['jobs']['validate']['steps']}
     assert steps['source_shared_search']['run'] == 'python src/main.py --self-test-shared-search source-shared-search.json'
     assert not steps['source_shared_search'].get('continue-on-error')
-    assert '--self-test-shared-search' in MODES and len(MODES) == 7
+    assert '--self-test-shared-search' in MODES and '--self-test-gui' in MODES and len(MODES) == 8
     for name in ('scripts/build.py', 'scripts/validate_windows_bundle.ps1', 'scripts/validate_portable_profile.ps1'):
         assert '--self-test-shared-search' in (root / name).read_text(encoding='utf-8')
     for name in ('scripts/validate_windows_bundle.ps1', 'scripts/validate_portable_profile.ps1'):

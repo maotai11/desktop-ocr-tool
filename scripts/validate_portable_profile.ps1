@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'assert_shared_search_probe.ps1')
+. (Join-Path $PSScriptRoot 'assert_gui_probe.ps1')
 $scratch = $null
 $ruleName = 'InkPick-portable-' + [guid]::NewGuid().ToString()
 $ruleCreated = $false
@@ -25,8 +26,8 @@ try {
     $bundle = (Resolve-Path -LiteralPath $BundleDirectory).Path
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or
-        $manifest.version -cne '1.8.0-rc.11' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.11.exe') {
+        $manifest.version -cne '1.8.0-rc.12' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.12.exe') {
         throw 'Unexpected portable candidate identity'
     }
     $original = Join-Path $bundle $manifest.executable_name
@@ -80,7 +81,8 @@ try {
         @{ mode = '--self-test-handwriting-image'; name = 'isolated-handwriting-image.json'; kind = 'handwriting_image_lifecycle' },
         @{ mode = '--self-test-documents'; name = 'isolated-documents.json'; kind = 'document_template_lifecycle' },
         @{ mode = '--self-test-comparison'; name = 'isolated-comparison.json'; kind = 'comparison_lifecycle' },
-        @{ mode = '--self-test-shared-search'; name = 'isolated-shared-search.json'; kind = 'shared_search_lifecycle' }
+        @{ mode = '--self-test-shared-search'; name = 'isolated-shared-search.json'; kind = 'shared_search_lifecycle' },
+        @{ mode = '--self-test-gui'; name = 'isolated-gui.json'; kind = 'gui_feature_lifecycle' }
     )) {
         $report = Join-Path $reports $probe.name
         if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report }
@@ -127,7 +129,9 @@ try {
             $result.executable_sha256 -cne $hash -or $result.clean_machine_verified -ne $false) {
             throw 'Portable EXE probe identity or result differs from candidate'
         }
-        if ($probe.kind -ceq 'shared_search_lifecycle') {
+        if ($probe.kind -ceq 'gui_feature_lifecycle') {
+            Assert-GuiProbe $result $manifest.version $hash
+        } elseif ($probe.kind -ceq 'shared_search_lifecycle') {
             Assert-SharedSearchProbe $result $manifest.version $hash
         } elseif ($probe.kind -ceq 'application_lifecycle') {
             if ($result.schema -ne 2 -or $result.database_integrity -cne 'ok' -or

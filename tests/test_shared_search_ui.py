@@ -2,7 +2,8 @@
 import copy
 
 import pytest
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, QRectF, Qt, Signal
+from PySide6.QtWidgets import QWidget
 
 from src.ui.search_highlight_overlay import SearchHighlightOverlay
 from src.ui.shared_search_window import SharedSearchWindow
@@ -161,7 +162,7 @@ def test_open_does_not_start_or_create_marks(window):
     assert window.size().width() == 348
 
 
-def test_result_maps_b_local_boxes_and_source_outlines_without_clipboard_or_focus(window, qapp, monkeypatch):
+def test_result_maps_b_local_boxes_and_inline_text_without_clipboard_or_focus(window, qapp, monkeypatch):
     qapp.clipboard().setText('KEEP')
     called = []
     for method in ('show', 'activateWindow', 'raise_'):
@@ -170,7 +171,9 @@ def test_result_maps_b_local_boxes_and_source_outlines_without_clipboard_or_focu
     marks = window.highlight_overlay.marks
     found = next(mark for mark in marks if mark['kind'] == 'match')
     assert found['boxes'][0][0] == (210.0, 110.0)
-    assert any(mark['kind'] == 'source' for mark in marks)
+    assert len(marks) == 1
+    assert found['a_text'] == found['b_text'] == '王小明'
+    assert found['bounds'] == (200, 100, 120, 100)
     assert window.highlight_overlay.isVisible()
     assert called == [] and qapp.clipboard().text() == 'KEEP'
     assert '1／1' in window._status.text()
@@ -337,6 +340,89 @@ def test_opacity_and_repin_keep_clickthrough_and_do_not_resurrect_hidden_capture
     window.after_capture()
     assert overlay.isVisible()
     assert overlay.windowFlags() & Qt.WindowType.WindowTransparentForInput
+
+
+def test_overlay_pin_is_independent_of_normal_panel_and_minimize(window, qtbot):
+    window.controller.publish()
+    overlay = window.highlight_overlay
+    assert window._pin.text() == '標示置頂'
+    assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window.open()
+    window.set_pinned(False)
+    assert overlay.isVisible()
+    assert not overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window.set_pinned(True)
+    assert overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    foreground = QWidget()
+    qtbot.addWidget(foreground)
+    foreground.show()
+    foreground.activateWindow()
+    window.showMinimized()
+    assert window.isMinimized() and window.controller.running
+    assert overlay.isVisible()
+    assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+
+
+def test_inline_callouts_are_plain_bounded_text_inside_b_without_overlap(qtbot, qapp):
+    overlay = SearchHighlightOverlay()
+    qtbot.addWidget(overlay)
+    scale = qapp.primaryScreen().devicePixelRatio()
+    bounds = (20 * scale, 20 * scale, 350 * scale, 260 * scale)
+    box = [[[30 * scale, 40 * scale], [100 * scale, 40 * scale],
+            [100 * scale, 60 * scale], [30 * scale, 60 * scale]]]
+    marks = [{'name': f'欄位 {index}', 'a_text': '<b>王</b>\n測試\u202e' + '🙂金額' * 1000,
+              'b_text': '王́測試\t另一行', 'status': 'matched' if index % 2 else 'similar',
+              'bounds': bounds, 'boxes': box} for index in range(20)]
+    assert overlay.set_marks(marks)
+    cards = overlay.callouts
+    assert 0 < len(cards) < 20
+    assert overlay.overflow_count + len(cards) == 20
+    b_area = QRectF(*(value / scale for value in bounds))
+    rectangles = [QRectF(*card['rect']) for card in cards]
+    overflow = QRectF(*overlay.overflow_rect)
+    assert b_area.contains(overflow)
+    for index, rectangle in enumerate(rectangles):
+        assert b_area.contains(rectangle) and not rectangle.intersects(overflow)
+        assert all(not rectangle.intersects(other) for other in rectangles[index + 1:])
+    assert '<b>王</b>' in cards[0]['a_text']
+    assert '\n' not in cards[0]['a_text'] and '\u202e' not in cards[0]['a_text']
+    assert len(cards[0]['a_text']) <= 241
+    assert len(cards[0]['display_lines']) == 3
+    assert cards[0]['display_lines'][1].startswith('A  ')
+    assert cards[0]['display_lines'][2].startswith('B  ')
+    assert cards[0]['status'] == 'similar'
+    assert '需確認' in cards[0]['display_lines'][0]
+    overlay.set_fill_opacity(0)
+    assert overlay.callouts == cards
+    assert not overlay.grab().isNull()
+
+
+def test_near_or_low_confidence_selected_result_never_has_green_callout(window):
+    chosen = candidate(needs_review=True)
+    chosen['match_type'] = 'similar'
+    window.controller.publish(candidates=[chosen])
+    mark = window.highlight_overlay.marks[0]
+    assert mark['status'] == 'similar' and mark['kind'] == 'uncertain'
+    window.controller.state_changed.emit('changed')
+    assert not window.highlight_overlay.callouts
+    assert window.highlight_overlay.overflow_count == 0
+
+
+def test_small_b_shows_overflow_in_bounds_and_rejects_outside_coordinates(qtbot, qapp):
+    overlay = SearchHighlightOverlay()
+    qtbot.addWidget(overlay)
+    scale = qapp.primaryScreen().devicePixelRatio()
+    bounds = (100 * scale, 100 * scale, 100 * scale, 35 * scale)
+    box = [[[101 * scale, 101 * scale], [150 * scale, 101 * scale],
+            [150 * scale, 120 * scale], [101 * scale, 120 * scale]]]
+    mark = {'name': '小範圍', 'a_text': 'A', 'b_text': 'B', 'bounds': bounds, 'boxes': box}
+    assert overlay.set_marks([mark])
+    assert not overlay.callouts and overlay.overflow_count == 1
+    assert QRectF(100, 100, 100, 35).contains(QRectF(*overlay.overflow_rect))
+    mark['bounds'] = (110 * scale, 110 * scale, 100 * scale, 35 * scale)
+    assert not overlay.set_marks([mark])
+    assert not overlay.marks and not overlay.isVisible()
 
 
 def test_all_field_cards_stay_visible_in_scroll_content(window):

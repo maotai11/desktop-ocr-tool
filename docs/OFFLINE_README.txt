@@ -1,13 +1,13 @@
-﻿InkPick 拾字筆 v1.8.0-rc.11
+﻿InkPick 拾字筆 v1.8.0-rc.12
 完整離線操作說明
 ========================================
 
 這份說明不需要網路、圖片或外部文件，即可完成主要操作。
-本版新增「整列搜尋」：同一列可選多個 A 欄位，到一個 B 範圍找文字，
-每個 A 最多選定一處結果。支援手動換列及校正後跟隨表格選取列；
-原有固定位置 A／B 核對、90 天自動封存、文件套版等功能保留。
+本版把整列搜尋的 A 文字、B 候選與狀態直接標示在 B 區；
+只有 B 標示置頂，控制窗維持一般視窗，切換其他軟體時不擋操作。
+原有多 A 共用 B、換列跟隨、固定位置 A／B 核對、90 天封存及文件套版保留。
 ZIP 內 OFFLINE_README.txt 與 README.txt 內容相同；Release 單獨提供的
-InkPick-v1.8.0-rc.11-README.txt 也是同一份 UTF-8（含 BOM）文字說明。
+InkPick-v1.8.0-rc.12-README.txt 也是同一份 UTF-8（含 BOM）文字說明。
 
 一、下載、核對與啟動
 ----------------------------------------
@@ -16,24 +16,24 @@ EXE 已包含 Python、Qt、PDFium、兩組 OCR 模型與手寫引擎。
 使用電腦不需安裝 Python、pip、PDF 閱讀器、Windows 手寫語言套件，
 首次執行也不需要下載模型，可以斷網使用。
 
-1. 在能上網的電腦下載同版 InkPick-v1.8.0-rc.11.zip，再用隨身碟帶到離線電腦。
+1. 在能上網的電腦下載同版 InkPick-v1.8.0-rc.12.zip，再用隨身碟帶到離線電腦。
 2. 將整份 ZIP 解壓到有寫入權限的資料夾，例如 D:\Tools\InkPick。
    不要直接在 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 InkPick-v1.8.0-rc.11.exe，不需要管理員權限。
+3. 執行 InkPick-v1.8.0-rc.12.exe，不需要管理員權限。
 4. 預設會縮到右下角系統匣。點拾字筆圖示顯示／隱藏浮動窗；
    也可在圖示按右鍵，選擇功能。浮動窗出現「可擷取文字」後可開始。
 5. 第一次執行會先解開內含資源、載入模型，請等待完成。
    結束程式請從系統匣選「退出」，讓辨識、儲存與背景程序先結束。
 
 同版下載檔案：
-- InkPick-v1.8.0-rc.11.zip：EXE、離線說明、文件套版圖文說明、授權及模型來源。
-- InkPick-v1.8.0-rc.11.exe：單獨的相同執行檔，已內含所需執行環境與模型。
-- InkPick-v1.8.0-rc.11-README.txt：本份離線操作說明。
-- InkPick-v1.8.0-rc.11-SHA256SUMS.txt：同版檔案 SHA256。
-- InkPick-v1.8.0-rc.11-validation-metadata.zip：去識別驗證摘要，執行程式不需要它。
+- InkPick-v1.8.0-rc.12.zip：EXE、離線說明、文件套版圖文說明、授權及模型來源。
+- InkPick-v1.8.0-rc.12.exe：單獨的相同執行檔，已內含所需執行環境與模型。
+- InkPick-v1.8.0-rc.12-README.txt：本份離線操作說明。
+- InkPick-v1.8.0-rc.12-SHA256SUMS.txt：同版檔案 SHA256。
+- InkPick-v1.8.0-rc.12-validation-metadata.zip：去識別驗證摘要，執行程式不需要它。
 
 可在 PowerShell 核對下載檔：
-Get-FileHash .\InkPick-v1.8.0-rc.11.exe -Algorithm SHA256
+Get-FileHash .\InkPick-v1.8.0-rc.12.exe -Algorithm SHA256
 將結果與同版 SHA256SUMS 裡的 EXE 那一列比對。
 不要把其他版本的 EXE、ZIP 或校驗檔混在一起。
 
@@ -48,7 +48,7 @@ Get-FileHash .\InkPick-v1.8.0-rc.11.exe -Algorithm SHA256
 第一次設定
 1. 讓來源第一列及 B 資料同時顯示於主螢幕，點浮動窗「整列搜尋」，
    或從系統匣選「整列搜尋（多 A／共用 B）」。
-2. 先替預設「欄位 1」 按「框選」，需要其他欄位再按「新增 A 欄位」，
+2. 先替預設「欄位 1」按「框選」，需要其他欄位再按「新增 A 欄位」，
    框住同一列的姓名、編號、金額等。
    可改名或移除，最多 20 個 A；下一列時所有 A 會一起移動相同距離。
 3. 按「框選 B 範圍」，一次圈住所有 A 共用的可見搜尋區；A 和 B 不可重疊。
@@ -89,8 +89,11 @@ Get-FileHash .\InkPick-v1.8.0-rc.11.exe -Algorithm SHA256
   無法確認新列時仍會按間隔檢查、等待穩定；要停止等待請按暫停或關閉。
 
 桌面標示與停止
-- 控制窗可移動、縮放與切換「置頂」，「標記填色濃度」可調，文字保持清楚。
-  標示平時點擊穿透，可直接操作下面的軟體；要改範圍請回控制窗按框選，Esc 取消。
+- B 區標示直接顯示三行：欄位名稱與狀態、A 文字、B 候選文字，預設不畫 A 框。
+  長文省略；B 區太小放不下全部卡片時顯示「另有幾筆」，回搜尋面板查看。
+- 「標示置頂」只控制 B 標示。控制窗是一般視窗，可被其他軟體蓋住，B 標示仍可留在上層。
+  控制窗可移動、縮放；「標記填色濃度」只調整填色，文字保持清楚。
+  標示點擊穿透；要改範圍請回控制窗按框選，Esc 取消。
 - 為免 OCR 讀到標示，擷取前暫時隱藏、擷取後恢復，可能短暫閃動。
   仍需把控制窗移開來源；透明或置頂不代表能讀到被蓋住的原文。
 - 開窗不自動搜尋；「開始搜尋」或手動換列才啟動搜尋，校正另做一次畫面取樣。
@@ -471,6 +474,14 @@ OCR 可選 PP-OCRv6 Small／Medium，兩者都已內含；Medium 較耗記憶體
 任何漏洞、漏掃或查詢失敗都會停止發布。
 掃描不涵蓋所有原生 DLL，也不代表不存在未知漏洞。
 
+rc.12 另修補實際舊 payload 的 Qt 6.11.2 原生公告，
+PySide6-Essentials 與 shiboken6 鎖定 6.11.3，成品必須核對實際 Qt 版本。
+包含 Core CBOR 的 CVE-2026-107157／CVE-2026-105924，
+以及 Network HTTP/2 的 CVE-2026-95620；不把未封裝 Qt5Compat 的公告算成產品命中。
+Python 套件零發現不能替代這些原生 DLL 檢查。
+另移除 Qt 打包 hook 外帶的舊 OpenSSL 3.0.16 與未使用的 TLS plugins，
+保留 CPython SSL 所需的 3.5.9；沒有修改使用者系統的 OpenSSL。
+
 手寫回傳候選後會結束輔助程序，下一次書寫再啟動。
 新筆畫、清除或重新辨識會取消過期手寫工作；OCR 閒置時改採阻塞等待。
 系統匣、快捷鍵、資料庫與工作佇列等待，以及載入的 OCR 模型仍保留。
@@ -488,6 +499,16 @@ Windows 另用同版 EXE 執行阻擋對外連線的功能檢查。
 
 十、離線驗證與證據界線
 ----------------------------------------
+GUI／原生／Defender 探針只在建置與驗證時執行，使用時不在背景啟動這些工具。
+本版 GUI 會按面板／操作清單驗證指定入口、設定、歷史、編輯、選字、文件、
+手寫、兩種核對、系統匣與退出流程，使用合成資料；不代表所有輸入都測過。
+原生元件另核對實際 EXE／DLL／PYD 清冊、來源、匯入、簽章及 Defender 掃描。
+簽章未知不算有效，防毒不可用／逾時／未完成不算零偵測通過；
+清冊完整也不等於每個檔案內所有靜態庫的完整 SBOM 或全部未知漏洞均已排除。
+同版結果須對上 EXE 雜湊，不能拿 rc.11 的成功當 rc.12 證據。
+詳細的面板／操作表及限制在 ZIP 的 docs/VALIDATION_COVERAGE.md，
+實際結果在同版 validation metadata；真人筆跡與乾淨實機仍須另驗收。
+
 這是候選測試版，不保證任意文件或真人筆跡的辨識準確率。
 發布流程會對同一份 Windows EXE 核對模型、PDFium、內嵌資源及檔案雜湊，
 執行 OCR／資料庫、啟閉、手寫與文件探針，並在阻擋對外連線時重跑。
@@ -518,6 +539,9 @@ python src/main.py --smoke-app source-app-smoke.json
 python src/main.py --self-test-handwriting source-handwriting.json
 python src/main.py --self-test-handwriting-image source-handwriting-image.json
 python src/main.py --self-test-documents source-documents.json
+python src/main.py --self-test-comparison source-comparison.json
+python src/main.py --self-test-shared-search source-shared-search.json
+python src/main.py --self-test-gui source-gui.json
 python scripts/build.py
 
 最後一項建置指令僅用於 Windows。
@@ -525,5 +549,5 @@ python scripts/build.py
 Linux 無桌面測試可設定 QT_QPA_PLATFORM=offscreen。
 
 有網路時可查閱的版本與來源（主要操作不依賴這些網址）：
-https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.11
+https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.12
 https://github.com/maotai11/desktop-ocr-tool

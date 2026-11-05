@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'assert_shared_search_probe.ps1')
+. (Join-Path $PSScriptRoot 'assert_gui_probe.ps1')
 # Both offline profiles must agree with the build manifest, including decoder identity.
 $requiredProfiles = @('v6-small', 'v6-medium')
 $defaultProfile = 'v6-small'
@@ -239,6 +240,22 @@ try {
         $summary.probes[$sharedName] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $sharedPath -Algorithm SHA256).Hash.ToLowerInvariant() }
     } finally {
         $sharedProcess.Dispose()
+    }
+    $guiName = 'frozen-gui.json'
+    $guiPath = Join-Path $reports.FullName $guiName
+    if (Test-Path -LiteralPath $guiPath) { Remove-Item -LiteralPath $guiPath }
+    $guiProcess = Start-Process -FilePath $exe -ArgumentList @('--self-test-gui', "`"$guiPath`"") -PassThru
+    try {
+        if (-not $guiProcess.WaitForExit($TimeoutSeconds * 1000)) {
+            $guiProcess.Kill($true)
+            throw 'GUI feature probe timed out'
+        }
+        if ($guiProcess.ExitCode -ne 0) { throw 'GUI feature probe failed' }
+        $gui = Get-Content -LiteralPath $guiPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Assert-GuiProbe $gui $manifest.version $hash
+        $summary.probes[$guiName] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $guiPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+    } finally {
+        $guiProcess.Dispose()
     }
     if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash) { throw 'Executable changed during validation' }
     $summary.passed = $true

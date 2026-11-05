@@ -72,6 +72,16 @@ def comparison_probe(version, executable_hash, frozen=True):
 
 
 def extra_evidence(root, manifest):
+    # These byte-fixture reports validate schemas, hashes and publication
+    # binding only. They do not claim the fake EXE is a PE or was AV-scanned.
+    from native_payload_fixtures import inventory_and_report
+    with zipfile.ZipFile(root / 'artifacts' / f"InkPick-v{manifest['version']}.zip") as archive:
+        executable_size = len(archive.read(f"release-v{manifest['version']}/" + manifest['executable_name']))
+    native_inventory, native_report = inventory_and_report(
+        manifest['executable_sha256'], manifest['source']['commit'],
+        source_run_id='1234', source_run_attempt='1', executable_size=executable_size)
+    (root / 'artifacts/native-payload-inventory.json').write_text(json.dumps(native_inventory), encoding='utf-8')
+    (root / 'artifacts/native-payload-audit.json').write_text(json.dumps(native_report), encoding='utf-8')
     inventory = json.dumps({'installed': {'pillow': '13.0.0', 'pip': '26.2.2'}}).encode()
     (root / 'artifacts/dependency-inventory.json').write_bytes(inventory)
     audit = dict(schema=1, probe='dependency_vulnerabilities', passed=True,
@@ -91,6 +101,18 @@ def extra_evidence(root, manifest):
         shared = shared_search_probe(manifest['version'], manifest['executable_sha256'], frozen)
         shared['source_commit'] = manifest['source']['commit']
         destination.write_text(json.dumps(shared), encoding='utf-8')
+        if frozen:
+            candidate_gate = firewall / 'candidate-gate.json'
+            if candidate_gate.exists():
+                gate = json.loads(candidate_gate.read_text(encoding='utf-8'))
+                gate['probes'][destination.name] = {
+                    'status': 'PASSED', 'sha256': hashlib.sha256(destination.read_bytes()).hexdigest()}
+                candidate_gate.write_text(json.dumps(gate), encoding='utf-8')
+    for destination, frozen in ((root / 'source-gui.json', False),
+                                (firewall / 'frozen-gui.json', True)):
+        gui = gui_probe(manifest['version'], manifest['executable_sha256'], frozen)
+        gui['source_commit'] = manifest['source']['commit']
+        destination.write_text(json.dumps(gui), encoding='utf-8')
         if frozen:
             candidate_gate = firewall / 'candidate-gate.json'
             if candidate_gate.exists():
@@ -153,6 +175,9 @@ def extra_evidence(root, manifest):
     raw = json.dumps(shared_search_probe(manifest['version'], manifest['executable_sha256'])).encode()
     (portable / 'isolated-shared-search.json').write_bytes(raw)
     probes['isolated-shared-search.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
+    raw = json.dumps(gui_probe(manifest['version'], manifest['executable_sha256'])).encode()
+    (portable / 'isolated-gui.json').write_bytes(raw)
+    probes['isolated-gui.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
     summary = dict(schema=1, probe='isolated_profile', passed=True,
         version=manifest['version'], executable_sha256=manifest['executable_sha256'],
         clean_machine_verified=False, profile_empty=True, copied_executable_only=True,
@@ -169,3 +194,13 @@ def shared_search_probe(version, executable_hash, frozen=True):
         fixture_kind='SYNTHETIC_SHARED_SEARCH', ocr_accuracy_tested=False,
         model_inference_tested=False, overlay_capture_verified=True, source_commit='a' * 40,
         checks=dict.fromkeys(CHECK_NAMES, True))
+
+
+def gui_probe(version, executable_hash, frozen=True):
+    from src.gui_probe import GUI_CHECK_NAMES
+    return dict(schema=1, probe='gui_feature_lifecycle', version=version,
+        platform='win32', qt_platform='windows', frozen=frozen, passed=True,
+        executable_sha256=executable_hash if frozen else None, clean_machine_verified=False,
+        fixture_kind='SYNTHETIC_GUI_CONTROLS', ocr_accuracy_tested=False,
+        model_inference_tested=False, source_commit='a' * 40,
+        checks=dict.fromkeys(GUI_CHECK_NAMES, True))

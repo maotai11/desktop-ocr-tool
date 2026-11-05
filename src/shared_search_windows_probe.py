@@ -45,6 +45,9 @@ def verify_overlay_capture(app) -> bool:
     if sys.platform != 'win32' or app.platformName().lower() != 'windows':
         return False
 
+    import ctypes
+    from ctypes import wintypes
+
     import numpy as np
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QColor, QPainter
@@ -56,11 +59,12 @@ def verify_overlay_capture(app) -> bool:
     from .workers.ocr_worker import OcrWorker
 
     class Underlay(QWidget):
-        def __init__(self):
-            super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
-                             | Qt.WindowType.WindowStaysOnTopHint
-                             | Qt.WindowType.WindowDoesNotAcceptFocus)
-            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        def __init__(self, *, interactive=False):
+            flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+            if not interactive:
+                flags |= Qt.WindowType.WindowDoesNotAcceptFocus
+            super().__init__(None, flags)
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, not interactive)
             self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
 
         def paintEvent(self, event):
@@ -88,9 +92,12 @@ def verify_overlay_capture(app) -> bool:
     available = screen.availableGeometry()
     _require(available.width() >= 400 and available.height() >= 260)
     underlay = Underlay()
+    foreground = None
     window = controller = worker = capture_worker = None
     hidden = Event()
     captures, snapshots, failures, restore_observations = [], [], [], []
+    quit_on_last_window = app.quitOnLastWindowClosed()
+    app.setQuitOnLastWindowClosed(False)
     try:
         underlay.setGeometry(available.left() + 24, available.top() + 24, 352, 220)
         underlay.show()
@@ -124,12 +131,23 @@ def verify_overlay_capture(app) -> bool:
         controller = SharedSearchController(worker, capture_worker=capture_worker)
         window = SharedSearchWindow(controller)
         overlay = window.highlight_overlay
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        get_style = getattr(user32, 'GetWindowLongPtrW', user32.GetWindowLongW)
+        get_style.argtypes = [wintypes.HWND, ctypes.c_int]
+        get_style.restype = ctypes.c_ssize_t
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.SetForegroundWindow.restype = wintypes.BOOL
+        user32.GetForegroundWindow.restype = wintypes.HWND
+
+        def native_pinned(widget):
+            return bool(get_style(int(widget.winId()), -20) & 0x00000008)  # WS_EX_TOPMOST
+
         controller.updated.connect(snapshots.append)
         controller.failed.connect(failures.append)
         field_id = controller.fields[0]['id']
         _require(controller.set_a_region(field_id, a_region))
         _require(controller.set_b_region(b_region))
-        _require(controller.set_interval(3))
+        _require(controller.set_interval(6))
 
         def before_capture():
             accepted = window.before_capture()
@@ -159,7 +177,41 @@ def verify_overlay_capture(app) -> bool:
         _require(controller.start())
         wait_result(1)
         _wait(50)
-        _require(not np.array_equal(pixels(), baseline['B']))
+        displayed = pixels()
+        _require(not np.array_equal(displayed, baseline['B']))
+        cards = overlay.callouts
+        _require(len(cards) == 1 and cards[0]['name'] == controller.fields[0]['name']
+                 and cards[0]['a_text'] == cards[0]['b_text'] == 'PROBE42'
+                 and cards[0]['status'] == 'matched')
+        x, y, width, height = cards[0]['rect']
+        x, y = round(x * scale) - b_region[0], round(y * scale) - b_region[1]
+        width, height = round(width * scale), round(height * scale)
+        card_pixels = displayed[y + 3:y + height - 3, x + 3:x + width - 3]
+        # White A/B glyph pixels on the dark card prove text is actually painted,
+        # while the semantic payload above verifies the corresponding A and B.
+        _require(card_pixels.size > 0 and np.count_nonzero(np.all(card_pixels > 140, axis=2)) >= 5)
+        _require(native_pinned(overlay) and not native_pinned(window))
+        window.set_pinned(False)
+        _require(not native_pinned(overlay) and not native_pinned(window))
+        window.set_pinned(True)
+        _require(native_pinned(overlay) and not native_pinned(window))
+
+        # Another owned normal application window takes the native foreground.
+        # It paints the same fixture surface so every OCR pixel remains bounded
+        # to our synthetic content; no external application or input hook is used.
+        foreground = Underlay(interactive=True)
+        foreground.setGeometry(underlay.geometry())
+        foreground.show()
+        foreground.raise_()
+        foreground.activateWindow()
+        user32.SetForegroundWindow(int(foreground.winId()))
+        _until(lambda: user32.GetForegroundWindow() == int(foreground.winId()), timeout=2000)
+        window.showMinimized()
+        user32.SetForegroundWindow(int(foreground.winId()))
+        _wait(50)
+        _require(window.isMinimized() and not native_pinned(window) and native_pinned(overlay)
+                 and foreground.isVisible() and user32.GetForegroundWindow() == int(foreground.winId())
+                 and overlay.isVisible() and not np.array_equal(pixels(), baseline['B']))
 
         # Same-generation hide/grab/restore proves the visible native window
         # actually disappears from pixels, rather than only flipping a Qt flag.
@@ -206,6 +258,10 @@ def verify_overlay_capture(app) -> bool:
         if window is not None:
             window.highlight_overlay.deleteLater()
             window.deleteLater()
+        if foreground is not None:
+            foreground.close()
+            foreground.deleteLater()
         underlay.close()
         underlay.deleteLater()
+        app.setQuitOnLastWindowClosed(quit_on_last_window)
         _require(capture_stopped and worker_stopped)

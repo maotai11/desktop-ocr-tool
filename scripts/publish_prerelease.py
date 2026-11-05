@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.11. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.12. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.11"
+TAG = "v1.8.0-rc.12"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,7 +133,17 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版新增「整列搜尋」：同一列可框選多個 A 欄位，到一個共用 B 範圍各自找位置；可手動換列，也能校正來源軟體的選取底色後跟隨新列。
+本版把整列搜尋的核對文字直接放到 B 搜尋範圍，並將「標示置頂」與控制窗分開。切換其他軟體或最小化控制窗後，仍可在 B 位置看見欄名、A 原文與 B 辨識文字。
+
+### B 位置直接看 A／B
+- 每個已採用的位置顯示三行文字卡：欄名與「一致／需確認」、A 原文、B 文字。文字卡放在 B 範圍內，過長文字截短；空間不足時顯示還有幾個標示，完整內容仍可在控制窗查看。
+- 「標示置頂」只控制 B 桌面標示，控制窗是一般工作列視窗，可拖動、切換或最小化。B 標示保持點擊穿透；要調位置請回控制窗框選。
+- 擷取前先隱藏標示、等待畫面更新，再擷取；Windows 發布關卡實際擷取自建底圖，確認可見文字卡、置頂、切換前景與最小化控制窗，以及標示不被讀回自己的 OCR 畫面。合成測試不代表實際文件 OCR 準確率。
+
+### 這次多查了哪些項目
+- GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫、兩種核對與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
+- 對同一份 EXE 的所有內含 PE 檔建立雜湊、來源、相依匯入與簽章清單；以 Microsoft Defender 自訂掃描 EXE 及抽出的完整原生檔。工具不可用、來源無法對應、相依無法解析或掃描未完成都阻擋發布。公開 metadata 附相對路徑清單，沒有原始 runner 路徑或內容 Log。
+- Qt 更新到 6.11.3，移除不使用的 TLS 外掛與外部工具鏈帶入的舊 OpenSSL DLL；這些靜態清單與防毒掃描無法證明所有原生檔都沒有未知漏洞。範圍與未驗項目見 ZIP 的 `docs/VALIDATION_COVERAGE.md`。
 
 ### 整列搜尋：多 A、共用 B
 - 從浮動窗或系統匣開啟「整列搜尋」。先框預設 A 欄位，按「新增 A 欄位」加入姓名、編號或金額等，最多 20 欄；再框一個大家共用的 B 搜尋範圍。全部 A 設定完成後按「開始搜尋」，不用替每欄重選 B。
@@ -147,7 +157,7 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 - 同一個 Y 座標捲入新資料仍會更新內容；底色消失、多列同色或超出表格時不猜測新位置。手動換列會停用自動跟隨，改框或改列高後需重新校正。白底、斑馬紋、動畫與不等高列可能無法追蹤，請改手動操作。
 
 ### 標示、停止與隱私
-- 控制窗預設 348 × 560，可拖移、調整大小與切換置頂。桌面標示可調填色濃度，平時點擊穿透；要改位置請用控制窗的「框選」，Esc 取消。
+- 控制窗預設 348 × 560，可拖移、調整大小及最小化。「標示置頂」只改 B 桌面標示；桌面標示可調填色濃度，平時點擊穿透；要改位置請用控制窗的「框選」，Esc 取消。
 - 擷取前暫時隱藏標示，等待畫面更新後才取圖，避免讀到自己的框；可能出現短暫閃動。框只精確到 OCR 文字行，不能當作字元或儲存格定位。
 - 暫停、清除或關閉會停止後續檢查，清掉結果與標示；當前原生 OCR 需先返回，晚到結果不會重新顯示舊標示。位置與校正只保留本次執行，不存 A／B 截圖、歷史、剪貼簿或內容 Log。
 - 本版先限主螢幕且來源必須可見；遮住、最小化或畫面外的文字無法搜尋。沒有導入新的表格結構模型，也不會自動辨認合併儲存格或操作來源軟體。
@@ -184,7 +194,7 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 發布檢查綁定下列同一組檔案雜湊與來源版本：Windows 原生測試、EXE 內的 OCR／資料庫／手寫／啟閉測試，以及主程式和同次解壓的手寫引擎都被阻擋對外連線時的測試。
 發布關卡要求兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
 GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立手寫程序有逾時終止與父程序退出檢查；既有 QThread 內的 OCR 卡住限制仍在。完整第三方授權審查尚未完成。
-另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫及文件套版探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
+另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫、文件套版、固定 A／B、整列搜尋及 GUI 控制探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
 
 來源版本：`{context.source_commit}`
 套件與背景工作範圍見 [資安檢查](https://github.com/maotai11/desktop-ocr-tool/blob/{context.source_commit}/docs/SECURITY_REVIEW.md)。Linux 的合成探針會追蹤程序樹網路系統呼叫；這不代表所有 GUI 路徑或原生 DLL 已完成漏洞認證。
@@ -442,6 +452,16 @@ def public_validation_report(name: str, raw: bytes) -> bytes:
         result = safe_fields(original)
     except (ValueError, TypeError, RecursionError) as exc:
         raise PublicationError("Invalid public validation report") from exc
+    if name == 'artifacts/native-payload-inventory.json':
+        from scripts.audit_native_payload import check_inventory, canonical_bytes
+        try:
+            check_inventory(original, executable_sha256=original.get('executable_sha256'),
+                            source_commit=original.get('source_commit'))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise PublicationError('Invalid public native inventory') from exc
+        # Preserve the validator's canonical identity. Every path is a checked
+        # relative archive/wheel/system identifier; arbitrary fields fail closed.
+        return canonical_bytes(original)
     result["original_report_sha256"] = hashlib.sha256(raw).hexdigest()
     result["original_report_bytes"] = len(raw)
     # This provenance is checked against the runner before preparation. Still
@@ -532,7 +552,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
     """Bind standalone/empty-profile probes to the exact candidate EXE."""
     from scripts.prepare_public_validation import strict_json
     from scripts.verify_candidate_bundle import (
-        _check_probe, check_handwriting_image_probe, check_handwriting_probe, check_shared_search_probe,
+        _check_probe, check_handwriting_image_probe, check_handwriting_probe, check_shared_search_probe, check_gui_probe,
     )
     prefix = 'artifacts/portable-validation/'
     try:
@@ -556,6 +576,7 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
             ('isolated-documents.json', _check_document_probe),
             ('isolated-comparison.json', _check_comparison_probe),
             ('isolated-shared-search.json', check_shared_search_probe),
+            ('isolated-gui.json', check_gui_probe),
         ):
             raw = snapshots[prefix + name]
             report = strict_json(raw)
@@ -593,8 +614,9 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-comparison.json", "source-shared-search.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-comparison.json", "source-shared-search.json", "source-gui.json", "test-results.xml",
                       "artifacts/security-audit.json", "artifacts/dependency-inventory.json",
+                      "artifacts/native-payload-audit.json", "artifacts/native-payload-inventory.json",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
                       "artifacts/firewall-validation/frozen-app-smoke.json",
@@ -604,6 +626,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/firewall-validation/frozen-runtime-stress.json",
                       "artifacts/firewall-validation/frozen-comparison.json",
                       "artifacts/firewall-validation/frozen-shared-search.json",
+                      "artifacts/firewall-validation/frozen-gui.json",
                       "artifacts/portable-validation/isolated-profile-gate.json",
                       "artifacts/portable-validation/isolated-selftest.json",
                       "artifacts/portable-validation/isolated-app-smoke.json",
@@ -611,13 +634,15 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/portable-validation/isolated-handwriting-image.json",
                       "artifacts/portable-validation/isolated-documents.json",
                       "artifacts/portable-validation/isolated-comparison.json",
-                      "artifacts/portable-validation/isolated-shared-search.json"]
+                      "artifacts/portable-validation/isolated-shared-search.json",
+                      "artifacts/portable-validation/isolated-gui.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
                       "artifacts/candidate-validation/frozen-handwriting.json",
                       "artifacts/candidate-validation/frozen-handwriting-image.json",
                       "artifacts/candidate-validation/frozen-shared-search.json",
+                      "artifacts/candidate-validation/frozen-gui.json",
                       "artifacts/" + ZIP_NAME + ".sha256"]
     snapshots = {}
     for name in snapshot_names:
@@ -644,6 +669,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     require(isinstance(payload, dict) and payload.get("inspected") is True
             and payload.get("embedded_model_hashes_verified") is True
             and payload.get("embedded_handwriting_verified") is True
+            and payload.get("native_archive_coverage_verified") is True
             and payload.get("required_payload") ==
             ["python312.dll", "qwindows.dll", "onnxruntime_pybind11_state.pyd"]
             and payload.get("system_dll_closure") == "NOT_A_CLEAN_HOST_CERTIFICATION",
@@ -660,6 +686,17 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Unexpected release asset names")
     source = actual.get("source_manifest", {})
     manifest = actual.get("build_manifest", {})
+    from scripts.audit_native_payload import check_audit_report
+    native_report = json.loads(snapshots['artifacts/native-payload-audit.json'])
+    native_inventory = json.loads(snapshots['artifacts/native-payload-inventory.json'])
+    try:
+        check_audit_report(native_report, native_inventory,
+                          executable_sha256=manifest['executable_sha256'], source_commit=context.source_commit)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PublicationError('Invalid same-candidate native payload evidence') from exc
+    require(native_report.get('source_run_id') == context.run_id
+            and native_report.get('source_run_attempt') == evidence_attempt,
+            'Native payload audit belongs to another workflow run/attempt')
     audit = json.loads(snapshots['artifacts/security-audit.json'])
     inventory_bytes = snapshots['artifacts/dependency-inventory.json']
     inventory_hash = hashlib.sha256(inventory_bytes).hexdigest()
@@ -699,6 +736,16 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             raise PublicationError('Invalid shared-search lifecycle evidence') from exc
         require(shared.get('source_commit') == context.source_commit,
                 'Shared-search probe source differs from candidate')
+    from scripts.verify_candidate_bundle import check_gui_probe
+    for name, frozen in (('source-gui.json', False),
+                         ('artifacts/firewall-validation/frozen-gui.json', True)):
+        gui = json.loads(snapshots[name])
+        try:
+            check_gui_probe(gui, manifest, frozen)
+        except ValueError as exc:
+            raise PublicationError('Invalid GUI lifecycle evidence') from exc
+        require(gui.get('source_commit') == context.source_commit,
+                'GUI probe source differs from candidate')
     require(source.get("dirty") is False
             and COMMIT_RE.fullmatch(source.get("head_tree", "")) is not None
             and SHA256_RE.fullmatch(source.get("working_tree_sha256", "")) is not None,
@@ -734,7 +781,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         for name in ["BUILD_MANIFEST.json", "SOURCE_MANIFEST.json",
                      "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json",
                      "candidate-validation/frozen-handwriting.json", "candidate-validation/frozen-handwriting-image.json",
-                     "candidate-validation/frozen-shared-search.json"]:
+                     "candidate-validation/frozen-shared-search.json", "candidate-validation/frozen-gui.json"]:
             require(archive.getinfo(prefix + name).file_size <= MAX_JSON_BYTES,
                     "Oversized embedded validation metadata")
             metadata_files[name] = archive.read(prefix + name)

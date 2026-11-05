@@ -7,7 +7,9 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts.verify_candidate_bundle import VERSION, sha256_file, verify_candidate
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe, gui_probe
+
+EXE_BYTES = b'fake-exe-byte-fixture'.ljust(128, b'\0')
 
 
 def encoded(value):
@@ -24,9 +26,12 @@ def candidate(tmp_path, monkeypatch):
     artifacts.mkdir()
     firewall = artifacts / 'firewall-validation'
     firewall.mkdir()
-    source = {'commit': 'a' * 40, 'head_tree': 'b' * 40, 'dirty': False}
+    from scripts.audit_native_payload import ROOT, file_digest
+    source = {'commit': 'a' * 40, 'head_tree': 'b' * 40, 'dirty': False,
+              'files': {'scripts/native_security_policy.py': {
+                  'sha256': file_digest(ROOT / 'scripts/native_security_policy.py')}}}
     source_bytes = encoded(source)
-    exe = b'fake-exe-byte-fixture'
+    exe = EXE_BYTES
     profiles, _ = fixture_profiles()
     models = profiles['v6-small']
     common = {'schema': 2, 'passed': True, 'frozen': True, 'platform': 'win32',
@@ -44,13 +49,14 @@ def candidate(tmp_path, monkeypatch):
     probes['frozen-handwriting.json'] = handwriting_probe(VERSION, hashlib.sha256(exe).hexdigest())
     probes['frozen-handwriting-image.json'] = image_probe(VERSION, hashlib.sha256(exe).hexdigest(), profiles)
     probes['frozen-shared-search.json'] = shared_search_probe(VERSION, hashlib.sha256(exe).hexdigest())
+    probes['frozen-gui.json'] = gui_probe(VERSION, hashlib.sha256(exe).hexdigest())
     manifest = {'handwriting': handwriting_identity(), 'schema': 2, 'platform': 'win32', 'version': VERSION,
                 'executable_name': f'InkPick-v{VERSION}.exe',
                 'executable_sha256': hashlib.sha256(exe).hexdigest(), 'models': models,
                 'default_model_profile': 'v6-small', 'model_profiles': profiles,
                 'ocr_validation_fixtures': fixture_validation()[0],
                 'source_manifest_sha256': hashlib.sha256(source_bytes).hexdigest(),
-                'source': source,
+                'source': {key: value for key, value in source.items() if key != 'files'},
                 'candidate_probes': {name: {'status': 'PASSED', 'sha256': hashlib.sha256(encoded(value)).hexdigest()}
                                      for name, value in probes.items()}}
     contents = {'BUILD_MANIFEST.json': encoded(manifest), 'SOURCE_MANIFEST.json': source_bytes,
@@ -68,7 +74,7 @@ def candidate(tmp_path, monkeypatch):
     write_bundle()
     for name, value in probes.items():
         (firewall / name).write_bytes(encoded(value))
-        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json', 'frozen-shared-search.json': 'source-shared-search.json'}[name]
+        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json', 'frozen-shared-search.json': 'source-shared-search.json', 'frozen-gui.json': 'source-gui.json'}[name]
         (tmp_path / source_name).write_bytes(encoded(dict(value, frozen=False, executable_sha256=None)))
     gate = {'passed': True, 'version': VERSION, 'executable_sha256': manifest['executable_sha256'],
             'clean_machine_verified': False,
@@ -85,7 +91,7 @@ def test_verified_evidence_binds_actual_zip_and_exe(candidate):
     report = verify_candidate(root, 'a' * 40)
     assert report['passed'] and report['source_commit'] == 'a' * 40
     assert report['bundle_sha256'] == sha256_file(root / 'artifacts' / report['bundle_filename'])
-    assert report['executable_sha256'] == hashlib.sha256(b'fake-exe-byte-fixture').hexdigest()
+    assert report['executable_sha256'] == hashlib.sha256(EXE_BYTES).hexdigest()
     assert report['frozen_payload']['inspected'] is False
     assert report['clean_machine_verified'] is False
 

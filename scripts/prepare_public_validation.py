@@ -17,14 +17,14 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.11'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.12'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'source_shared_search', 'network_audit', 'build', 'firewall', 'portable_profile', 'bundle_verify')
-WINDOWS_ONLY = {'build', 'firewall', 'portable_profile', 'bundle_verify'}
+    'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'source_shared_search', 'source_gui', 'network_audit', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify')
+WINDOWS_ONLY = {'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
 BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed worker_pid_verified '
@@ -44,25 +44,33 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'shared_b_reused multiple_a_rows one_b_match_per_a strict_numbers ambiguous_requires_selection '
     'manual_selection_applied manual_row_shift blue_calibration blue_follow_stable same_y_scroll_refreshed '
     'stale_rows_discarded capture_overlay_hidden clipboard_history_untouched overlay_capture_verified '
+    'b_inline_comparison b_pin_independent native_archive_coverage_verified native_security_policy_passed '
+    'launcher_actions_and_capture_cancel settings_cancel_and_apply history_search_tags_and_pin '
+    'editor_save_and_history_refresh ocr_selection_copy_explicit document_import_template_zoom_clear '
+    'handwriting_stroke_candidate_copy paired_comparison_controls shared_search_controls '
+    'tray_pause_and_quit_route windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
     'wall_seconds timeout_seconds memory_limit_mib peak_sampled_direct_child_rss_kib '
     'rss_sampling_ms unexpected_children_at_test_exit collected executable_bytes bundle_bytes '
-    'size_bytes label_count model_size_bytes source_size_bytes stdout_bytes character_count output_classes packages_count vulnerabilities_count internet_family_calls cases_completed cases_passed').split())
+    'size_bytes label_count model_size_bytes source_size_bytes stdout_bytes character_count output_classes packages_count vulnerabilities_count internet_family_calls cases_completed cases_passed '
+    'native_files_count archive_entries_count unmapped_count unresolved_dependencies_count invalid_signatures_count '
+    'signature_files_checked antivirus_detections_count antivirus_scanned_files_count scan_duration_seconds sample_submission_consent maps_reporting').split())
 HASHES = frozenset(('sha256 executable_sha256 bundle_sha256 model_sha256 character_sha256 '
     'helper_sha256 helper_source_sha256 alphabet_sha256 validation_sha256 '
-    'source_manifest_sha256 report_sha256 working_tree_sha256 decoder_sha256 dependency_inventory_sha256').split())
+    'source_manifest_sha256 report_sha256 working_tree_sha256 decoder_sha256 dependency_inventory_sha256 '
+    'files_inventory_sha256 scan_scope_files_sha256 native_security_policy_sha256').split())
 COMMITS = {'commit', 'source_commit', 'head_tree', 'source_tree', 'upstream_commit'}
 ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle', 'comparison_lifecycle', 'shared_search_lifecycle', 'dependency_vulnerabilities', 'runtime_network'},
+              'document_template_lifecycle', 'comparison_lifecycle', 'shared_search_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'dependency_vulnerabilities', 'runtime_network'},
     'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
-    'scanner': {'pip-audit'},
+    'scanner': {'pip-audit', 'Microsoft Defender Antivirus'},
     'scanner_version': {'2.10.1'},
-    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS', 'SYNTHETIC_SHARED_SEARCH'},
+    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS', 'SYNTHETIC_SHARED_SEARCH', 'SYNTHETIC_GUI_CONTROLS'},
     'phase': {'completed', 'waiting_firewall', 'starting', 'shutdown'},
     'status': {'PASSED', 'FAILED', 'NOT_RUN', 'RECORDED_NOT_A_TRUSTED_LOCK'},
     'source_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
@@ -80,9 +88,9 @@ CONTAINERS = {'checks', 'phases', 'collection', 'execution', 'model_profiles', '
     'v6-small', 'v6-medium', 'source_manifest', 'build_manifest', 'handwriting', 'helper',
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
-    'frozen-handwriting-image.json', 'frozen-shared-search.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json', 'probes', 'candidate_probes',
-    'threads_stopped', 'dependency_inventory', 'job_before_cleanup', 'job_after_cleanup'}
+    'frozen-handwriting-image.json', 'frozen-shared-search.json', 'frozen-gui.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
+    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json', 'isolated-gui.json', 'probes', 'candidate_probes',
+    'threads_stopped', 'dependency_inventory', 'native_payload_audit', 'job_before_cleanup', 'job_after_cleanup'}
 STATUSES = {'PASSED', 'FAILED', 'NOT_RUN'}
 
 
@@ -144,13 +152,25 @@ def safe_fields(value, depth=0, context=None):
             versions = {'pp-ocrv6-small','pp-ocrv6-medium','ppocr-mobile-v2.0'} if context in ('det','rec','cls') else {VERSION}
             if type(item) is str and item in versions: result[key] = item
             else: invalid.append(key)
+        elif key in ('source_run_id', 'source_run_attempt'):
+            if type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item): result[key] = item
+            else: invalid.append(key)
+        elif key in ('scanner_version', 'antivirus_signature_version') and value.get('scanner') == 'Microsoft Defender Antivirus':
+            if type(item) is str and re.fullmatch(r'[0-9]{1,10}(?:\.[0-9]{1,10}){1,5}', item): result[key] = item
+            else: invalid.append(key)
+        elif key in ('signature_updated_at', 'scan_started_at', 'scan_finished_at'):
+            if type(item) is str and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|\+00:00)', item): result[key] = item
+            else: invalid.append(key)
+        elif key == 'am_running_mode':
+            if item in ('Normal', 'Passive Mode', 'SxS Passive Mode', 'EDR Block Mode'): result[key] = item
+            else: invalid.append(key)
         elif key in ENUMS and (key != 'status' or type(item) is str):
             if type(item) is str and item in ENUMS[key]: result[key] = item
             else: invalid.append(key)
         elif key in NUMBERS:
             if item is None and key in ('training_rank', 'peak_sampled_direct_child_rss_kib', 'exit_code'): result[key] = None
-            elif key in ('elapsed_seconds','wall_seconds') and safe_number(item) and item >= 0: result[key] = item
-            elif key not in ('elapsed_seconds','wall_seconds') and type(item) is int and safe_number(item) and (item >= 0 or key == 'exit_code'): result[key] = item
+            elif key in ('elapsed_seconds','wall_seconds','scan_duration_seconds') and safe_number(item) and item >= 0: result[key] = item
+            elif key not in ('elapsed_seconds','wall_seconds','scan_duration_seconds') and type(item) is int and safe_number(item) and (item >= 0 or key == 'exit_code'): result[key] = item
             else: invalid.append(key)
         elif key in CONTAINERS:
             if isinstance(item, dict): result[key] = safe_fields(item, depth + 1, key)
@@ -263,8 +283,10 @@ def observed_result(value):
     if any(r.get('invalid_allowlisted_fields') for r in records): return 'INVALID_FIELDS'
     failed = any(r.get('passed') is False or (r.get('probe') == 'shared_search_lifecycle'
         and r.get('platform') == 'win32' and r.get('overlay_capture_verified') is False)
+        or (r.get('probe') == 'native_payload_audit' and (r.get('antivirus_scan_completed') is not True or r.get('native_security_policy_passed') is not True))
         or any(r.get(k) is True for k in ('timed_out','output_limit_exceeded','nonpublic_error_present')) or (type(r.get('exit_code')) is int and r['exit_code'] != 0) or any(r.get(k, 0) > 0 for k in
-        ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls')) or
+        ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls',
+         'unmapped_count', 'unresolved_dependencies_count', 'invalid_signatures_count', 'antivirus_detections_count')) or
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
              'page_override','template_merge','source_unchanged','temporary_files_cleaned',
@@ -275,7 +297,11 @@ def observed_result(value):
              'batch_groups_isolated','batch_serialized','batch_unchanged_skipped','batch_cancel_stops_all',
              'shared_b_reused','multiple_a_rows','one_b_match_per_a','strict_numbers','ambiguous_requires_selection',
              'manual_selection_applied','manual_row_shift','blue_calibration','blue_follow_stable','same_y_scroll_refreshed',
-             'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched')))
+             'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched','b_inline_comparison','b_pin_independent',
+             'launcher_actions_and_capture_cancel','settings_cancel_and_apply','history_search_tags_and_pin',
+             'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',
+             'handwriting_stroke_candidate_copy','paired_comparison_controls','shared_search_controls',
+             'tray_pause_and_quit_route','windows_and_workers_closed')))
         for r in records)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'
@@ -290,8 +316,11 @@ def sources():
         ('artifacts/source-documents.json', 'json', False),
         ('source-comparison.json', 'json', False),
         ('source-shared-search.json', 'json', False),
+        ('source-gui.json', 'json', False),
         ('artifacts/firewall-validation/frozen-comparison.json', 'json', True),
         ('artifacts/security-audit.json', 'json', False),
+        ('artifacts/native-payload-audit.json', 'json', True),
+        ('artifacts/native-payload-inventory.json', 'hash', True),
         ('artifacts/runtime-network-audit.json', 'json', False),
         ('artifacts/document-validation/frozen-documents.json', 'json', True),
         ('artifacts/pytest-bounds.json', 'json', False),
@@ -303,12 +332,12 @@ def sources():
         ('artifacts/handwriting-native-probe.json', 'json', False),
         ('artifacts/verified-bundle.json', 'json', True)]
     for directory in ('candidate-validation', 'firewall-validation'):
-        for name in ('frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json'):
+        for name in ('frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json', 'frozen-gui.json'):
             result.append((f'artifacts/{directory}/{name}', 'json', True))
     for name in ('candidate-gate.json', 'handwriting-firewall-gate.json', 'frozen-runtime-stress.json'):
         result.append((f'artifacts/firewall-validation/{name}', 'json', True))
     for name in ('isolated-profile-gate.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json'):
+                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json', 'isolated-gui.json'):
         result.append((f'artifacts/portable-validation/{name}', 'json', True))
     result.extend([
         (f'artifacts/release-v{VERSION}/BUILD_MANIFEST.json', 'json', True),
@@ -327,7 +356,10 @@ def source_step(relative):
         'artifacts/source-documents.json':'source_documents',
         'source-comparison.json':'source_comparison',
         'source-shared-search.json':'source_shared_search',
+        'source-gui.json':'source_gui',
         'artifacts/security-audit.json':'security_audit',
+        'artifacts/native-payload-audit.json':'native_audit',
+        'artifacts/native-payload-inventory.json':'native_audit',
         'artifacts/runtime-network-audit.json':'network_audit',
         'artifacts/document-validation/frozen-documents.json':'firewall',
         'artifacts/dependency-inventory.json':'installed_inventory',
