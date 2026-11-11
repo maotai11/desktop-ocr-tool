@@ -76,6 +76,17 @@ def configure(window):
     window.set_region('B', (40, 0, 30, 30, 1))
 
 
+def test_open_restores_minimized_panel_without_starting_comparison(window):
+    configure(window)
+    for _ in range(3):
+        window.open()
+        window.showMinimized()
+        assert window.isMinimized()
+        window.open()
+        assert window.isVisible() and not window.isMinimized()
+        assert not window.controller.running and window.controller.starts == 0
+
+
 def result(verdict='match'):
     return {'a': '<tag> A，123', 'b': 'A123', 'verdict': verdict,
             'cycle': 7, 'timestamp': '2026-11-03T12:34:56'}

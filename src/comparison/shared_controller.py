@@ -350,9 +350,12 @@ class SharedSearchController(QObject):
             return
         if self._token is None:
             self._token, self._event = uuid4().hex, Event()
+            token = self._token
             self._started = monotonic()
             self._deadline.start()
             self._clear_results()
+            if not self._active_generation(token):
+                return
         if self._expired():
             return
         if self._capture_token is not None:
@@ -383,8 +386,11 @@ class SharedSearchController(QObject):
         if self._token != self._capture_generation or self._event.is_set():
             self._restore_capture()
             return
+        token, capture_token = self._token, self._capture_token
         self._set_state('calibrating' if phase == 'calibrate' else 'checking')
-        self._settle.start()
+        if (token == self._token and capture_token == self._capture_token
+                and not self._closing and not self._event.is_set()):
+            self._settle.start()
 
     def _take_capture(self):
         if (self._token is None or self._closing or self._event.is_set()
@@ -527,7 +533,10 @@ class SharedSearchController(QObject):
                 self.b_region, hashes['B'], tracking, self._settings_signature())
 
     def _source_capture(self, images, hashes, regions):
+        token = self._token
         tracking = self._tracking_key(images, move=True)
+        if not self._active_generation(token):
+            return
         if tracking is None:
             self._wait_next(200 if self.state == 'tracking_pending' else self.interval * 1000)
             return
@@ -543,8 +552,8 @@ class SharedSearchController(QObject):
             for field_id, result in self._last_payload.items():
                 self._fields[field_id]['result'] = deepcopy(result)
             self.fields_changed.emit()
-            self._emit_snapshot('unchanged')
-            self._wait_next(self.interval * 1000)
+            if self._emit_snapshot('unchanged', token):
+                self._wait_next(self.interval * 1000)
             return
         self._selected_ids.clear()
         self._source_key = key
@@ -563,7 +572,8 @@ class SharedSearchController(QObject):
             self._work = ['B', *self._fields]
         self._cache_key = cache_key
         self._set_state('reading')
-        self._submit_next()
+        if self._active_generation(token):
+            self._submit_next()
 
     def _submit_next(self):
         if self._closing or not self.running or self._token is None or self._event.is_set() or self._expired():
@@ -580,8 +590,10 @@ class SharedSearchController(QObject):
         if not getattr(self._ocr, 'accepts_document_work', True):
             self._fail('辨識工作已停止，請重新開啟程式。')
             return
+        token = self._token
         self._set_state('waiting')
-        self._retry.start()
+        if self._active_generation(token):
+            self._retry.start()
 
     @staticmethod
     def _safe_result(result, region):
@@ -631,7 +643,10 @@ class SharedSearchController(QObject):
         self._submit_next()
 
     def _verify_capture(self, images, hashes, phase):
+        token = self._token
         tracking = self._tracking_key(images, move=False)
+        if not self._active_generation(token):
+            return
         try:
             key = self._key(hashes, tracking) if tracking is not None else None
         except ValueError:
@@ -641,8 +656,11 @@ class SharedSearchController(QObject):
             self._selected_ids.clear()
             self._last_key = self._last_payload = self._last_a = self._last_b = None
             self._clear_results()
+            if not self._active_generation(token):
+                return
             self._set_state('changed')
-            self._wait_next(200)
+            if self._active_generation(token):
+                self._wait_next(200)
             return
         if phase == 'choice':
             self._a_results = deepcopy(self._last_a)
@@ -658,17 +676,26 @@ class SharedSearchController(QObject):
         if phase != 'choice':
             self._cycle += 1
         self.fields_changed.emit()
-        if self._token is None or not self.running:
-            return
-        self._emit_snapshot('ready')
-        self._wait_next(self.interval * 1000)
+        if self._emit_snapshot('ready', token):
+            self._wait_next(self.interval * 1000)
 
-    def _emit_snapshot(self, state):
+    def _active_generation(self, token):
+        return (token is not None and token == self._token and self.running
+                and not self._closing and not self._event.is_set())
+
+    def _emit_snapshot(self, state, token):
+        # Qt slots may pause/restart synchronously; only this generation may
+        # publish its result or release the cycle's timers and capture buffers.
+        if not self._active_generation(token):
+            return False
         self._set_state(state)
+        if not self._active_generation(token):
+            return False
         self.updated.emit({'fields': self.fields, 'b_region': self.b_region,
                            'tracking_region': self.tracking_region, 'row_pitch': self.row_pitch,
                            'auto_follow': self.auto_follow, 'calibrated': self.calibrated,
                            'timestamp': self._timestamp, 'cycle': self._cycle, 'state': state})
+        return self._active_generation(token)
 
     def _wait_next(self, milliseconds):
         self._deadline.stop()

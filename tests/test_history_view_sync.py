@@ -98,7 +98,7 @@ def test_archive_category_excludes_unarchived_and_refreshes_after_restore(views)
 
 def test_console_editor_update_refreshes_float_and_console(views, monkeypatch):
     widget, console, ids = views
-    class Editor(QWidget):
+    class Editor(QDialog):
         item_updated = Signal(int)
 
         def __init__(self, **kwargs):

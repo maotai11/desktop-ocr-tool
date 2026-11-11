@@ -1,6 +1,6 @@
 # 套件與背景工作檢查
 
-Python 套件歷史修補基準：rc.5（2026-11-02）；原生修補基準：rc.12（2026-11-05）；整列搜尋標示與背景工作說明更新：rc.13（2026-11-11）。本文件說明修正與檢查方法；每次正式發布的實際結果以同一來源版本的 validation metadata 為準。
+Python 套件歷史修補基準：rc.5（2026-11-02）；原生修補基準：rc.12（2026-11-05）；整列搜尋標示更新：rc.13；浮窗狀態與背景工作收尾更新：rc.14（2026-11-11）。本文件說明修正與檢查方法；每次正式發布的實際結果以同一來源版本的 validation metadata 為準。
 
 ## 已知漏洞與套件更新
 
@@ -79,6 +79,12 @@ rc.10 的掃描範圍包含設定消費點、UI action／signal、工作者生�
 
 27 個沒有接入 Core 的新預設設定已退休，原因列在 `RETIRED_CORE_SETTINGS`；舊 JSON 額外欄位仍可讀回與儲存，不會因此啟用實驗引擎或刪掉舊設定。可選 Paddle／CnOCR 及舊預處理 API 是保留的擴充介面，核心 EXE 不會因掃描而載入它們。主題、字體與圖片剪貼簿的未支援控制維持明確停用。詳細分類見 [設定接線與節點稽核](CONFIG_WIRING_MATRIX.md)。這是針對已列路徑的有限檢查，不能當作所有動態分支的形式證明。
 
+## rc.14 浮窗關閉與晚到工作
+
+這次實際重現了隱藏手寫窗仍送出延遲辨識、helper 失敗後立即重試被舊結束通知丟棄、取消框選後沿用舊手勢，以及核對通知內暫停／重開被舊流程干擾。修正使隱藏／關閉先退役該次工作，回覆與等待操作核對目前輪次；退出期間不接受新工具入口，已結束的設定／標籤模態返回也不能再寫設定或 DB。
+
+正常關閉編輯器不擅自保存草稿，最小化後還原則保留既有草稿。已接受的儲存與單次原生辨識仍依既有收尾規則完成，不能解讀為強制立刻中止所有工作。這些修正不加入網路連線、執行資料檔或新常駐輪詢。逐項操作、回歸依據與未覆蓋範圍見 [浮窗狀態檢查](FLOATING_STATE_AUDIT.md)；正式完成狀態仍以同版報告為準。
+
 ## 整列搜尋與選取列跟隨（rc.11 加入，rc.13 更新標示）
 
 「整列搜尋」是與原有固定位置 A／B 核對分開的控制流程。最多 20 個 A 欄位共用一個 B 範圍，每個 A 最多採用一個位置；重複候選由使用者選取。全部 A 共用比對方式；一般模式的數字片段仍保留正負號、小數點、千分位、百分號及前導零，不將 O／I 猜成 0／1。文字相似門檻固定 95%，與 OCR 信心分開判斷；逐字模式停用近似，原有複製清理設定不會先改掉待比對原文。近似候選即使唯一或經手選也維持需要確認，A／B 原始 OCR 的 needs_review 分別阻擋確定命中；行級框不宣稱行內重複數字的逐字定位。
@@ -151,4 +157,4 @@ python scripts/audit_runtime_network.py --report artifacts/runtime-network-audit
 
 CI 會自動設定來源版本並執行相同指令；離線使用者不需執行或安裝掃描工具。這些 GUI／原生／Defender 探針只在建置與驗證時執行，應用程式一般使用流程不會在背景啟動它們。
 
-GUI 操作使用 `python src/main.py --self-test-gui source-gui.json`，報告 12 個具名控制流程；固定位置核對及整列搜尋另用 `--self-test-comparison`、`--self-test-shared-search`。Windows 建置後由 `scripts/validate_native_payload.ps1` 對同版 EXE 執行原生清冊、來源／匯入／簽章及 Defender，再由發佈器重新核對檔案與範圍雜湊。只跑 `audit_native_payload.py` 的靜態階段，不能代替 Windows 簽章與防毒完成。具體欄位、12 項 GUI 操作與人工剩餘在 [驗證矩陣](VALIDATION_COVERAGE.md)。
+GUI 操作使用 `python src/main.py --self-test-gui source-gui.json`，報告 15 個具名控制流程；固定位置核對及整列搜尋另用 `--self-test-comparison`、`--self-test-shared-search`。Windows 建置後由 `scripts/validate_native_payload.ps1` 對同版 EXE 執行原生清冊、來源／匯入／簽章及 Defender，再由發佈器重新核對檔案與範圍雜湊。只跑 `audit_native_payload.py` 的靜態階段，不能代替 Windows 簽章與防毒完成。具體欄位、15 項 GUI 操作與人工剩餘在 [驗證矩陣](VALIDATION_COVERAGE.md)。

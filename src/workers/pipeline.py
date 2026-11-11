@@ -27,6 +27,8 @@ class Pipeline(QObject):
         self.history_maintenance = None
         self._results_drained = False
         self._ocr_selections = {}
+        self._capture_overlay = None
+        self._switching_capture = False
         self._tools_poll = QTimer(self)
         self._tools_poll.setInterval(25)
         self._tools_poll.timeout.connect(self._finish_shutdown)
@@ -59,7 +61,52 @@ class Pipeline(QObject):
         self.history_maintenance = controller
         controller.stopped.connect(self._maybe_stop_database)
 
+    def set_capture_overlay(self, overlay):
+        """Own the normal selector just like the other cancellable UI tools."""
+        self._capture_overlay = overlay
+        overlay.cancelled.connect(self._capture_cancelled)
+        self.widget.region_tool_requested.connect(self.cancel_region_capture)
+
+    def _capture_cancelled(self):
+        if not self.closing and not self._switching_capture:
+            self._reveal_launcher()
+
+    def _reveal_launcher(self):
+        if self.closing:
+            return
+        if getattr(self.widget, 'isMinimized', lambda: False)():
+            self.widget.showNormal()
+        else:
+            self.widget.show()
+
+    def cancel_region_capture(self):
+        # Switching tools must not resurrect the launcher under the new selector.
+        self._switching_capture = True
+        try:
+            if self._capture_overlay is not None:
+                self._capture_overlay._cancel()
+        finally:
+            self._switching_capture = False
+
+    def start_region_capture(self, mode):
+        if self.closing or self._capture_overlay is None:
+            return
+        if mode not in ('region_ocr', 'region_image'):
+            raise ValueError('Unsupported region capture mode')
+        from ..clipboard.writer import get_clipboard_epoch
+        self.widget.prepare_region_capture()
+        self.widget.hide()
+        clipboard_epoch = get_clipboard_epoch()
+
+        def selected(x, y, width, height, monitor):
+            if not self.closing:
+                self.capture.capture_region(x, y, width, height, monitor, mode, clipboard_epoch)
+
+        self._capture_overlay.start_capture(selected)
+
     def _refresh_history_views(self):
+        if self.closing:
+            return
         refresh = getattr(self.widget, 'refresh_history_views', self.widget.refresh_list)
         refresh()
 
@@ -72,14 +119,12 @@ class Pipeline(QObject):
 
     @Slot(str, object)
     def captured(self, path, dto):
-        if not self.closing:
-            self.widget.show()
+        self._reveal_launcher()
         self.save_requested.emit(dto)
 
     @Slot(str)
     def capture_failed(self, error):
-        if not self.closing:
-            self.widget.show()
+        self._reveal_launcher()
         self.widget.set_ocr_status('截圖失敗：' + error)
 
     @Slot(str)
@@ -148,6 +193,8 @@ class Pipeline(QObject):
                                            else '已複製全部文字')
 
     def _selection_is_current(self, item_id, result):
+        if self.closing:
+            return False
         item = self.repo.get_by_id(item_id)
         return (not self.closing and item is not None and not item.is_deleted and
                 item.ocr_job_id == result.job_id and item.edited_text is None and
@@ -209,6 +256,10 @@ class Pipeline(QObject):
         if self.closing:
             return
         self.closing = True
+        begin_shutdown = getattr(self.widget, 'begin_shutdown', None)
+        if begin_shutdown is not None:
+            begin_shutdown()
+        self.cancel_region_capture()
         if self.history_maintenance is not None:
             self.history_maintenance.stop()
         for dialog in list(self._ocr_selections.values()):

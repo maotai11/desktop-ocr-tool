@@ -88,6 +88,7 @@ class EditorWindow(QDialog):
         self._repo = item_repo
         self._file_mgr = file_mgr
         self._ocr_worker = ocr_worker
+        self._shutting_down = False
 
         type_names = {'text': '文字', 'image': '圖片', 'mixed': '混合'}
         self.setWindowTitle(f"編輯 #{item.id} — {type_names.get(item.item_type, item.item_type)}")
@@ -454,6 +455,8 @@ class EditorWindow(QDialog):
         self._text_edit.setFocus()
 
     def _save(self):
+        if self._shutting_down:
+            return
         edited = self._text_edit.toPlainText()
         richtext = self._note_edit.toHtml()
         plaintext = self._note_edit.toPlainText()
@@ -476,6 +479,8 @@ class EditorWindow(QDialog):
             QMessageBox.warning(self, "儲存失敗", str(e))
 
     def _confirm_ocr(self):
+        if self._shutting_down:
+            return
         try:
             if self._text_edit.toPlainText() != (self._item.get_effective_text() or ''):
                 return  # Applying a candidate requires the explicit Save action.
@@ -490,7 +495,7 @@ class EditorWindow(QDialog):
             QMessageBox.warning(self, "確認失敗", str(e))
 
     def _rerun_ocr(self):
-        if not self._ocr_worker or not self._item.raw_image_path:
+        if self._shutting_down or not self._ocr_worker or not self._item.raw_image_path:
             return
         try:
             # Preserve unsaved edits and notes before closing the dialog for a
@@ -519,7 +524,7 @@ class EditorWindow(QDialog):
             QMessageBox.warning(self, '重跑 OCR 未開始', str(exc))
 
     def _save_image_as(self):
-        if not self._item.raw_image_path:
+        if self._shutting_down or not self._item.raw_image_path:
             return
         src = self._file_mgr.get_abs_path(self._item.raw_image_path)
         ext = os.path.splitext(src)[1] or '.png'
@@ -527,7 +532,13 @@ class EditorWindow(QDialog):
             self, "另存圖片", f"capture_{self._item.id}{ext}",
             "圖片檔案 (*.png *.jpg *.bmp);;所有檔案 (*)"
         )
-        if dest:
+        if dest and not self._shutting_down:
             import shutil
             shutil.copy2(src, dest)
             logger.info(f"圖片已匯出: {dest}")
+
+    def shutdown(self):
+        """Preserve the draft in memory while application shutdown drains work."""
+        self._shutting_down = True
+        self.setEnabled(False)
+        self.hide()

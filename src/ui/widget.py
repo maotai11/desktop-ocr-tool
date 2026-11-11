@@ -98,6 +98,7 @@ class FloatingWidget(QWidget):
     shared_search_status = Signal(str)
     settings_saved = Signal()
     clipboard_pause_changed = Signal(bool)
+    region_tool_requested = Signal()
 
     def __init__(self, item_repo, file_mgr, db_worker, ocr_worker,
                  cfg, data_dir, parent=None, tag_repo=None):
@@ -111,6 +112,8 @@ class FloatingWidget(QWidget):
         self.setWindowOpacity(max(0.3, min(1., float(cfg.get('ui', 'widget_opacity', default=0.95)))))
         self._data_dir = data_dir
         self._console = None
+        self._ui_closing = False
+        self._settings_dialogs = set()
         self._refreshing_history = False
         self._handwriting = None
         self._documents = None
@@ -150,7 +153,7 @@ class FloatingWidget(QWidget):
 
     def refresh_history_views(self, *_):
         """Invalidate both views without changing their filters or recursing."""
-        if self._refreshing_history:
+        if self._ui_closing or self._refreshing_history:
             return
         self._refreshing_history = True
         try:
@@ -159,6 +162,35 @@ class FloatingWidget(QWidget):
                 self._console.refresh()
         finally:
             self._refreshing_history = False
+
+    def begin_shutdown(self):
+        """Revoke UI entry points before workers drain or the database closes."""
+        if self._ui_closing:
+            return
+        self._ui_closing = True
+        self.setEnabled(False)
+        self._capture_ocr_callback = self._capture_image_callback = None
+        self._list_reveal.stop()
+        for menu in self.findChildren(QMenu):
+            menu.close()
+        for dialog in tuple(self._settings_dialogs):
+            dialog.shutdown()
+        if self._console is not None:
+            self._console.shutdown()
+        for editor in tuple(getattr(self, '_editor_windows', {}).values()):
+            editor.shutdown()
+
+    def prepare_region_capture(self):
+        """A single fullscreen selector owns input across all capture modes."""
+        if self._ui_closing:
+            return
+        self._cancel_shared_search_selection()
+        self._cancel_comparison_selection()
+        self.pause_shared_search()
+        self.pause_comparison()
+        for window in (self._shared_search, self._comparison):
+            if window is not None:
+                window.hide()
 
     def _setup_ui(self):
         from ..core.version import APP_DISPLAY_NAME
@@ -461,10 +493,14 @@ class FloatingWidget(QWidget):
             )
 
     def show_storage_locations(self):
+        if self._ui_closing:
+            return
         self._populate_storage_menu()
         self._storage_menu.popup(self._btn_data_dir.mapToGlobal(self._btn_data_dir.rect().bottomLeft()))
 
     def _open_storage_location(self, path, label):
+        if self._ui_closing:
+            return
         if path is None:
             return
         absolute = os.path.abspath(path)
@@ -479,10 +515,12 @@ class FloatingWidget(QWidget):
         self._open_storage_location(self._data_dir, "歷史資料")
 
     def open_handwriting(self):
+        if self._ui_closing:
+            return
         if self._handwriting is None:
             from .handwriting_window import HandwritingWindow
             self._handwriting = HandwritingWindow(self)
-        self._handwriting.show()
+        self._handwriting.showNormal() if self._handwriting.isMinimized() else self._handwriting.show()
         self._handwriting.raise_()
         self._handwriting.activateWindow()
 
@@ -494,7 +532,7 @@ class FloatingWidget(QWidget):
         return self._handwriting is None or self._handwriting.is_stopped
 
     def open_document_template(self):
-        if self._documents_closing:
+        if self._ui_closing or self._documents_closing:
             return
         if self._documents is None:
             from ..workers.document_worker import DocumentController
@@ -515,7 +553,7 @@ class FloatingWidget(QWidget):
             controller.busy_changed.connect(window.set_busy)
             controller.failed.connect(window.show_error)
             self._documents, self._document_controller = window, controller
-        self._documents.show()
+        self._documents.showNormal() if self._documents.isMinimized() else self._documents.show()
         self._documents.raise_()
         self._documents.activateWindow()
 
@@ -531,8 +569,9 @@ class FloatingWidget(QWidget):
         return self._document_controller is None or self._document_controller.is_stopped
 
     def open_comparison(self):
-        if self._comparison_closing:
+        if self._ui_closing or self._comparison_closing:
             return
+        self.region_tool_requested.emit()
         self._cancel_shared_search_selection()
         self.pause_shared_search()
         if self._shared_search is not None:
@@ -550,10 +589,10 @@ class FloatingWidget(QWidget):
             self._comparison_overlay = overlay
             window.select_requested.connect(self._select_comparison_region)
             window.screen_invalidated.connect(
-                lambda: overlay._cancel() if window._selection_active else None)
-            window.closed.connect(lambda: overlay._cancel() if window._selection_active else None)
+                self._cancel_comparison_selection)
+            window.closed.connect(self._cancel_comparison_selection)
             controller.group_changed.connect(
-                lambda: overlay._cancel() if window._selection_active else None)
+                lambda: self._cancel_comparison_selection() if window._selection_active else None)
             overlay.cancelled.connect(lambda: window.set_selection_active(False)
                                       if not self._comparison_closing else None)
             controller.updated.connect(self._comparison_results_changed)
@@ -585,8 +624,9 @@ class FloatingWidget(QWidget):
         self.comparison_status.emit(status)
 
     def _select_comparison_region(self, name):
-        if self._comparison_closing:
+        if self._ui_closing or self._comparison_closing:
             return
+        self.region_tool_requested.emit()
         self.hide()
         group_id = self._comparison_controller.active_group_id
         self._comparison.set_selection_active(True)
@@ -603,6 +643,13 @@ class FloatingWidget(QWidget):
             self._comparison.set_selection_active(False)
 
         self._comparison_overlay.start_capture(selected)
+
+    def _cancel_comparison_selection(self):
+        if self._comparison_overlay is not None:
+            self._comparison_overlay._cancel()
+        if (self._comparison is not None and self._comparison._selection_active
+                and not self._comparison_closing):
+            self._comparison.set_selection_active(False)
 
     def _comparison_can_capture(self):
         if self._comparison_closing or not self._comparison.can_capture():
@@ -644,10 +691,10 @@ class FloatingWidget(QWidget):
 
     def open_shared_search(self):
         """One session-only search tool, sharing the existing serialized OCR worker."""
-        if self._shared_search_closing:
+        if self._ui_closing or self._shared_search_closing:
             return
-        if self._comparison_overlay is not None and self._comparison._selection_active:
-            self._comparison_overlay._cancel()
+        self.region_tool_requested.emit()
+        self._cancel_comparison_selection()
         self.pause_comparison()
         if self._comparison is not None:
             self._comparison.hide()
@@ -694,6 +741,9 @@ class FloatingWidget(QWidget):
         self._shared_search_selection_signature = None
         if self._shared_search_selector is not None:
             self._shared_search_selector._cancel()
+        if (self._shared_search is not None and self._shared_search._selection_active
+                and not self._shared_search_closing):
+            self._shared_search.set_selection_active(False)
 
     def _shared_search_selection_cancelled(self):
         self._shared_search_selection += 1
@@ -702,8 +752,9 @@ class FloatingWidget(QWidget):
             self._shared_search.set_selection_active(False)
 
     def _select_shared_search_region(self, name):
-        if self._shared_search_closing or self._shared_search is None:
+        if self._ui_closing or self._shared_search_closing or self._shared_search is None:
             return
+        self.region_tool_requested.emit()
         controller, window = self._shared_search_controller, self._shared_search
         if name not in ('B', 'TRACK') and name not in {field['id'] for field in controller.fields}:
             return
@@ -860,9 +911,10 @@ class FloatingWidget(QWidget):
                 ]
             msg = _MSG.from_address(int(message))
             if msg.message == 0x0401:  # WM_USER + 1
-                self.show()
-                self.raise_()
-                self.activateWindow()
+                if not self._ui_closing:
+                    self.showNormal() if self.isMinimized() else self.show()
+                    self.raise_()
+                    self.activateWindow()
                 return True, 0
         return super().nativeEvent(eventType, message)
 
@@ -896,6 +948,8 @@ class FloatingWidget(QWidget):
         self._btn_batch_action.setEnabled(count > 0)
 
     def _show_batch_menu(self):
+        if self._ui_closing:
+            return
         if not self._selected_items:
             return
         from PySide6.QtWidgets import QMenu
@@ -910,6 +964,8 @@ class FloatingWidget(QWidget):
         menu.exec(self._btn_batch_action.mapToGlobal(self._btn_batch_action.rect().bottomLeft()))
 
     def _batch_copy(self):
+        if self._ui_closing:
+            return
         texts = []
         for item_id in self._selected_items:
             item = self._item_repo.get_by_id(item_id)
@@ -925,13 +981,15 @@ class FloatingWidget(QWidget):
         self.refresh_list()
 
     def _batch_delete(self):
+        if self._ui_closing:
+            return
         from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(
             self, "確認批量刪除",
             f"確定要刪除 {len(self._selected_items)} 個項目嗎？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if not self._ui_closing and reply == QMessageBox.StandardButton.Yes:
             for item_id in list(self._selected_items):
                 self._item_repo.soft_delete(item_id)
             self._selected_items.clear()
@@ -1007,6 +1065,8 @@ class FloatingWidget(QWidget):
 
     # --- List population ---
     def refresh_list(self, search_text: str = None):
+        if self._ui_closing:
+            return
         if self._batch_mode:
             self._selected_item_id = None
         # Clear items (keep stretch at end)
@@ -1069,6 +1129,8 @@ class FloatingWidget(QWidget):
         self._restyle_cards()
 
     def _on_item_copy(self, item_id: int):
+        if self._ui_closing:
+            return
         item = self._item_repo.get_by_id(item_id)
         if not item:
             return
@@ -1079,6 +1141,8 @@ class FloatingWidget(QWidget):
                 logger.info(f"已複製 item #{item_id}")
 
     def _show_item_menu(self, pos, item, card):
+        if self._ui_closing:
+            return
         menu = QMenu(self)
 
         # 複製文字
@@ -1109,8 +1173,7 @@ class FloatingWidget(QWidget):
 
         pin_text = "取消釘選" if item.is_pinned else "釘選"
         menu.addAction(pin_text).triggered.connect(
-            lambda: (self._item_repo.set_pinned(item.id, not item.is_pinned),
-                     self.refresh_history_views())
+            lambda: self._toggle_item_pin(item)
         )
 
         act_ocr = menu.addAction("重新執行 OCR")
@@ -1122,10 +1185,19 @@ class FloatingWidget(QWidget):
         menu.exec(card.mapToGlobal(pos))
 
     def _soft_delete(self, item_id: int):
+        if self._ui_closing:
+            return
         self._item_repo.soft_delete(item_id)
         self.refresh_history_views()
 
+    def _toggle_item_pin(self, item):
+        if not self._ui_closing:
+            self._item_repo.set_pinned(item.id, not item.is_pinned)
+            self.refresh_history_views()
+
     def _copy_item_image(self, item):
+        if self._ui_closing:
+            return
         if not item.raw_image_path:
             return
         abs_p = self._file_mgr.get_abs_path(item.raw_image_path)
@@ -1133,6 +1205,8 @@ class FloatingWidget(QWidget):
         write_image_to_clipboard(abs_p)
 
     def _save_item_image(self, item):
+        if self._ui_closing:
+            return
         if not item.raw_image_path:
             return
         from PySide6.QtWidgets import QFileDialog
@@ -1142,15 +1216,18 @@ class FloatingWidget(QWidget):
             self, "另存圖片", f"capture_{item.id}{ext}",
             "圖片 (*.png *.jpg *.bmp);;所有檔案 (*)"
         )
-        if dest:
+        if dest and not self._ui_closing:
             import shutil
             shutil.copy2(src, dest)
 
     def _open_editor(self, item):
+        if self._ui_closing:
+            return
         if not hasattr(self, '_editor_windows'):
             self._editor_windows = {}
         if item.id in self._editor_windows:
             w = self._editor_windows[item.id]
+            w.showNormal() if w.isMinimized() else w.show()
             w.raise_()
             w.activateWindow()
             return
@@ -1163,13 +1240,18 @@ class FloatingWidget(QWidget):
         )
         editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         editor.item_updated.connect(self.refresh_history_views)
-        editor.destroyed.connect(
-            lambda: self._editor_windows.pop(item.id, None)
-        )
+        def forget_editor(*_):
+            if self._editor_windows.get(item.id) is editor:
+                self._editor_windows.pop(item.id, None)
+
+        editor.finished.connect(forget_editor)
+        editor.destroyed.connect(forget_editor)
         self._editor_windows[item.id] = editor
         editor.show()
 
     def _rerun_ocr(self, item):
+        if self._ui_closing:
+            return
         if item.raw_image_path:
             abs_path = self._file_mgr.get_abs_path(item.raw_image_path)
             self._ocr_worker.queue_ocr(item.id, abs_path, 'screen')
@@ -1177,14 +1259,18 @@ class FloatingWidget(QWidget):
 
     # --- Visibility ---
     def toggle_visibility(self):
-        if self.isVisible():
+        if self._ui_closing:
+            return
+        if self.isVisible() and not self.isMinimized():
             self.hide()
         else:
-            self.show()
+            self.showNormal() if self.isMinimized() else self.show()
             self.raise_()
 
     # --- Windows ---
     def open_console(self):
+        if self._ui_closing:
+            return
         if self._console is None:
             from .main_window import MainWindow
             self._console = MainWindow(
@@ -1201,22 +1287,26 @@ class FloatingWidget(QWidget):
             self._console.destroyed.connect(
                 lambda: setattr(self, '_console', None)
             )
-        self._console.show()
+        self._console.showNormal() if self._console.isMinimized() else self._console.show()
         self._console.raise_()
         self._console.activateWindow()
 
     def open_settings(self):
+        if self._ui_closing:
+            return
         from .settings_dialog import SettingsDialog
         from PySide6.QtWidgets import QDialog
         ocr_engine = getattr(self, '_ocr_engine', None)
         tag_repo = getattr(self, '_tag_repo', None)
         dlg = SettingsDialog(self._cfg, self, ocr_engine=ocr_engine, tag_repo=tag_repo)
         dlg.history_changed.connect(self.refresh_history_views)
+        self._settings_dialogs.add(dlg)
         try:
-            if dlg.exec() == QDialog.DialogCode.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted and not self._ui_closing:
                 self.settings_saved.emit()
                 self.refresh_history_views()
         finally:
+            self._settings_dialogs.discard(dlg)
             dlg.deleteLater()
 
     # --- Capture callbacks ---
@@ -1225,20 +1315,28 @@ class FloatingWidget(QWidget):
         self._capture_image_callback = image_cb
 
     def trigger_capture_ocr(self):
+        if self._ui_closing:
+            return
         if self._capture_ocr_callback:
             self._capture_ocr_callback()
 
     def trigger_capture_image(self):
+        if self._ui_closing:
+            return
         if self._capture_image_callback:
             self._capture_image_callback()
 
     # --- Clipboard ---
     def focus_search(self):
+        if self._ui_closing:
+            return
         self.open_console()
         self._console._search.setFocus()
         self._console._search.selectAll()
 
     def toggle_clipboard_pause(self):
+        if self._ui_closing:
+            return
         self._clip_paused = not self._clip_paused
         self._btn_pause.setChecked(self._clip_paused)
         if self._clip_watcher:
@@ -1250,6 +1348,8 @@ class FloatingWidget(QWidget):
         self.clipboard_pause_changed.emit(self._clip_paused)
 
     def paste_last_item(self):
+        if self._ui_closing:
+            return
         items = self._item_repo.list_recent(limit=1)
         if items:
             text = items[0].get_effective_text()
@@ -1291,6 +1391,8 @@ class FloatingWidget(QWidget):
 
     # --- OCR engine status ---
     def on_ocr_engine_progress(self, pct: int, msg: str):
+        if self._ui_closing:
+            return
         self._ocr_status_lbl.setText(f"準備中 {pct}%")
         self._ocr_status_lbl.setToolTip(msg)
         # 顯示進度條
@@ -1298,6 +1400,8 @@ class FloatingWidget(QWidget):
         self._ocr_progress_bar.setValue(pct)
 
     def on_ocr_engine_ready(self):
+        if self._ui_closing:
+            return
         self._ocr_ready = True
         self._btn_ocr.setEnabled(True)
         self._ocr_status_lbl.setText("可擷取文字")
@@ -1310,6 +1414,8 @@ class FloatingWidget(QWidget):
         logger.info("OCR 引擎就緒，按鈕已啟用")
 
     def on_ocr_engine_failed(self, error: str):
+        if self._ui_closing:
+            return
         self._ocr_ready = False
         self._btn_ocr.setEnabled(False)
         self._ocr_status_lbl.setText("暫時無法辨識")

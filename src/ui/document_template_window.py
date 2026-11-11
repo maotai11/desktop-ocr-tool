@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFontMetrics,
@@ -220,6 +220,7 @@ class RegionCanvas(QGraphicsView):
             label.setPos(left + 2 / scale, max(0, top - (label.boundingRect().height()+3) / scale))
 
     def fit_page(self):
+        self._cancel_gesture()
         self._auto_fit = True
         if self._pixmap_item is not None:
             self.resetTransform()
@@ -234,6 +235,7 @@ class RegionCanvas(QGraphicsView):
     def set_zoom(self, percent, under_mouse=False):
         if self._pixmap_item is None:
             return
+        self._cancel_gesture()
         target = min(self.MAX_ZOOM, max(self.MIN_ZOOM, percent / 100))
         current = abs(self.transform().m11())
         self._auto_fit = False
@@ -254,11 +256,29 @@ class RegionCanvas(QGraphicsView):
         self.set_zoom(100)
 
     def set_pan_mode(self, enabled):
+        self._cancel_gesture()
         self._pan_mode = bool(enabled)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag if enabled
                          else QGraphicsView.DragMode.NoDrag)
         self.viewport().setCursor(Qt.CursorShape.OpenHandCursor if enabled
                                   else Qt.CursorShape.CrossCursor)
+
+    def _cancel_gesture(self):
+        """A hidden/disabled/transformed canvas cannot finish an old selection."""
+        if self._rubber is not None:
+            self._scene.removeItem(self._rubber)
+        self._start = self._start_view = self._rubber = self._pan_start = None
+        self.viewport().setCursor(Qt.CursorShape.OpenHandCursor if self._pan_mode
+                                  else Qt.CursorShape.CrossCursor)
+
+    def hideEvent(self, event):
+        self._cancel_gesture()
+        super().hideEvent(event)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.EnabledChange and not self.isEnabled():
+            self._cancel_gesture()
+        super().changeEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -279,6 +299,7 @@ class RegionCanvas(QGraphicsView):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.MiddleButton and self._pixmap_item is not None:
+            self._cancel_gesture()
             self._pan_start = event.position().toPoint()
             self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
@@ -288,6 +309,7 @@ class RegionCanvas(QGraphicsView):
             return
         if (event.button() == Qt.MouseButton.LeftButton and self._pixmap_item is not None
                 and self._pixmap_item.boundingRect().contains(self.mapToScene(event.position().toPoint()))):
+            self._cancel_gesture()
             self._start = self._bounded(self.mapToScene(event.position().toPoint()))
             self._start_view = event.position().toPoint()
             pen = QPen(QColor(_ACCENT), 2, Qt.PenStyle.DashLine)

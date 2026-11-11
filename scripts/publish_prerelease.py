@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.13. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.14. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.13"
+TAG = "v1.8.0-rc.14"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,7 +133,17 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版把整列搜尋的文字直接放到各 A 框下方。開始搜尋後控制窗收起，白底文件上保留 A 辨識文字、核對狀態及小型「恢復介面」按鈕。
+本版修正浮動視窗在最小化、取消框選、快速暫停／重開及退出時的狀態問題。詳細重現步驟與回歸依據收錄於 ZIP 的 `docs/FLOATING_STATE_AUDIT.md`。
+
+### 這次修正
+- 最小化後由原入口開啟會還原。仍在編輯的視窗保留草稿；已關閉後重開同一筆，讀取最新儲存資料。
+- 截圖取消／關閉／重新開始不沿用舊拖曳或延遲回呼；文件縮放、隱藏或切換平移時，也取消未完成框選。
+- 核對在通知期間快速暫停／重開時，舊一輪不能清除新工作或重啟已取消的等待。已停止隱藏的搜尋不因舊錯誤自行彈出。
+- 手寫隱藏／關閉停止延遲送出與該次工作；失敗後立即重試先等待舊 helper 回收。
+- 總退出取消框選並拒絕新工具入口；已結束的設定／標籤模態返回及 DB 回覆不再存檔、排 OCR 或重新顯示視窗。
+- GUI 成品探針增加最小化還原、取消後重框、退出後拒絕入口三項，總計 15 項；來源、EXE、封鎖連線及隔離 profile 分別驗證。這是指定情境的證據，不是任意 GUI／DLL 的完整安全認證。
+
+整列搜尋沿用 A 框下方文字：開始搜尋後收起控制窗，白底文件保留 A 辨識文字、核對狀態及小型「恢復介面」按鈕。
 
 ### 在 A 框下方直接看文字
 - 各 A 位置下方顯示辨識文字與核對狀態；綠色代表找到，紅色代表未找到，琥珀色代表多處符合或需確認。長文依可用寬度省略，完整內容可回控制窗查看。

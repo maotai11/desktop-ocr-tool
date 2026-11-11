@@ -3,7 +3,7 @@ import os
 APP_NAME = "InkPick"
 # Persistent paths, mutex/MIME/registry keys retain the old compatibility ID.
 APP_DISPLAY_NAME = "InkPick 拾字筆"
-APP_VERSION = os.environ.get("DESKTOP_OCR_VERSION", "1.8.0-rc.13")
+APP_VERSION = os.environ.get("DESKTOP_OCR_VERSION", "1.8.0-rc.14")
 
 
 def release_dir_name() -> str:

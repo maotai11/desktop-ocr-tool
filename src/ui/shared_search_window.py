@@ -168,6 +168,7 @@ class SharedSearchWindow(QWidget):
         self.resume_button.hide()
         self._capture_active = False
         self._closing = self._closed_by_user = self._selection_active = False
+        self._recover_controls = False
         self._screen = None
         self._fields_cards = {}
         self._visual_epoch = 0
@@ -356,7 +357,9 @@ class SharedSearchWindow(QWidget):
         self._calibration_remaining = 0
         self._calibrate.setText('校正目前選取列')
 
-    def pause(self):
+    def pause(self, *, preserve_recovery=False):
+        if not preserve_recovery:
+            self._recover_controls = False
         self._cancel_countdown()
         self._clear_visuals()
         self.controller.pause()
@@ -451,11 +454,14 @@ class SharedSearchWindow(QWidget):
         self._refresh_fields()
 
     def _start(self):
-        if self._closing or self._selection_active:
+        if self._closing or self._closed_by_user or self._selection_active:
             return
         self._cancel_countdown()
+        self._recover_controls = True
         self.hide()
         self.controller.start()
+        if self._closing or self._closed_by_user or self._selection_active:
+            return
         if self.controller.running:
             self._show_resume_control()
         else:
@@ -482,13 +488,23 @@ class SharedSearchWindow(QWidget):
             self.resume_button.hide()
 
     def _failed(self, message):
+        recover = self._recover_controls
+        self._recover_controls = False
         self._clear_visuals()
         self._status.setText('需要確認')
         self._status.setStyleSheet(f'font-size: 15px; font-weight: 600; color: {_WARNING};')
         self._note.setText(message)
         self._refresh_fields()
-        if not self._closing and not self._closed_by_user and not self._selection_active:
+        if (recover and not self.isVisible() and not self._closing
+                and not self._closed_by_user and not self._selection_active):
             self.open()
+
+    def _pause_with_error(self, message):
+        # Internal display failures must restore an active compact session. An
+        # explicit pause/mode switch, in contrast, revokes that recovery intent.
+        self._recover_controls = self._recover_controls or self.controller.running
+        self.pause(preserve_recovery=True)
+        self._failed(message)
 
     def _updated(self, snapshot):
         if self._closing or self._closed_by_user or self._selection_active:
@@ -519,13 +535,11 @@ class SharedSearchWindow(QWidget):
                 if result and region is not None:
                     boxes = selected.get('boxes') if selected is not None else []
                     if selected is not None and (not isinstance(boxes, (list, tuple)) or not boxes):
-                        self.pause()
-                        self._failed('辨識位置無效，請調整 B 範圍後重試。')
+                        self._pause_with_error('辨識位置無效，請調整 B 範圍後重試。')
                         return
                     polygons = [self.highlight_overlay.validated_box(box) for box in boxes]
                     if any(polygon is None for polygon in polygons):
-                        self.pause()
-                        self._failed('辨識位置無效，請調整 B 範圍後重試。')
+                        self._pause_with_error('辨識位置無效，請調整 B 範圍後重試。')
                         return
                     if selected is not None:
                         status = ('similar' if selected.get('match_type') == 'similar' else
@@ -540,8 +554,7 @@ class SharedSearchWindow(QWidget):
                                   'bounds': tuple(b_region[:4]),
                                   'boxes': [[[x + bx, y + by] for x, y in box] for box in polygons]})
         if not self.highlight_overlay.set_marks(marks):
-            self.pause()
-            self._failed('文字標示位置無效，請重新框選後重試。')
+            self._pause_with_error('文字標示位置無效，請重新框選後重試。')
         elif self.controller.running:
             self._show_resume_control()
 
@@ -575,8 +588,7 @@ class SharedSearchWindow(QWidget):
         if (self._capture_epoch == self._visual_epoch and not self._closing and not self._closed_by_user
                 and not self._selection_active and self.controller.running):
             if not self.highlight_overlay.restore_after_capture():
-                self.pause()
-                self._failed('無法顯示置頂文字，請重新開啟搜尋。')
+                self._pause_with_error('無法顯示置頂文字，請重新開啟搜尋。')
         else:
             self.highlight_overlay.clear()
             self.highlight_overlay.restore_after_capture()
@@ -600,8 +612,7 @@ class SharedSearchWindow(QWidget):
                                 area.bottom() - self.resume_button.height() - 10)
         self.resume_button.show()
         if not apply_native_pin(self.resume_button, self._pin.isChecked()):
-            self.pause()
-            self._failed('無法顯示浮動控制，請重新開啟搜尋。')
+            self._pause_with_error('無法顯示浮動控制，請重新開啟搜尋。')
 
     def avoid_regions(self):
         if self.can_capture() or not self.isVisible():
@@ -631,8 +642,7 @@ class SharedSearchWindow(QWidget):
         with QSignalBlocker(self._pin):
             self._pin.setChecked(bool(pinned))
         if not self.highlight_overlay.set_pinned(pinned):
-            self.pause()
-            self._failed('無法更新文字置頂，請重新開啟搜尋。')
+            self._pause_with_error('無法更新文字置頂，請重新開啟搜尋。')
         self.resume_button.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(pinned))
         self._show_resume_control()
 
@@ -653,7 +663,7 @@ class SharedSearchWindow(QWidget):
     def _screen_changed(self, *args):
         if self._closing:
             return
-        self.pause()
+        self.pause(preserve_recovery=True)
         self.screen_invalidated.emit()
         self.controller.invalidate_regions('螢幕配置已變更，請重新框選 A、B 與表格範圍。')
 

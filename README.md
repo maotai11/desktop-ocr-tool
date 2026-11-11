@@ -2,7 +2,9 @@
 
 Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可框選螢幕辨識文字、手寫單字找候選，也能匯入 PDF／圖片，把固定位置的欄位逐頁填入文字模板，最後複製或匯出 TXT。
 
-本版為 **1.8.0-rc.13 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
+本版為 **1.8.0-rc.14 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
+
+本版修正幾個容易在連續操作時出現的問題：最小化後重新開啟仍看不到視窗、取消框選後沿用舊座標、快速暫停再開始被上一輪回覆干擾，以及退出期間仍收到舊對話框的儲存操作。手寫視窗隱藏後會停止延遲辨識，重新開啟也不會自動送出舊筆畫。具體觸發步驟與回歸測試見 [浮窗狀態檢查](docs/FLOATING_STATE_AUDIT.md)。
 
 整列搜尋會把 A 的辨識文字與核對狀態直接放在各個 A 框選位置下方。開始搜尋後控制窗收起，留下文字標示及小型「恢復介面」按鈕；點回來源文件操作時，標示仍可置頂。要暫停或改位置，按「恢復介面」回到控制窗。
 
@@ -10,23 +12,23 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 
 ## 下載與第一次執行
 
-從 [v1.8.0-rc.13 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.13) 下載：
+從 [v1.8.0-rc.14 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.14) 下載：
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.13.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.13/InkPick-v1.8.0-rc.13.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
-| [InkPick-v1.8.0-rc.13.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.13/InkPick-v1.8.0-rc.13.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
-| [InkPick-v1.8.0-rc.13-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.13/InkPick-v1.8.0-rc.13-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
-| InkPick-v1.8.0-rc.13-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
-| InkPick-v1.8.0-rc.13-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
+| [InkPick-v1.8.0-rc.14.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.14/InkPick-v1.8.0-rc.14.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.14.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.14/InkPick-v1.8.0-rc.14.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.14-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.14/InkPick-v1.8.0-rc.14-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
+| InkPick-v1.8.0-rc.14-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
+| InkPick-v1.8.0-rc.14-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 
 1. 在可上網的電腦下載 ZIP，再用隨身碟帶到離線電腦。
 2. 解壓到自己有寫入權限的資料夾，例如 `D:\Tools\InkPick`。不要直接從 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 `InkPick-v1.8.0-rc.13.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
+3. 執行 `InkPick-v1.8.0-rc.14.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
 4. 首次開啟會解開內含資源並載入模型。浮動窗顯示「可擷取文字」後，即可使用。
 5. 結束程式請用系統匣的結束選項，讓尚未完成的辨識與儲存先結束。
 
-核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.13.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.14.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
 
 ## 整列搜尋：多個 A，到一個 B 範圍找文字
 
