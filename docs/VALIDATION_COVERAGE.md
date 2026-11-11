@@ -1,6 +1,6 @@
 # 版本驗證範圍與結果判讀
 
-目前版本：1.8.0-rc.12。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
+目前版本：1.8.0-rc.13。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
 
 每版實際結果以該版 Release 的 `validation-metadata.zip` 為準，必須同時對上來源 commit 與 EXE SHA256。缺少、跳過、取消、逾時、不支援或未完成的必需報告不能當成通過；不能拿前版的綠燈替代新版。這份操作範圍表不是預先宣告尚未執行的發布檢查已成功。
 
@@ -11,31 +11,32 @@
 | rc.10 | 預設 90 天封存、設定接線與固定位置 A／B 多組顯示的測試；下載後另核對官方 EXE 與 91 個 `src` 模組來源相符 | 不是新整列搜尋、全 GUI 或全部原生 DLL 的覆蓋；下載檢查的完整防毒掃描未完成 |
 | [rc.11](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.11) | `4756c331b29092035698fa84f134c3b9589303a3` 的公開摘要中，Windows bounded tests 為 1,881 通過／4 略過，Linux 為 1,871 通過／4 略過；整列搜尋 16 項生命週期檢查、固定位置核對及其他來源探針通過，Windows 同版 EXE 的 frozen、阻擋對外連線及隔離 profile 探針通過 | `clean_machine_verified=false`，整列搜尋生命週期探針也明列未測模型推論／準確率；沒有本版新增的面板／操作矩陣、全 PE 清冊或完整 Defender 結論。略過項目不能算成通過 |
 | rc.12 | 在既有功能驗證之外，新增下列 GUI、B 區標示與原生元件／防毒檢查；各項是否完成，須讀同版結果 | 不延用 rc.11 成功或 Qt 升級需求，冒充 rc.12 EXE、Defender 或未知漏洞已驗證 |
+| rc.13 | 改為 A 框下方文字，加入開始收起／恢復介面操作，以及切回來源與重複擷取後的原生置頂檢查 | 實際通過狀態依同版成品報告，不沿用 rc.12 報告 |
 
 ## GUI 要驗證到哪裡
 
 GUI 探針使用測試自己建立的文字、圖片、PDF、資料庫及視窗，實際開啟 Qt 元件、觸發指定控制與檢查狀態變化。原生 OCR、滑鼠／作業系統互動及檔案內容有各自的探針；合成操作不代表所有真人操作、任意文件或所有外部軟體都已覆蓋。
 
-本版 GUI 探針有下列 **12 個具名檢查**，不是「任意操作都測過」。2026-11-05 的 Linux／Qt offscreen 工作樹實跑，這 12 項均為 true；該本地報告沒有 `source_commit`、不是 frozen，也不作 Windows 成品發布證據。發布仍須分別核對同版 `source-gui.json`、`frozen-gui.json`、防火牆及隔離 profile 的 GUI 結果，不能用本地通過代替。
+本版 GUI 探針有下列 **12 個具名檢查**，不是「任意操作都測過」。發布須分別核對同版 `source-gui.json`、`frozen-gui.json`、防火牆及隔離 profile 的 GUI 結果；本地 offscreen 通過不代替 Windows 成品證據。
 
-| 報告 check | 實際操作／副作用 | 本地來源結果 |
+| 報告 check | 實際操作／副作用 | 本版結果依據 |
 | --- | --- | --- |
-| `launcher_actions_and_capture_cancel` | 點浮窗 OCR／截圖，進入真框選工具後 Esc 取消；開檔案位置選單 | 通過 |
-| `settings_cancel_and_apply` | 真 modal 取消不保存、確認持久化並通知剪貼簿／封存控制器 | 通過 |
-| `history_search_tags_and_pin` | DB worker 存兩筆、歷史搜尋、右鍵釘選同步浮窗；新增標籤並套用 | 通過 |
-| `editor_save_and_history_refresh` | 編輯器保存文字／備註，兩個歷史視窗同步刷新 | 通過 |
-| `ocr_selection_copy_explicit` | 真保存 → 可控 OCR 回覆 → DB → 選字窗；未選不複製、清除選取、只複製第二行 | 通過 |
-| `document_import_template_zoom_clear` | 真 PNG／PDF 匯入與 renderer；縮放／拖曳／滑鼠框選；可控辨識後填模板、複製、清框／清文件 | 通過 |
-| `handwriting_stroke_candidate_copy` | 真 pad 滑鼠筆畫 → 可控候選 → 點字複製；續寫座標不變、撤銷／清除 | 通過 |
-| `paired_comparison_controls` | 傳統 A／B 新增組、模式、迷你、置頂、框選取消及關閉 | 通過 |
-| `shared_search_controls` | 整列搜尋新增 A、列距、模式、填色濃度、B 框選取消及關閉 | 通過 |
-| `tray_pause_and_quit_route` | 系統匣／浮窗的暫停同步；退出走 Pipeline 關閉 | 通過 |
-| `windows_and_workers_closed` | 本次視窗、OCR／DB／文件／核對工作者完成關閉 | 通過 |
-| `temporary_files_cleaned` | 刪除探針自己建立的暫存，不動既有 profile | 通過 |
+| `launcher_actions_and_capture_cancel` | 點浮窗 OCR／截圖，進入真框選工具後 Esc 取消；開檔案位置選單 | 同版 GUI 報告 |
+| `settings_cancel_and_apply` | 真 modal 取消不保存、確認持久化並通知剪貼簿／封存控制器 | 同版 GUI 報告 |
+| `history_search_tags_and_pin` | DB worker 存兩筆、歷史搜尋、右鍵釘選同步浮窗；新增標籤並套用 | 同版 GUI 報告 |
+| `editor_save_and_history_refresh` | 編輯器保存文字／備註，兩個歷史視窗同步刷新 | 同版 GUI 報告 |
+| `ocr_selection_copy_explicit` | 真保存 → 可控 OCR 回覆 → DB → 選字窗；未選不複製、清除選取、只複製第二行 | 同版 GUI 報告 |
+| `document_import_template_zoom_clear` | 真 PNG／PDF 匯入與 renderer；縮放／拖曳／滑鼠框選；可控辨識後填模板、複製、清框／清文件 | 同版 GUI 報告 |
+| `handwriting_stroke_candidate_copy` | 真 pad 滑鼠筆畫 → 可控候選 → 點字複製；續寫座標不變、撤銷／清除 | 同版 GUI 報告 |
+| `paired_comparison_controls` | 傳統 A／B 新增組、模式、迷你、置頂、框選取消及關閉 | 同版 GUI 報告 |
+| `shared_search_controls` | 整列搜尋新增 A、列距、模式、標示置頂、B 框選取消及關閉 | 同版 GUI 報告 |
+| `tray_pause_and_quit_route` | 系統匣／浮窗的暫停同步；退出走 Pipeline 關閉 | 同版 GUI 報告 |
+| `windows_and_workers_closed` | 本次視窗、OCR／DB／文件／核對工作者完成關閉 | 同版 GUI 報告 |
+| `temporary_files_cleaned` | 刪除探針自己建立的暫存，不動既有 profile | 同版 GUI 報告 |
 
 此 GUI 探針明列 `model_inference_tested=false`、`ocr_accuracy_tested=false`、`clean_machine_verified=false`。原生檔案挑選器只回傳測試自己建立的檔案；自動啟動的 OS 寫入使用替身，未在這個探針修改開機項目。真 OCR 模型、原生手寫 helper、真桌面擷取結果、任意 GUI 狀態、實體滑鼠及多 DPI 不由這 12 項代證，須讀各自功能探針或人工驗收。
 
-B 區 A／B 文字卡片、僅 B 標示置頂、普通控制窗及畫面變動後清除舊標示另由整列搜尋／UI 檢查驗證；不能因 `shared_search_controls` 通過，就說它已測到尚未觸發的全部結果狀態。結果仍限主螢幕、OCR 行級框，重複候選需選擇，近似與 needs_review 不當成確定命中。
+A 框下方文字與狀態、開始後收起控制窗、小型恢復介面按鈕、跨前景切換維持標示置頂，以及畫面變動後清除舊標示另由整列搜尋／UI 檢查驗證；不能因 `shared_search_controls` 通過，就說它已測到尚未觸發的全部結果狀態。結果仍限主螢幕、OCR 行級框，重複候選需選擇，近似與 needs_review 不當成確定命中。
 
 ## 原生元件不是一個「無毒」勾選
 

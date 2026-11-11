@@ -424,12 +424,13 @@ def _exercise_gui(app, directory, checks):
             search._add.click()
             search._row_pitch.setValue(24)
             search._mode.setCurrentIndex(search._mode.findData('exact'))
-            search._opacity.setValue(30)
+            search._pin.setChecked(False)
+            search._pin.setChecked(True)
             search._select_b.click()
             _require(shell._shared_search_selector.isVisible())
             _escape(shell._shared_search_selector)
             _require(len(search_controller.fields) == 2 and search_controller.row_pitch == 24
-                     and search_controller.mode == 'exact' and search.highlight_overlay._fill_opacity == 30
+                     and search_controller.mode == 'exact' and search._pin.isChecked()
                      and not search_controller.b_region)
             search.close()
             checks['shared_search_controls'] = not search.isVisible() and not search_controller.running

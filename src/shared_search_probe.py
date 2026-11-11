@@ -14,7 +14,7 @@ CHECK_NAMES = (
     'blue_calibration', 'blue_follow_stable', 'same_y_scroll_refreshed',
     'stale_rows_discarded', 'capture_overlay_hidden', 'close_stops_polling',
     'workers_stopped', 'clipboard_history_untouched', 'temporary_files_cleaned',
-    'b_inline_comparison', 'b_pin_independent',
+    'a_inline_annotation', 'annotation_pin_persistence',
 )
 
 
@@ -54,6 +54,7 @@ def _close_resources(window, controller, worker):
     ocr_stopped = worker is None or worker.wait(5000)
     if window is not None:
         window.highlight_overlay.deleteLater()
+        window.resume_button.deleteLater()
         window.deleteLater()
     return bool(capture_stopped and ocr_stopped)
 
@@ -93,7 +94,7 @@ def _logical_checks(app):
             canvas = np.full((1000, 1200, 4), 25, np.uint8)
             canvas[:, :, 3] = 255
             for y in (40, 60):
-                for x, value in zip((20, 100), pixels[f'a{y}']):
+                for x, value in zip((20, 180), pixels[f'a{y}']):
                     canvas[y:y + 12, x:x + 50, :3] = value
             canvas[20:720, 230:780, :3] = pixels['b']
             x, y, w, h = (region[name] for name in ('left', 'top', 'width', 'height'))
@@ -157,7 +158,7 @@ def _logical_checks(app):
         second = controller.add_field('數字欄')
         assert second is not None
         assert controller.set_a_region(first, (20, 40, 50, 12, 1))
-        assert controller.set_a_region(second, (100, 40, 50, 12, 1))
+        assert controller.set_a_region(second, (180, 40, 50, 12, 1))
         assert controller.set_b_region((230, 20, 550, 700, 1))
         assert controller.set_row_pitch(20)
         controller.set_interval(1)
@@ -177,25 +178,24 @@ def _logical_checks(app):
             and reused[0]['result']['selected_id'] == reused[1]['result']['selected_id'])
         callouts = window.highlight_overlay.callouts
         fields_by_name = {field['name']: field for field in reused}
-        bx, by, bw, bh, _ = controller.b_region
         dpr = app.primaryScreen().devicePixelRatio()
-        checks['b_inline_comparison'] = len(callouts) == 2 and all(
+        checks['a_inline_annotation'] = len(callouts) == 2 and all(
             card['name'] in fields_by_name
             and card['a_text'] == fields_by_name[card['name']]['result']['text']
-            and card['b_text'] == '訂單AB123' and card['status'] == 'matched'
-            and card['bounds'] == (bx, by, bw, bh)
-            and card['rect'][0] * dpr >= bx and card['rect'][1] * dpr >= by
-            and (card['rect'][0] + card['rect'][2]) * dpr <= bx + bw
-            and (card['rect'][1] + card['rect'][3]) * dpr <= by + bh
-            and len(card['display_lines']) == 3 for card in callouts)
+            and card['status'] == 'matched'
+            and tuple(round(value * dpr) for value in card['anchor'])
+                == fields_by_name[card['name']]['region'][:4]
+            and card['rect'][1] >= card['anchor'][1] + card['anchor'][3]
+            and len(card['display_lines']) == 1
+            and '訂單AB123' in card['display_lines'][0] for card in callouts)
         pin_ok = not bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
         for pinned in (False, True):
             window.set_pinned(pinned)
             pin_ok &= (bool(window.highlight_overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == pinned
                        and not bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
-        checks['b_pin_independent'] = bool(pin_ok)
+        checks['annotation_pin_persistence'] = bool(pin_ok)
         # The controller clears outdated marks at the start of a new cycle.
-        # Exercise the valid same-epoch hook contract while current B callouts
+        # Exercise the valid same-epoch hook contract while current A annotations
         # are visible as well, using the real cropper and synthetic MSS pixels.
         if not before():
             raise ValueError('Visible callout guard refused')
