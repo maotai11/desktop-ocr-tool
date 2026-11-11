@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import sys
+import time
 from typing import Any, Mapping
 from urllib import error, parse, request
 import zipfile
@@ -292,8 +293,18 @@ def resolve_tag(client: GitHubClient) -> str | None:
     raise PublicationError("Annotated tag nesting exceeds bound")
 
 
-def check_tag(client: GitHubClient, source_commit: str, *, required: bool = False) -> None:
+def check_tag(client: GitHubClient, source_commit: str, *, required: bool = False,
+              newly_published: bool = False) -> None:
     target = resolve_tag(client)
+    # GitHub can acknowledge publication before its new tag is readable.
+    # Only a missing tag after our publish transition is retried; a different
+    # target, malformed response or API error remains an immediate failure.
+    if required and newly_published:
+        for delay in (0.5, 1.0, 2.0):
+            if target is not None:
+                break
+            time.sleep(delay)
+            target = resolve_tag(client)
     require(target == source_commit or (target is None and not required),
             "Release tag already points to another commit or is missing; it will never be moved")
 
@@ -407,7 +418,7 @@ def publish(client: GitHubClient, prepared: PreparedRelease) -> dict:
     check_release(result, prepared)
     require(result["draft"] is False, "GitHub did not publish the prerelease")
     verified_assets(client, result, prepared, complete=True)
-    check_tag(client, prepared.context.source_commit, required=True)
+    check_tag(client, prepared.context.source_commit, required=True, newly_published=True)
     return result
 
 
@@ -886,4 +897,10 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Receipt helpers import the canonical module. Use its entry point too so
+    # their PublicationError is caught by the same class, including under -S.
+    project_root = str(Path(__file__).resolve().parents[1])
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from scripts.publish_prerelease import main as script_main
+    raise SystemExit(script_main())

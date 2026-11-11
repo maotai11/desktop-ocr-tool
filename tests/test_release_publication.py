@@ -171,6 +171,54 @@ def test_existing_matching_tag_is_used_without_moving_it(prepared):
     assert not any(method != "GET" and "/git/" in endpoint for method, endpoint, _ in client.calls)
 
 
+@pytest.mark.parametrize('missing_reads, succeeds', [(1, True), (3, True), (4, False)])
+def test_newly_published_tag_visibility_is_retried_with_a_bound(prepared, monkeypatch,
+                                                             missing_reads, succeeds):
+    class DelayedTag(FakeGitHub):
+        post_publish_reads = 0
+
+        def call(self, method, endpoint, **kwargs):
+            if endpoint.startswith('/git/ref/tags/') and self.release and not self.release['draft']:
+                self.post_publish_reads += 1
+                if self.post_publish_reads <= missing_reads:
+                    return None
+            return super().call(method, endpoint, **kwargs)
+
+    sleeps = []
+    monkeypatch.setattr(publisher.time, 'sleep', sleeps.append)
+    client = DelayedTag(prepared)
+    if succeeds:
+        assert publisher.publish(client, prepared)['draft'] is False
+    else:
+        with pytest.raises(publisher.PublicationError, match='never be moved'):
+            publisher.publish(client, prepared)
+    assert sleeps == [0.5, 1.0, 2.0][:min(missing_reads, 3)]
+    assert client.post_publish_reads == min(missing_reads + 1, 4)
+    assert client.upload_count == 5
+    assert sum(method == 'PATCH' for method, _, _ in client.calls) == 1
+    assert not any(method != 'GET' and '/git/' in endpoint for method, endpoint, _ in client.calls)
+
+
+def test_wrong_tag_after_publication_fails_without_waiting(prepared, monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(publisher.time, 'sleep', sleeps.append)
+    client = FakeGitHub(prepared)
+    client.tag_on_finalize = 'b' * 40
+    with pytest.raises(publisher.PublicationError, match='never be moved'):
+        publisher.publish(client, prepared)
+    assert sleeps == []
+
+
+def test_preexisting_published_release_missing_tag_is_not_retried(prepared, monkeypatch):
+    monkeypatch.setattr(publisher.time, 'sleep', lambda _: pytest.fail('old missing tag retried'))
+    client = FakeGitHub(prepared)
+    client.release = client.matching_release(draft=False)
+    client.assets = [client.matching_asset(asset, i + 1) for i, asset in enumerate(prepared.assets)]
+    with pytest.raises(publisher.PublicationError, match='never be moved'):
+        publisher.publish(client, prepared)
+    assert all(method == 'GET' for method, _, _ in client.calls)
+
+
 def test_wrong_existing_tag_fails_before_any_mutation(prepared):
     client = FakeGitHub(prepared, tag="b" * 40)
     with pytest.raises(publisher.PublicationError, match="never be moved"):

@@ -30,9 +30,34 @@ def test_same_run_receipt_roundtrip(public_input):
     assert prepared.context==CTX
     assert prepared.body==p.release_notes(CTX,prepared.assets)
 
-@pytest.mark.parametrize('field,value',[('source_commit','b'*40),('run_id','124'),('run_attempt','2')])
+@pytest.mark.parametrize('field,value',[('source_commit','b'*40),('run_id','124')])
 def test_cross_build_rejected(public_input,field,value):
     with pytest.raises(p.PublicationError):r.load_prepared(public_input,replace(CTX,**{field:value}))
+
+
+def test_later_same_run_publisher_rechecks_original_asset_bytes(public_input):
+    original = r.load_prepared(public_input, CTX)
+    retried = r.load_prepared(public_input, replace(CTX, run_attempt='2'))
+    assert retried.context.run_attempt == '2'
+    assert retried.assets == original.assets
+    assert retried.body == original.body
+    (public_input / p.EXE_NAME).write_bytes(b'changed after original validation')
+    with pytest.raises(p.PublicationError):
+        r.load_prepared(public_input, replace(CTX, run_attempt='2'))
+
+
+@pytest.mark.parametrize('attempt', ['2', '0', '01', '-1', '', '1.0', '１', '9' * 10, 1, True])
+def test_newer_or_invalid_receipt_attempt_rejected(public_input, attempt):
+    mutate(public_input, 'run_attempt', attempt)
+    with pytest.raises(p.PublicationError, match='receipt attempt'):
+        r.load_prepared(public_input, CTX)
+
+
+@pytest.mark.parametrize('field,value', [('source_commit', 'b' * 40), ('run_id', '124')])
+def test_earlier_receipt_from_other_build_remains_rejected(public_input, field, value):
+    mutate(public_input, field, value)
+    with pytest.raises(p.PublicationError, match='another build'):
+        r.load_prepared(public_input, replace(CTX, run_attempt='2'))
 
 @pytest.mark.parametrize('field,value',[('schema',True),('schema',2),('repository','else/repo'),('version','invalid'),('assets',{}),('extra','unexpected')])
 def test_receipt_schema_and_identity_rejected(public_input,field,value):
@@ -108,7 +133,8 @@ def test_invalid_public_input_never_constructs_client(public_input,tmp_path,monk
     assert not (tmp_path/'evidence').exists()
 
 
-def test_script_entrypoint_works_without_installed_packages(public_input,tmp_path):
+@pytest.mark.parametrize('invalid_receipt', [False, True])
+def test_script_entrypoint_works_without_installed_packages(public_input,tmp_path,invalid_receipt):
     import os
     import subprocess
     import sys
@@ -120,8 +146,16 @@ def test_script_entrypoint_works_without_installed_packages(public_input,tmp_pat
          'GITHUB_REF':p.BRANCH_REF,'GITHUB_SHA':CTX.source_commit,'GITHUB_RUN_ID':CTX.run_id,
          'GITHUB_RUN_ATTEMPT':CTX.run_attempt,'GITHUB_EVENT_PATH':str(event)}
     env.pop('GH_TOKEN',None)
+    if invalid_receipt:
+        mutate(public_input, 'run_id', '124')
     result=subprocess.run([sys.executable,'-S',str(Path(p.__file__).resolve()),'--public-input',str(public_input),
                           '--output-dir',str(tmp_path/'script-evidence'),'--prepare-only'],env=env,
                           capture_output=True,text=True,timeout=15,cwd=tmp_path)
-    assert result.returncode==0,result.stdout+result.stderr
-    assert 'no network or token access' in result.stdout
+    if invalid_receipt:
+        assert result.returncode == 1
+        assert 'Public receipt belongs to another build' in result.stderr
+        assert 'unexpected validation failure' not in result.stderr
+        assert not (tmp_path / 'script-evidence').exists()
+    else:
+        assert result.returncode==0,result.stdout+result.stderr
+        assert 'no network or token access' in result.stdout
