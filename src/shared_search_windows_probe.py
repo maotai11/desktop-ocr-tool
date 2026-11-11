@@ -228,7 +228,7 @@ def verify_overlay_capture(app) -> bool:
     _require(screen is not None)
     available = screen.availableGeometry()
     _require(available.width() >= 400 and available.height() >= 260)
-    underlay = Underlay()
+    underlay = Underlay(interactive=True)
     window = controller = worker = capture_worker = None
     hidden = Event()
     captures, snapshots, failures, restore_observations, inference_calls = [], [], [], [], []
@@ -237,6 +237,14 @@ def verify_overlay_capture(app) -> bool:
     try:
         underlay.setGeometry(available.left() + 24, available.top() + 24, 352, 220)
         underlay.show()
+        underlay.raise_()
+        underlay.activateWindow()
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.SetForegroundWindow.restype = wintypes.BOOL
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.SetForegroundWindow(int(underlay.winId()))
+        _until(lambda: user32.GetForegroundWindow() == int(underlay.winId()))
         app.processEvents()
         _wait(80)
         scale = screen.devicePixelRatio()
@@ -267,13 +275,9 @@ def verify_overlay_capture(app) -> bool:
         controller = SharedSearchController(worker, capture_worker=capture_worker)
         window = SharedSearchWindow(controller)
         overlay = window.highlight_overlay
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
         get_style = getattr(user32, 'GetWindowLongPtrW', user32.GetWindowLongW)
         get_style.argtypes = [wintypes.HWND, ctypes.c_int]
         get_style.restype = ctypes.c_ssize_t
-        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-        user32.SetForegroundWindow.restype = wintypes.BOOL
-        user32.GetForegroundWindow.restype = wintypes.HWND
 
         def native_pinned(widget):
             return bool(get_style(int(widget.winId()), -20) & 0x00000008)  # WS_EX_TOPMOST
