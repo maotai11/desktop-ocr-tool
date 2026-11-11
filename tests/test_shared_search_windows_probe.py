@@ -113,3 +113,37 @@ def test_native_resume_click_only_targets_owned_window_and_always_releases(monke
         assert calls == []
     else:
         assert calls == [('cursor', 60, 40), ('mouse', 0x0002), ('mouse', 0x0004), ('cursor', 4, 5)]
+
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows inbox WinForms fixture')
+def test_owned_surface_starts_without_module_paths_or_existing_profile(qapp, tmp_path):
+    """Exercise the real fixture with the portable validator's empty environment."""
+    import ctypes
+    import os
+    from pathlib import Path
+    from unittest.mock import patch
+    from src.shared_search_windows_probe import _owned_foreground_surface
+    if qapp.platformName().lower() != 'windows':
+        pytest.skip('Native Windows Qt platform required')
+    root = os.environ['SystemRoot']
+    profile = tmp_path / '全新使用者'
+    roaming = profile / 'AppData' / 'Roaming'
+    local = profile / 'AppData' / 'Local'
+    temporary = local / 'Temp'
+    for directory in (profile, roaming, local, temporary):
+        directory.mkdir(parents=True, exist_ok=True)
+    isolated = {
+        'SystemRoot': root, 'WINDIR': root,
+        'SystemDrive': Path(root).anchor.rstrip('\\'),
+        'COMSPEC': str(Path(root) / 'System32' / 'cmd.exe'),
+        'PATH': str(Path(root) / 'System32') + ';' + root,
+        'PATHEXT': '.COM;.EXE;.BAT;.CMD',
+        'USERPROFILE': str(profile), 'HOME': str(profile),
+        'APPDATA': str(roaming), 'LOCALAPPDATA': str(local),
+        'TEMP': str(temporary), 'TMP': str(temporary),
+    }
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    with patch.dict(os.environ, isolated, clear=True):
+        with _owned_foreground_surface(user32, (32, 32, 180, 100)) as hwnd:
+            assert hwnd and user32.IsWindowVisible(hwnd)

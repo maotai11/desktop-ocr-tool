@@ -42,17 +42,17 @@ def _surface_script(parent_pid):
     if type(parent_pid) is not int or parent_pid <= 0:
         raise ValueError('Invalid owned probe parent')
     return r'''$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$form = New-Object System.Windows.Forms.Form
+[void][System.Reflection.Assembly]::Load('System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089')
+[void][System.Reflection.Assembly]::Load('System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a')
+$form = [System.Windows.Forms.Form]::new()
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
 $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
 $form.BackColor = [System.Drawing.Color]::FromArgb(245, 245, 245)
-$form.Bounds = New-Object System.Drawing.Rectangle(0, 0, 352, 220)
+$form.Bounds = [System.Drawing.Rectangle]::new(0, 0, 352, 220)
 $form.ShowInTaskbar = $false
 $deadline = [DateTime]::UtcNow.AddSeconds(45)
-$timer = New-Object System.Windows.Forms.Timer
+$timer = [System.Windows.Forms.Timer]::new()
 $timer.Interval = 250
 $timer.Add_Tick({
     $alive = $true
