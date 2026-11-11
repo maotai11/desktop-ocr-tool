@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 
 from PySide6.QtCore import QRectF, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -52,6 +53,14 @@ def _region_text(region):
     return f'{x}, {y} · {width} × {height}'
 
 
+def _score_text(candidate):
+    score = candidate.get('score')
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score) or not 0 <= score <= 1:
+        return ''
+    # A near match must never be rounded up to an apparent exact match.
+    return f'{math.floor(score * 1000) / 10:g}%'
+
+
 class _FieldCard(QFrame):
     select_requested = Signal(str)
     rename_requested = Signal(str)
@@ -70,7 +79,7 @@ class _FieldCard(QFrame):
         self._name = _label()
         self._name.setStyleSheet('font-weight: 600;')
         header.addWidget(self._name, 1)
-        self._select = QPushButton('框選')
+        self._select = QPushButton('框選數值')
         self._select.clicked.connect(lambda: self.select_requested.emit(self.field_id))
         header.addWidget(self._select)
         self._edit = QPushButton('改名')
@@ -113,22 +122,34 @@ class _FieldCard(QFrame):
 
     def set_field(self, field):
         result = field.get('result') or {}
-        self._name.setText(field.get('name', 'A'))
+        candidates = result.get('candidates', [])
+        selected = result.get('selected_id')
+        chosen = next((candidate for candidate in candidates if candidate.get('id') == selected), None)
+        self._name.setText(field.get('name', '欄位'))
+        self._select.setToolTip(f'框住「{self._name.text()}」這一欄輸入的數值。')
         self._region.setText(_region_text(field.get('region')))
         status = result.get('status')
         label, color = {
             'matched': ('已找到', _SUCCESS), 'missing': ('未找到', _ERROR),
             'ambiguous': ('多處符合，請選一處', _WARNING),
             'uncertain': ('需要確認', _WARNING),
-        }.get(status, ('等待搜尋' if field.get('region') else '請框選位置', _TEXT_SEC))
+        }.get(status, ('等待搜尋' if field.get('region') else '請框選數值', _TEXT_SEC))
+        if chosen is not None:
+            if chosen.get('match_type') in ('similar', 'numeric_similar'):
+                label, color = '相似，需確認', _WARNING
+            score = _score_text(chosen)
+            if score:
+                label += f' · {score}'
+            if chosen.get('match_type') == 'date_equivalent':
+                label += '（日期換算）'
         self._status.setText(label)
+        self._status.setToolTip(result.get('reason', '') + '\n百分比是文字／數值比對程度，不是 OCR 正確機率。')
         self._status.setStyleSheet(f'color: {color};')
         text = result.get('text', '')
         self._text.setText(text[:240] + ('…' if len(text) > 240 else ''))
         self._text.setVisible(bool(text))
-        candidates = result.get('candidates', [])
-        selected = result.get('selected_id')
-        signature = tuple((row.get('id'), row.get('text')) for row in candidates), selected
+        signature = tuple((row.get('id'), row.get('text'), row.get('score'), row.get('match_type'))
+                          for row in candidates), selected
         if signature != self._signature:
             self._signature = signature
             with QSignalBlocker(self._candidates):
@@ -136,7 +157,9 @@ class _FieldCard(QFrame):
                 self._candidates.addItem('選擇符合位置…', None)
                 for index, candidate in enumerate(candidates, 1):
                     preview = ' '.join(candidate.get('text', '').split())[:36]
-                    self._candidates.addItem(f'位置 {index} · {preview}', candidate['id'])
+                    score = _score_text(candidate)
+                    suffix = ' · 日期換算' if candidate.get('match_type') == 'date_equivalent' else ''
+                    self._candidates.addItem(f'位置 {index} · {score} · {preview}{suffix}', candidate['id'])
                 self._candidates.setCurrentIndex(max(0, self._candidates.findData(selected)))
         editable = bool(candidates) and status != 'matched'
         self._candidates.setVisible(editable)
@@ -165,7 +188,16 @@ class SharedSearchWindow(QWidget):
                                          f'border: 1px solid {_BORDER}; border-radius: 5px; padding: 6px 10px; }}')
         self.resume_button.clicked.connect(self.open)
         self.destroyed.connect(self.resume_button.deleteLater)
+        self.manual_button = QPushButton('手動辨識')
+        self.manual_button.setWindowFlags(self.resume_button.windowFlags())
+        self.manual_button.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.manual_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.manual_button.setStyleSheet(self.resume_button.styleSheet())
+        self.manual_button.setToolTip('重新讀取這一行數值與發票，即使畫面沒有改變。')
+        self.manual_button.clicked.connect(self._manual_refresh)
+        self.destroyed.connect(self.manual_button.deleteLater)
         self.resume_button.hide()
+        self.manual_button.hide()
         self._capture_active = False
         self._closing = self._closed_by_user = self._selection_active = False
         self._recover_controls = False
@@ -203,11 +235,11 @@ class SharedSearchWindow(QWidget):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(8)
         title = QHBoxLayout()
-        self._status = _label('先選 B，再新增 A 欄位')
+        self._status = _label('設定搜尋位置')
         self._status.setStyleSheet('font-size: 15px; font-weight: 600;')
         title.addWidget(self._status, 1)
         self._pin = QCheckBox('標示置頂')
-        self._pin.setToolTip('讓 A 欄下的文字與恢復介面按鈕置頂；設定面板維持一般視窗。')
+        self._pin.setToolTip('讓各欄下方的文字與恢復介面按鈕置頂；設定面板維持一般視窗。')
         self._pin.setChecked(True)
         self._pin.toggled.connect(self.set_pinned)
         title.addWidget(self._pin)
@@ -221,20 +253,31 @@ class SharedSearchWindow(QWidget):
         body = QVBoxLayout(content)
         body.setContentsMargins(0, 0, 4, 0)
         body.setSpacing(9)
-        self._select_b = QPushButton('框選 B 範圍')
+        self._select_b = QPushButton('框選發票位置（B）')
+        self._select_b.setToolTip('所有數值共用此發票範圍，只在範圍內找符合位置。')
         self._select_b.clicked.connect(lambda: self._select('B'))
         body.addWidget(self._select_b)
+        self._b_hint = _label('圈住發票上要核對的區域，所有數值共用。')
+        self._b_hint.setObjectName('muted')
+        body.addWidget(self._b_hint)
         self._b_label = _label()
         self._b_label.setObjectName('muted')
         body.addWidget(self._b_label)
-        self._add = QPushButton('新增 A 欄位')
+        self._a_heading = _label('輸入的數值欄位（A）')
+        self._a_heading.setStyleSheet('font-weight: 600;')
+        body.addWidget(self._a_heading)
+        self._a_hint = _label('同一行，每欄各框一個數值。')
+        self._a_hint.setObjectName('muted')
+        body.addWidget(self._a_hint)
+        self._add = QPushButton('新增數值欄位')
         self._add.clicked.connect(self._add_field)
         body.addWidget(self._add)
         self._cards_layout = QVBoxLayout()
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
         self._cards_layout.setSpacing(8)
         body.addLayout(self._cards_layout)
-        self._select_tracking = QPushButton('框選表格範圍')
+        self._select_tracking = QPushButton('框選輸入表格（換列用）')
+        self._select_tracking.setToolTip('自動跟隨選取列時，圈住輸入數值所在的表格；發票位置另行框選。')
         self._select_tracking.clicked.connect(lambda: self._select('TRACK'))
         body.addWidget(self._select_tracking)
         self._tracking_label = _label()
@@ -246,7 +289,7 @@ class SharedSearchWindow(QWidget):
         self._row_pitch.setRange(1, 500)
         self._row_pitch.setValue(30)
         self._row_pitch.setSuffix(' px')
-        self._row_pitch.setToolTip('請依表格實際列高設定；上一列與下一列會移動所有 A 欄位。')
+        self._row_pitch.setToolTip('請依表格實際列高設定；上一列與下一列會移動所有輸入數值欄位。')
         self._row_pitch.valueChanged.connect(self._set_row_pitch)
         row.addWidget(self._row_pitch, 1)
         body.addLayout(row)
@@ -265,14 +308,19 @@ class SharedSearchWindow(QWidget):
         self._auto.toggled.connect(self._auto_changed)
         body.addWidget(self._auto)
         self._mode = QComboBox()
-        self._mode.addItem('數字嚴格／文字近似', 'normalized')
+        self._mode.addItem('數值核對／相似提醒', 'normalized')
         self._mode.addItem('逐字完全相同', 'exact')
-        self._mode.setToolTip('數字保留正負號、小數點、千分位、百分號與前導零。\n'
-                              '文字忽略空白與標點，相似度至少 95% 才列為候選；近似候選仍需確認。\n'
-                              '逐字完全相同會保留所有字元，停用近似搜尋。')
+        self._mode.setToolTip('相同數值列為找到；單一數值的位數與格式相同、只差一位數字時，列為相似供確認。\n'
+                              '正負號、小數點、千分位、百分號與前導零仍須相符；文字近似門檻為 95%。\n'
+                              '百分比是比對程度，不是 OCR 正確機率。逐字模式停用相似搜尋與日期換算。')
         apply_combo_box_theme(self._mode)
         self._mode.currentIndexChanged.connect(self._mode_changed)
         body.addWidget(self._mode)
+        self._date_equivalence = QCheckBox('日期換算（民國／西元）')
+        self._date_equivalence.setChecked(getattr(controller, 'date_equivalence', True))
+        self._date_equivalence.setToolTip('例如民國 115/10/12 與西元 2026/10/12 視為同一天；逐字模式依原文比對。')
+        self._date_equivalence.toggled.connect(self._date_mode_changed)
+        body.addWidget(self._date_equivalence)
         row = QHBoxLayout()
         row.addWidget(_label('每輪後等待'))
         self._interval = QSpinBox()
@@ -285,18 +333,32 @@ class SharedSearchWindow(QWidget):
         body.addStretch()
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
-        self._note = _label('開始後，辨識文字與核對狀態顯示在 A 欄下方。')
+        appearance = QHBoxLayout()
+        appearance.addWidget(_label('標示背景透明度'))
+        self._background_transparency = QSpinBox()
+        self._background_transparency.setRange(0, 100)
+        self._background_transparency.setValue(100)
+        self._background_transparency.setSuffix(' %')
+        self._background_transparency.setToolTip('100% 隱藏背景，只留下數值與相似度；0% 使用白底。文字保持清楚。')
+        self._background_transparency.valueChanged.connect(
+            lambda percent: self.highlight_overlay.set_background_opacity(100 - percent))
+        appearance.addWidget(self._background_transparency, 1)
+        outer.addLayout(appearance)
+        self._note = _label('開始後，在發票找到的位置下方顯示數值與相似度。')
         self._note.setObjectName('muted')
         outer.addWidget(self._note)
         buttons = QHBoxLayout()
         self._start_button = QPushButton('開始搜尋')
         self._start_button.setObjectName('startSearch')
         self._start_button.clicked.connect(self._start)
+        self._manual_button = QPushButton('手動辨識')
+        self._manual_button.clicked.connect(self._manual_refresh)
         self._pause_button = QPushButton('暫停')
         self._pause_button.clicked.connect(self.pause)
         self._clear_button = QPushButton('清除結果')
         self._clear_button.clicked.connect(self.pause)
         buttons.addWidget(self._start_button)
+        buttons.addWidget(self._manual_button)
         buttons.addWidget(self._pause_button)
         buttons.addWidget(self._clear_button)
         outer.addLayout(buttons)
@@ -345,6 +407,7 @@ class SharedSearchWindow(QWidget):
         self._add.setEnabled(len(fields) < 20 and not self._closing)
         configured = bool(fields) and self.controller.b_region is not None and all(field['region'] for field in fields)
         self._start_button.setEnabled(configured and not self.controller.running and not self._closing)
+        self._manual_button.setEnabled(self.controller.running and not self._closing)
         self._pause_button.setEnabled(self.controller.running or self._calibration_timer.isActive())
 
     def _clear_visuals(self):
@@ -364,6 +427,7 @@ class SharedSearchWindow(QWidget):
         self._clear_visuals()
         self.controller.pause()
         self.resume_button.hide()
+        self.manual_button.hide()
         self._refresh_fields()
 
     def _select(self, key):
@@ -383,7 +447,7 @@ class SharedSearchWindow(QWidget):
     def set_region(self, key, region):
         self.pause()
         if not isinstance(region, (tuple, list)) or len(region) != 5 or region[4] != 1:
-            self._failed('目前請在主螢幕框選 A、B 與表格範圍。')
+            self._failed('請在主螢幕框選輸入數值欄位、發票位置與輸入表格。')
             return False
         accepted = (self.controller.set_b_region(region) if key == 'B' else
                     self.controller.set_tracking_region(region) if key == 'TRACK' else
@@ -427,6 +491,24 @@ class SharedSearchWindow(QWidget):
     def _mode_changed(self):
         self.pause()
         self.controller.set_mode(self._mode.currentData())
+        self._date_equivalence.setEnabled(self._mode.currentData() != 'exact')
+
+    def _date_mode_changed(self, enabled):
+        self.pause()
+        self.controller.set_date_equivalence(enabled)
+
+    def _manual_refresh(self):
+        if (self._closing or self._closed_by_user or self._selection_active
+                or not self.controller.running):
+            return
+        self._cancel_countdown()
+        self._clear_visuals()
+        self.hide()
+        self._recover_controls = True
+        self.controller.refresh_now()
+        self._refresh_fields()
+        if self.controller.running:
+            self._show_resume_control()
 
     def _select_candidate(self, field_id, candidate_id):
         self._clear_visuals()
@@ -486,6 +568,7 @@ class SharedSearchWindow(QWidget):
         self._refresh_fields()
         if not self.controller.running:
             self.resume_button.hide()
+            self.manual_button.hide()
 
     def _failed(self, message):
         recover = self._recover_controls
@@ -513,7 +596,11 @@ class SharedSearchWindow(QWidget):
         fields = snapshot.get('fields', self.controller.fields)
         matched = sum((field.get('result') or {}).get('status') == 'matched' for field in fields)
         missing = sum((field.get('result') or {}).get('status') == 'missing' for field in fields)
-        self._status.setText(f'找到 {matched}／{len(fields)}' + (f' · 未找到 {missing}' if missing else ''))
+        similar = sum(any(candidate.get('id') == (field.get('result') or {}).get('selected_id')
+                          and candidate.get('match_type') in ('similar', 'numeric_similar')
+                          for candidate in (field.get('result') or {}).get('candidates', [])) for field in fields)
+        self._status.setText(f'找到 {matched}／{len(fields)}' + (f' · 相似 {similar}' if similar else '')
+                             + (f' · 未找到 {missing}' if missing else ''))
         color = _SUCCESS if fields and matched == len(fields) else _ERROR if missing else _WARNING
         self._status.setStyleSheet(f'font-size: 15px; font-weight: 600; color: {color};')
         stamp = snapshot.get('timestamp')
@@ -522,7 +609,7 @@ class SharedSearchWindow(QWidget):
                 self._activity.setText(f'{datetime.fromisoformat(stamp).strftime("%H:%M:%S")} · 第 {snapshot.get("cycle", 0)} 次搜尋')
             except (ValueError, TypeError):
                 pass
-        self._note.setText('辨識文字與核對狀態顯示在 A 欄下方。')
+        self._note.setText('綠色：找到 · 橘色：相似／待確認 · 紅色：未找到')
         b_region = snapshot.get('b_region', self.controller.b_region)
         marks = []
         if self.controller.running and b_region is not None:
@@ -535,14 +622,14 @@ class SharedSearchWindow(QWidget):
                 if result and region is not None:
                     boxes = selected.get('boxes') if selected is not None else []
                     if selected is not None and (not isinstance(boxes, (list, tuple)) or not boxes):
-                        self._pause_with_error('辨識位置無效，請調整 B 範圍後重試。')
+                        self._pause_with_error('辨識位置無效，請調整發票位置後重試。')
                         return
                     polygons = [self.highlight_overlay.validated_box(box) for box in boxes]
                     if any(polygon is None for polygon in polygons):
-                        self._pause_with_error('辨識位置無效，請調整 B 範圍後重試。')
+                        self._pause_with_error('辨識位置無效，請調整發票位置後重試。')
                         return
                     if selected is not None:
-                        status = ('similar' if selected.get('match_type') == 'similar' else
+                        status = ('similar' if selected.get('match_type') in ('similar', 'numeric_similar') else
                                   'uncertain' if selected.get('needs_review') or result.get('status') != 'matched' else 'matched')
                     else:
                         status = result.get('status', 'uncertain')
@@ -551,6 +638,8 @@ class SharedSearchWindow(QWidget):
                     marks.append({'name': field['name'], 'status': status, 'a_text': result.get('text', ''),
                                   'anchor': tuple(region[:4]),
                                   'b_text': selected.get('text', '') if selected else '',
+                                  'similarity': selected.get('similarity', selected.get('score')) if selected else None,
+                                  'match_type': selected.get('match_type') if selected else None,
                                   'bounds': tuple(b_region[:4]),
                                   'boxes': [[[x + bx, y + by] for x, y in box] for box in polygons]})
         if not self.highlight_overlay.set_marks(marks):
@@ -581,6 +670,7 @@ class SharedSearchWindow(QWidget):
         self._capture_epoch = self._visual_epoch
         self._capture_active = True
         self.resume_button.hide()
+        self.manual_button.hide()
         self.highlight_overlay.hide_for_capture()
         return True
 
@@ -610,8 +700,17 @@ class SharedSearchWindow(QWidget):
         area = screen.availableGeometry()
         self.resume_button.move(area.right() - self.resume_button.width() - 10,
                                 area.bottom() - self.resume_button.height() - 10)
+        self.manual_button.adjustSize()
+        x = self.resume_button.x() - self.manual_button.width() - 8
+        y = self.resume_button.y()
+        if x < area.left():
+            x = self.resume_button.x()
+            y -= self.manual_button.height() + 6
+        self.manual_button.move(x, y)
         self.resume_button.show()
-        if not apply_native_pin(self.resume_button, self._pin.isChecked()):
+        self.manual_button.show()
+        if not (apply_native_pin(self.resume_button, self._pin.isChecked())
+                and apply_native_pin(self.manual_button, self._pin.isChecked())):
             self._pause_with_error('無法顯示浮動控制，請重新開啟搜尋。')
 
     def avoid_regions(self):
@@ -644,6 +743,7 @@ class SharedSearchWindow(QWidget):
         if not self.highlight_overlay.set_pinned(pinned):
             self._pause_with_error('無法更新文字置頂，請重新開啟搜尋。')
         self.resume_button.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(pinned))
+        self.manual_button.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(pinned))
         self._show_resume_control()
 
     def _bind_screen(self, screen, initial=False):
@@ -665,7 +765,7 @@ class SharedSearchWindow(QWidget):
             return
         self.pause(preserve_recovery=True)
         self.screen_invalidated.emit()
-        self.controller.invalidate_regions('螢幕配置已變更，請重新框選 A、B 與表格範圍。')
+        self.controller.invalidate_regions('螢幕配置已變更，請重新框選輸入數值欄位、發票位置與輸入表格。')
 
     def open(self):
         if self._closing:

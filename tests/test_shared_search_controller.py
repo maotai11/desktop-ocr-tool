@@ -607,3 +607,102 @@ def test_out_of_bounds_ocr_box_is_uncertain_and_never_published_as_green(control
     take(controller, capture)
     assert controller.fields[0]['result']['status'] == 'uncertain'
     assert controller.fields[0]['result']['candidates'] == []
+
+
+def test_manual_refresh_forces_invoice_then_fields_despite_unchanged_pixels(controlled):
+    controller, ocr, capture, first = controlled
+    controller.start()
+    take(controller, capture)
+    complete_search(controller, ocr, capture)
+    regions = controller._regions()
+    assert controller._b_cache is not None
+    assert controller.refresh_now()
+    take(controller, capture)
+    assert [job[2] for job in ocr.requests] == ['B', first, 'B']
+    complete_search(controller, ocr, capture)
+    assert [job[2] for job in ocr.requests] == ['B', first, 'B', first]
+    assert controller._regions() == regions and controller.running
+    next_cycle(controller)
+    take(controller, capture)
+    assert len(ocr.requests) == 4  # Automatic next round returns to unchanged skipping.
+
+
+@pytest.mark.parametrize('stage', ['settle', 'capture', 'B', 'A', 'verify'])
+def test_manual_refresh_retires_pending_work_and_never_publishes_old_generation(controlled, stage):
+    controller, ocr, capture, first = controlled
+    updates = []
+    controller.updated.connect(updates.append)
+    controller.start()
+    old_token, old_event = controller._token, controller._event
+    if stage != 'settle':
+        controller._settle.stop()
+        controller._take_capture()
+    if stage not in ('settle', 'capture'):
+        capture.finish()
+    if stage in ('A', 'verify'):
+        ocr.finish()
+    if stage == 'verify':
+        ocr.finish()
+    assert controller.refresh_now()
+    assert old_event.is_set() and controller._token != old_token
+    if stage == 'capture':
+        assert len(capture.requests) == 1  # Wait for the one owned capture to return.
+        capture.finish()
+        next_cycle(controller)
+    elif stage in ('B', 'A'):
+        ocr.finish()  # The old result cannot publish or trigger its next request.
+    assert not updates
+    take(controller, capture)
+    assert ocr.requests[-1][2] == 'B'
+    complete_search(controller, ocr, capture)
+    assert len(updates) == 1 and updates[0]['fields'][0]['result']['status'] == 'matched'
+
+
+@pytest.mark.parametrize('closing', [False, True])
+def test_manual_refresh_cannot_resume_a_paused_or_closed_session(controlled, closing):
+    controller, ocr, capture, first = controlled
+    controller.start()
+    take(controller, capture)
+    controller.shutdown() if closing else controller.pause()
+    count = len(ocr.requests), len(capture.requests)
+    assert not controller.refresh_now()
+    ocr.finish()
+    assert not controller.running and count == (len(ocr.requests), len(capture.requests))
+    assert not any(t.isActive() for t in (controller._poll, controller._retry, controller._settle, controller._deadline))
+
+
+@pytest.mark.parametrize('restart', [False, True])
+def test_manual_refresh_respects_reentrant_pause_during_overlay_restore(controlled, restart):
+    controller, ocr, capture, first = controlled
+    controller.start()
+    reentered = []
+
+    def restore():
+        if reentered:
+            return
+        reentered.append(True)
+        controller.pause()
+        if restart:
+            controller.start()
+            reentered.append(controller._token)
+
+    controller.after_capture = restore
+    assert not controller.refresh_now()
+    if restart:
+        assert controller._token == reentered[1] and controller._settle.isActive()
+    else:
+        assert not controller.running and not controller._settle.isActive()
+
+
+def test_date_setting_is_part_of_cache_identity_and_preserves_regions(controlled):
+    controller, ocr, capture, first = controlled
+    controller.start()
+    take(controller, capture)
+    complete_search(controller, ocr, capture)
+    signature, regions = controller._settings_signature(), controller._regions()
+    assert controller.set_date_equivalence(False)
+    assert not controller.running and controller._b_cache is None
+    assert controller._regions() == regions and controller._settings_signature() != signature
+    assert not controller.set_date_equivalence(1)
+    controller.shutdown()
+    assert not controller.set_date_equivalence(True)

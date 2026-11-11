@@ -291,7 +291,8 @@ def verify_overlay_capture(app) -> bool:
 
         def before_capture():
             accepted = window.before_capture()
-            if accepted and not overlay.isVisible() and not window.resume_button.isVisible():
+            if (accepted and not overlay.isVisible() and not window.resume_button.isVisible()
+                    and not window.manual_button.isVisible()):
                 hidden.set()
             else:
                 hidden.clear()
@@ -321,23 +322,30 @@ def verify_overlay_capture(app) -> bool:
         window._start_button.click()
         _require(not window.isVisible() and controller.running)
         wait_result(1)
-        _require(window.resume_button.isVisible())
+        _require(window.resume_button.isVisible() and window.manual_button.isVisible())
         _wait(50)
         cards = overlay.callouts
         _require(len(cards) == 1 and cards[0]['a_text'] == 'PROBE42'
                  and cards[0]['status'] == 'matched' and len(cards[0]['display_lines']) == 1)
-        _require(tuple(round(value * scale) for value in cards[0]['anchor']) == a_region[:4])
+        # The anchor comes from this run's B OCR polygon. A's source location
+        # and any remembered/template invoice position must not satisfy it.
+        expected_anchor = (b_region[0] + 8, b_region[1] + 8,
+                           b_region[2] - 16, min(b_region[3] - 8, 28) - 8)
+        _require(tuple(round(value * scale) for value in cards[0]['anchor']) == expected_anchor)
+        _require('100%' in cards[0]['display_lines'][0])
         x, y, width, height = cards[0]['rect']
         _require(y >= cards[0]['anchor'][1] + cards[0]['anchor'][3])
         label_region = (round(x * scale), round(y * scale), round(width * scale), round(height * scale), 1)
         displayed = pixels()
-        # The rect immediately below A contains real ink on our owned white paper.
-        # Metadata binds it to the A value; no B outline can satisfy this sample.
+        # The rect beneath the located B text contains A's value and similarity
+        # on our owned paper. A box outline cannot satisfy this sample.
         _require(displayed.size > 0 and np.count_nonzero(np.any(displayed < 230, axis=2)) >= 5)
-        _require(native_pinned(overlay) and native_pinned(window.resume_button) and not native_pinned(window))
+        _require(native_pinned(overlay) and native_pinned(window.resume_button)
+                 and native_pinned(window.manual_button) and not native_pinned(window))
         for pinned in (False, True):
             window.set_pinned(pinned)
             _require(native_pinned(overlay) == pinned and native_pinned(window.resume_button) == pinned
+                     and native_pinned(window.manual_button) == pinned
                      and not native_pinned(window))
 
         user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
@@ -363,10 +371,11 @@ def verify_overlay_capture(app) -> bool:
                          and not native_pinned(window) and window.isMinimized())
                 _require(window.before_capture())
                 _wait(50)
-                _require(no_ink() and not window.resume_button.isVisible())
+                _require(no_ink() and not window.resume_button.isVisible() and not window.manual_button.isVisible())
                 window.after_capture()
                 _wait(50)
-                _require(overlay.isVisible() and window.resume_button.isVisible() and not no_ink()
+                _require(overlay.isVisible() and window.resume_button.isVisible()
+                         and window.manual_button.isVisible() and not no_ink()
                          and user32.GetForegroundWindow() == foreground)
 
         # Let the real controller's next timer perform its own 50 ms settle and
@@ -379,6 +388,12 @@ def verify_overlay_capture(app) -> bool:
         wait_result(2)
         _require(len(captures) > first_capture_count and all(restore_observations)
                  and len(inference_calls) == first_inferences and overlay.isVisible())
+        # Actual input at our own manual-refresh HWND forces fresh OCR even
+        # though the invoice pixels are identical. No external window is clicked.
+        count = len(snapshots)
+        _click_owned_resume(user32, window.manual_button)
+        wait_result(count + 1)
+        _require(len(inference_calls) > first_inferences and window.manual_button.isVisible())
         window.resume_button.click()
         _require(window.isVisible() and not native_pinned(window))
         _require(window.before_capture())
@@ -386,16 +401,19 @@ def verify_overlay_capture(app) -> bool:
         window.after_capture()
         _wait(50)
         _require(not overlay.isVisible() and not overlay.marks and not window.resume_button.isVisible()
+                 and not window.manual_button.isVisible()
                  and no_ink())
 
+        count = len(snapshots)
         window._start_button.click()
         _require(controller.running and not window.isVisible())
-        wait_result(3)
+        wait_result(count + 1)
         _require(window.before_capture())
         window.close()
         window.after_capture()
         _wait(50)
         _require(not controller.running and not overlay.isVisible() and not overlay.marks and not window.resume_button.isVisible()
+                 and not window.manual_button.isVisible()
                  and no_ink())
         return True
     finally:
@@ -412,6 +430,7 @@ def verify_overlay_capture(app) -> bool:
         if window is not None:
             window.highlight_overlay.deleteLater()
             window.resume_button.deleteLater()
+            window.manual_button.deleteLater()
             window.deleteLater()
         underlay.close()
         underlay.deleteLater()

@@ -322,7 +322,7 @@ class FloatingWidget(QWidget):
         comparison_actions.addWidget(self._btn_comparison)
         self._btn_shared_search = QPushButton("整列搜尋")
         self._btn_shared_search.setMinimumHeight(32)
-        self._btn_shared_search.setToolTip("多個 A 欄位，在同一個 B 範圍找位置；支援換列與反藍追蹤")
+        self._btn_shared_search.setToolTip("框選同一行輸入的數值，在發票範圍找符合位置；支援換列與反藍追蹤")
         self._btn_shared_search.clicked.connect(self.open_shared_search)
         comparison_actions.addWidget(self._btn_shared_search)
         vbox.addLayout(comparison_actions)
@@ -763,8 +763,8 @@ class FloatingWidget(QWidget):
         self.hide()
         window.set_selection_active(True)
         self._shared_search_selection_signature = self._shared_search_region_signature()
-        label = ('B 搜尋範圍' if name == 'B' else '表格追蹤範圍' if name == 'TRACK' else
-                 next(field['name'] for field in controller.fields if field['id'] == name))
+        label = ('發票位置（B）' if name == 'B' else '輸入表格（換列用）' if name == 'TRACK' else
+                 '輸入數值（A）')
         self._shared_search_selector.selection_prompt = f'框選 {label} · Esc 取消'
 
         def selected(x, y, width, height, monitor):
@@ -795,7 +795,7 @@ class FloatingWidget(QWidget):
         origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
         regions = [QRect(*region[:4]) for region in controller.target_regions]
         for other in QApplication.topLevelWidgets():
-            if (other is window or other is window.highlight_overlay or other is window.resume_button
+            if (other is window or other is window.highlight_overlay or other is window.resume_button or other is window.manual_button
                     or not other.isVisible() or other.isMinimized()):
                 continue
             frame = other.frameGeometry()

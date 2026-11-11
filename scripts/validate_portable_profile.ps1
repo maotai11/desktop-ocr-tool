@@ -26,8 +26,8 @@ try {
     $bundle = (Resolve-Path -LiteralPath $BundleDirectory).Path
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or
-        $manifest.version -cne '1.8.0-rc.14' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.14.exe') {
+        $manifest.version -cne '1.8.0-rc.15' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.15.exe') {
         throw 'Unexpected portable candidate identity'
     }
     $original = Join-Path $bundle $manifest.executable_name

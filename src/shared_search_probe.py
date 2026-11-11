@@ -14,7 +14,9 @@ CHECK_NAMES = (
     'blue_calibration', 'blue_follow_stable', 'same_y_scroll_refreshed',
     'stale_rows_discarded', 'capture_overlay_hidden', 'close_stops_polling',
     'workers_stopped', 'clipboard_history_untouched', 'temporary_files_cleaned',
-    'a_inline_annotation', 'annotation_pin_persistence',
+    'invoice_match_annotation', 'annotation_pin_persistence',
+    'numeric_similarity_review', 'roc_gregorian_date_equivalence',
+    'manual_refresh_rechecks_unchanged_invoice', 'annotation_background_opacity',
 )
 
 
@@ -55,6 +57,7 @@ def _close_resources(window, controller, worker):
     if window is not None:
         window.highlight_overlay.deleteLater()
         window.resume_button.deleteLater()
+        window.manual_button.deleteLater()
         window.deleteLater()
     return bool(capture_stopped and ocr_stopped)
 
@@ -113,13 +116,15 @@ def _logical_checks(app):
                 if not release.wait(5):
                     raise ValueError('Stale-row handshake')
             if value >= 200:
-                lines = ['訂單AB123', '數量123', '新列文字', '新捲動資料', '過期列', '目前列']
+                lines = (['12346', '西元2026年10月12日'] if value == 206 else
+                         ['訂單AB123', '數量123', '新列文字', '新捲動資料', '過期列', '目前列'])
                 if value == 201:
                     lines.append('訂單AB123')
                 return {'text': '\n'.join(lines), 'status': 'done',
-                        'detail': [_row(text, 5 + i * 23) for i, text in enumerate(lines)]}
+                        'detail': [_row(text, 5 + i * 48) for i, text in enumerate(lines)]}
             text = {11: '訂單AB123', 12: '1.23', 13: '訂單AB123', 14: '新列文字',
-                    15: '123', 16: '新捲動資料', 17: '過期列', 18: '目前列', 19: '訂單AB123'}[value]
+                    15: '123', 16: '新捲動資料', 17: '過期列', 18: '目前列', 19: '訂單AB123',
+                    20: '12345', 21: '民國115年10月12日'}[value]
             return {'text': text, 'status': 'done', 'detail': []}
 
     def ready(action):
@@ -176,18 +181,34 @@ def _logical_checks(app):
         checks['shared_b_reused'] = (calls.count(200) == 1 and calls.count(13) == 1
             and all(field['result']['status'] == 'matched' for field in reused)
             and reused[0]['result']['selected_id'] == reused[1]['result']['selected_id'])
+        # Use separate detected invoice lines for the placement proof. Two A
+        # fields may share one B match, but cannot both occupy the same label.
+        controller.pause()
+        pixels['a40'] = (13, 15)
+        distinct = ready(controller.start)['fields']
         callouts = window.highlight_overlay.callouts
-        fields_by_name = {field['name']: field for field in reused}
+        fields_by_name = {field['name']: field for field in distinct}
         dpr = app.primaryScreen().devicePixelRatio()
-        checks['a_inline_annotation'] = len(callouts) == 2 and all(
+        def selected_bounds(field):
+            result = field['result']
+            chosen = next(candidate for candidate in result['candidates']
+                          if candidate['id'] == result['selected_id'])
+            points = [point for box in chosen['boxes'] for point in box]
+            left, top = min(point[0] for point in points), min(point[1] for point in points)
+            right, bottom = max(point[0] for point in points), max(point[1] for point in points)
+            return (left + controller.b_region[0], top + controller.b_region[1], right - left, bottom - top)
+
+        checks['invoice_match_annotation'] = len(callouts) == 2 and all(
             card['name'] in fields_by_name
             and card['a_text'] == fields_by_name[card['name']]['result']['text']
             and card['status'] == 'matched'
             and tuple(round(value * dpr) for value in card['anchor'])
-                == fields_by_name[card['name']]['region'][:4]
+                == selected_bounds(fields_by_name[card['name']])
             and card['rect'][1] >= card['anchor'][1] + card['anchor'][3]
             and len(card['display_lines']) == 1
-            and '訂單AB123' in card['display_lines'][0] for card in callouts)
+            and fields_by_name[card['name']]['result']['text'] in card['display_lines'][0]
+            and '100%' in card['display_lines'][0]
+            for card in callouts)
         pin_ok = not bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
         for pinned in (False, True):
             window.set_pinned(pinned)
@@ -237,6 +258,46 @@ def _logical_checks(app):
             and snapshots[-1]['fields'][0]['result']['text'] == '目前列'
             and not any(field['result']['text'] == '過期列'
                         for snap in snapshots for field in snap['fields']))
+
+        # Dates and near numbers travel through the same capture, worker and
+        # verified publication path as normal invoice results.
+        controller.pause()
+        pixels['a60'], pixels['b'] = (20, 21), 206
+        invoice = ready(controller.start)['fields']
+        near, date = invoice[0]['result'], invoice[1]['result']
+        near_candidate = next(row for row in near['candidates'] if row['id'] == near['selected_id'])
+        date_candidate = next(row for row in date['candidates'] if row['id'] == date['selected_id'])
+        chosen = ready(lambda: controller.select_candidate(first, near_candidate['id']))['fields'][0]['result']
+        checks['numeric_similarity_review'] = (
+            near['status'] == chosen['status'] == 'uncertain'
+            and near_candidate['match_type'] == 'similar' and near_candidate['score'] == .8
+            and near_candidate['needs_review'] is True)
+        checks['roc_gregorian_date_equivalence'] = (
+            date['status'] == 'matched' and date_candidate['match_type'] == 'date_equivalent'
+            and date_candidate['score'] == 1.0 and date['text'] == '民國115年10月12日')
+
+        from PySide6.QtGui import QImage
+        opacity_ok = bool(window.highlight_overlay.callouts)
+        if opacity_ok:
+            rect = window.highlight_overlay.callouts[0]['rect']
+            point = (int(rect[0]) + 1, int(rect[1]) + 1)
+            for percent in (0, 50, 100):
+                window._background_transparency.setValue(100 - percent)
+                rendered = QImage(window.highlight_overlay.size(), QImage.Format.Format_ARGB32)
+                rendered.fill(0)
+                window.highlight_overlay.render(rendered)
+                opacity_ok &= rendered.pixelColor(*point).alpha() == round(255 * percent / 100)
+            window._background_transparency.setValue(100)
+        checks['annotation_background_opacity'] = bool(opacity_ok)
+
+        old_inferences, previous_snapshots = len(calls), len(snapshots)
+        _until(lambda: len(snapshots) > previous_snapshots)
+        unchanged_inferences = len(calls) == old_inferences and snapshots[-1]['state'] == 'unchanged'
+        old_b_calls = calls.count(206)
+        ready(lambda: window.manual_button.click())
+        checks['manual_refresh_rechecks_unchanged_invoice'] = (
+            unchanged_inferences and calls.count(206) == old_b_calls + 1
+            and window.manual_button.isVisible() and not window.isVisible())
         checks['capture_overlay_hidden'] = (any(item[0] for item in hide_observations)
             and all(item[1] and item[2] for item in hide_observations) and bool(captures))
         captured, result_count = len(captures), len(snapshots)

@@ -1,4 +1,4 @@
-"""Click-through text beneath A fields; never include it in an OCR grab."""
+"""Click-through source values beneath their matched invoice text positions."""
 from __future__ import annotations
 
 import math
@@ -47,7 +47,7 @@ def apply_native_pin(widget, pinned):
 
 
 class SearchHighlightOverlay(QWidget):
-    """A anchors use primary-monitor-local physical pixels, independent of DPI."""
+    """Source and invoice coordinates use primary-monitor-local physical pixels."""
 
     def __init__(self):
         # An independent Window survives another application becoming active;
@@ -63,6 +63,7 @@ class SearchHighlightOverlay(QWidget):
         self._suspended = False
         self._wanted = False
         self._pinned = True
+        self._background_opacity = 0.0
         font = QFont(self.font())
         font.setPixelSize(13)
         font.setWeight(QFont.Weight.DemiBold)
@@ -71,6 +72,22 @@ class SearchHighlightOverlay(QWidget):
     @property
     def marks(self):
         return tuple(dict(mark) for mark in self._marks)
+
+    @property
+    def background_opacity(self):
+        return self._background_opacity
+
+    def set_background_opacity(self, percent):
+        """Change label backing only; never reveal hidden/capturing results."""
+        if isinstance(percent, bool) or not isinstance(percent, (int, float)):
+            return False
+        if isinstance(percent, float) and not math.isfinite(percent):
+            return False
+        value = float(max(0, min(100, percent)))
+        if value != self._background_opacity:
+            self._background_opacity = value
+            self.update()
+        return True
 
     @staticmethod
     def _plain_text(value, limit=240):
@@ -146,11 +163,21 @@ class SearchHighlightOverlay(QWidget):
             status = mark.get('status', 'matched' if mark.get('kind', 'match') == 'match' else 'uncertain')
             if status not in ('matched', 'similar', 'uncertain', 'missing', 'ambiguous'):
                 status = 'uncertain'
+            similarity = mark.get('similarity')
+            if similarity is not None:
+                if (type(similarity) not in (int, float) or not 0 <= similarity <= 1
+                        or not math.isfinite(similarity)):
+                    self.clear()
+                    return False
+                similarity = float(similarity)
+                if status == 'matched' and similarity < 1:
+                    status = 'similar'
             prepared.append({'name': self._plain_text(mark.get('name', ''), 32),
                              'kind': 'match' if status == 'matched' else 'uncertain',
                              'status': status, 'boxes': tuple(boxes), 'bounds': tuple(bounds) if bounds else None,
                              'anchor': tuple(anchor), 'a_text': self._plain_text(mark.get('a_text', '')),
-                             'b_text': self._plain_text(mark.get('b_text', ''))})
+                             'b_text': self._plain_text(mark.get('b_text', '')),
+                             'similarity': similarity, 'match_type': mark.get('match_type')})
         self._marks = tuple(prepared)
         self._wanted = bool(show and self._marks)
         self.update()
@@ -188,7 +215,7 @@ class SearchHighlightOverlay(QWidget):
         return True
 
     def _layout_callouts(self):
-        """One line at each A anchor; never relocate a result to an unrelated B slot."""
+        """Place each source value below its actual selected invoice OCR line."""
         screen = QApplication.primaryScreen()
         if screen is None or not self._marks:
             return (), 0, None
@@ -197,29 +224,43 @@ class SearchHighlightOverlay(QWidget):
         metrics = QFontMetricsF(self.font())
         line_height = math.ceil(metrics.lineSpacing())
         placed, occupied = [], []
-        anchors = [QRectF(*(value / scale for value in mark['anchor'])) for mark in self._marks]
-        for mark, anchor in zip(self._marks, anchors):
-            if not area.intersects(anchor):
+        source_anchors = [QRectF(*(value / scale for value in mark['anchor'])) for mark in self._marks]
+        invoice_anchors = []
+        for mark in self._marks:
+            points = [QPointF(x / scale, y / scale) for polygon in mark['boxes'] for x, y in polygon]
+            invoice_anchors.append(QPolygonF(points).boundingRect() if points else None)
+        protected = source_anchors + [anchor for anchor in invoice_anchors if anchor is not None]
+        for mark, source_anchor, anchor in zip(self._marks, source_anchors, invoice_anchors):
+            # Missing/unselected candidates have no honest invoice position.
+            # They remain available through overflow and the control panel.
+            if (anchor is None or mark['bounds'] is None
+                    or mark['status'] in ('missing', 'ambiguous') or not area.contains(anchor)):
                 continue
-            status = {'matched': '一致', 'similar': '近似，需確認', 'uncertain': '需確認',
+            status = {'matched': '找到', 'similar': '相似／需確認', 'uncertain': '需確認',
                       'missing': '未找到', 'ambiguous': '多處符合'}[mark['status']]
             text = mark['a_text'] or '未辨識到文字'
+            if mark['similarity'] is not None:
+                # Floor display precision: a near match must never round to 100%.
+                percent = math.floor(mark['similarity'] * 1000) / 10
+                status = f'{percent:g}%'
             suffix = f' · {status}'
+            invoice_area = area.intersected(QRectF(*(value / scale for value in mark['bounds'])))
             # Keep the status visible even when the OCR text must be shortened.
-            width = min(420.0, max(120.0, anchor.width()), area.width())
-            x = max(area.left(), min(anchor.left(), area.right() - width))
+            width = min(420.0, max(120.0, metrics.horizontalAdvance(text + suffix) + 6), invoice_area.width())
+            if width < metrics.horizontalAdvance(suffix) + 12:
+                continue
+            x = max(invoice_area.left(), min(anchor.left(), invoice_area.right() - width))
             height = line_height + 6
-            candidates = (QRectF(x, anchor.bottom() + 3, width, height),
-                          QRectF(x, anchor.top() - height - 3, width, height))
-            rectangle = next((rect for rect in candidates if area.contains(rect)
-                              and not any(rect.intersects(other) for other in occupied)
-                              and not any(rect.intersects(other) for other in anchors)), None)
-            if rectangle is None:
+            rectangle = QRectF(x, anchor.bottom() + 3, width, height)
+            if (not invoice_area.contains(rectangle)
+                    or any(rectangle.intersects(other) for other in occupied)
+                    or any(rectangle.intersects(other) for other in protected)):
                 continue
             occupied.append(rectangle)
             preview = metrics.elidedText(text, Qt.TextElideMode.ElideRight,
                                          max(0, width - metrics.horizontalAdvance(suffix) - 6))
             placed.append({**mark, 'rect': tuple(rectangle.getRect()), 'anchor': tuple(anchor.getRect()),
+                           'source_anchor': tuple(source_anchor.getRect()),
                            'display_lines': (preview + suffix,), 'line_height': line_height})
         # Overflow is reported by the existing restore control, not another floating UI.
         return tuple(placed), len(self._marks) - len(placed), None
@@ -234,6 +275,9 @@ class SearchHighlightOverlay(QWidget):
         metrics = QFontMetricsF(self.font())
         for label in self.callouts:
             rectangle = QRectF(*label['rect'])
+            if self._background_opacity:
+                painter.fillRect(rectangle, QColor(255, 255, 255,
+                                                   round(255 * self._background_opacity / 100)))
             path = QPainterPath()
             path.addText(QPointF(rectangle.left() + 2, rectangle.top() + 3 + metrics.ascent()),
                          self.font(), label['display_lines'][0])

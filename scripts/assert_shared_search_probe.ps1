@@ -21,7 +21,9 @@ function Assert-SharedSearchProbe($Report, [string]$Version, [string]$Hash) {
         'ambiguous_requires_selection', 'manual_selection_applied', 'manual_row_shift',
         'blue_calibration', 'blue_follow_stable', 'same_y_scroll_refreshed', 'stale_rows_discarded',
         'capture_overlay_hidden', 'close_stops_polling', 'workers_stopped',
-        'clipboard_history_untouched', 'temporary_files_cleaned', 'a_inline_annotation', 'annotation_pin_persistence')
+        'clipboard_history_untouched', 'temporary_files_cleaned', 'invoice_match_annotation', 'annotation_pin_persistence',
+        'numeric_similarity_review', 'roc_gregorian_date_equivalence',
+        'manual_refresh_rechecks_unchanged_invoice', 'annotation_background_opacity')
     if ($Report.checks -isnot [System.Management.Automation.PSCustomObject] -or
         (@($Report.checks.PSObject.Properties.Name | Sort-Object) -join '|') -cne
         (@($checkNames | Sort-Object) -join '|')) {
