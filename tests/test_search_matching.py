@@ -158,3 +158,95 @@ def test_empty_and_excessive_input_never_verified():
 def test_invalid_threshold_rejected(threshold):
     with pytest.raises(ValueError):
         search('text', 'text', threshold=threshold)
+
+
+@pytest.mark.parametrize(('a', 'b', 'score'), [
+    ('12345', '12346', .8), ('12', '13', .5), ('-12345', '-12346', .8),
+    ('1,234.50', '1,234.51', 5 / 6), ('00123', '00124', .8),
+])
+def test_numeric_near_has_actual_digit_agreement_and_never_becomes_verified(a, b, score):
+    output = search(a, b)
+    assert output['status'] == 'uncertain'
+    candidate = output['candidates'][0]
+    assert candidate['match_type'] == 'similar'
+    assert candidate['similarity_kind'] == 'numeric'
+    assert candidate['score'] == pytest.approx(score, abs=.000001)
+    assert candidate['needs_review']
+    assert candidate['boxes'] == [line(b)['box']]
+    adopted = search(a, b, selected_id=candidate['id'])
+    assert adopted['status'] == 'uncertain' and adopted['score'] == candidate['score']
+    assert search(a, b, mode='exact')['status'] == 'missing'
+
+
+@pytest.mark.parametrize(('a', 'b'), [
+    ('1', '2'), ('12', '23'), ('12345', '123456'), ('12345', '1234'),
+    ('12345', '-12346'), ('12.34', '123.5'), ('01', '11'),
+    ('1e3', '1e4'), ('1/23', '1/24'), ('１２３４５', '12346'),
+    ('12345', 'INV12346'), ('12345', '12346X'), ('1,23', '1,24'),
+])
+def test_numeric_near_preserves_format_boundaries_and_excludes_nondecimal_values(a, b):
+    assert search(a, b)['status'] == 'missing'
+
+
+def test_late_exact_value_wins_over_more_than_candidate_limit_near_values():
+    rows = [line('12346', index * 30) for index in range(70)] + [line('12345', 3000)]
+    output = match_field(result('12345'), result('invoice', rows=rows))
+    assert output['status'] == 'matched'
+    assert len(output['candidates']) == 1
+    assert output['candidates'][0]['text'] == '12345'
+    assert output['score'] == 1
+
+
+@pytest.mark.parametrize(('a', 'b'), [
+    ('115/10/12', '2026-10-12'), ('民國115年10月12日', '西元2026年10月12日'),
+    ('2026/10/12', '115/10/12'),
+])
+def test_calendar_equivalence_is_exact_date_with_original_invoice_box(a, b):
+    output = search(a, '日期：' + b)
+    assert output['status'] == 'matched' and output['score'] == 1
+    assert output['candidates'][0]['match_type'] == 'date_equivalent'
+    assert output['candidates'][0]['boxes'] == [line(b)['box']]
+    assert '民國' in output['reason'] and '西元' in output['reason']
+    assert search(a, b, date_equivalence=False)['status'] == 'missing'
+    assert search(a, b, mode='exact')['status'] == 'missing'
+
+
+@pytest.mark.parametrize('b', ['西元前2026/10/12', 'AD 2026/10/12', '民國2026/10/12',
+                              '115/10/13', '115/02/30'])
+def test_date_mode_cannot_fall_back_to_literal_substring_or_near_date(b):
+    assert search('2026/10/12', b)['status'] == 'missing'
+
+
+def test_date_equivalence_preserves_review_and_duplicate_positions():
+    invoice = result('dates', rows=[line('2026/10/12'), line('2026/10/12', 40)])
+    output = match_field(result('115/10/12'), invoice)
+    assert output['status'] == 'ambiguous' and output['score'] is None
+    chosen = output['candidates'][1]['id']
+    assert match_field(result('115/10/12'), invoice, selected_id=chosen)['status'] == 'matched'
+    invoice['status'] = 'needs_review'
+    assert match_field(result('115/10/12'), invoice, selected_id=chosen)['status'] == 'uncertain'
+    output = search('115/10/12', '115/10/12 與 2026/10/12')
+    assert output['status'] == 'ambiguous'
+    assert output['candidates'][0]['occurrences'] == 2
+
+
+@pytest.mark.parametrize(('a', 'b'), [
+    ('115/10/12', '西元：115/10/12；西元2026/10/12'),
+    ('2026/10/12', '民國：2026/10/12；民國115/10/12'),
+])
+def test_date_match_provenance_uses_only_valid_equivalent_tokens(a, b):
+    output = search(a, b)
+    assert output['status'] == 'matched'
+    assert output['candidates'][0]['match_type'] == 'date_equivalent'
+    assert output['candidates'][0]['occurrences'] == 1
+    assert '民國' in output['reason'] and '西元' in output['reason']
+
+
+@pytest.mark.parametrize(('a', 'b'), [('0.12', '1.12'), ('00000', '00001')])
+def test_numeric_zero_value_is_not_confused_with_leading_zero_padding(a, b):
+    assert search(a, b)['status'] == 'uncertain'
+    assert search(a, b)['candidates'][0]['similarity_kind'] == 'numeric'
+
+
+def test_perfect_threshold_does_not_enable_numeric_near_candidates():
+    assert search('12345', '12346', threshold=1)['status'] == 'missing'

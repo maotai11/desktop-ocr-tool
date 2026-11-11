@@ -50,6 +50,7 @@ class SharedSearchController(QObject):
         self.row_pitch = 30
         self.auto_follow = False
         self.mode = 'normalized'
+        self.date_equivalence = True
         self.interval = 2
         self.running = False
         self.state = 'paused'
@@ -201,7 +202,7 @@ class SharedSearchController(QObject):
         b = regions.get('B')
         if b is not None and any(regions_overlap(region, b)
                                  for name, region in regions.items() if name not in ('B', 'TRACK')):
-            raise ComparisonCaptureError('A 欄位與 B 搜尋範圍不可重疊。')
+            raise ComparisonCaptureError('輸入數值欄位與發票位置不可重疊，請分別框選。')
 
     def set_a_region(self, field_id, region):
         if self._closing or field_id not in self._fields:
@@ -284,6 +285,30 @@ class SharedSearchController(QObject):
         self.pause()
         self._b_cache = None
 
+    def set_date_equivalence(self, enabled):
+        if self._closing or type(enabled) is not bool:
+            return False
+        if enabled != self.date_equivalence:
+            self.pause()
+            self.date_equivalence = enabled
+            self._b_cache = None
+        return True
+
+    def refresh_now(self):
+        """Retire this cycle and request fresh invoice/source OCR explicitly."""
+        if self._closing or not self.running or self._calibrating:
+            return False
+        self._cancel_cycle()
+        # Restoring the overlay may synchronously pause, close, or restart.
+        # Never let this older entry alter a replacement generation.
+        if self._closing or not self.running or self._token is not None:
+            return False
+        self._b_cache = None
+        self._last_key = self._last_payload = self._last_a = self._last_b = None
+        self._selected_ids.clear()
+        self._begin_cycle()
+        return self.running and not self._closing
+
     def invalidate_regions(self, message='螢幕配置已變更，請重新設定範圍。'):
         self.pause()
         for field in self._fields.values():
@@ -297,7 +322,7 @@ class SharedSearchController(QObject):
 
     def _ready(self):
         if self.b_region is None or any(field['region'] is None for field in self._fields.values()):
-            self.failed.emit('請先選取所有 A 欄位與 B 搜尋範圍。')
+            self.failed.emit('請先框選發票位置，以及每個輸入數值欄位。')
             return False
         return True
 
@@ -488,7 +513,7 @@ class SharedSearchController(QObject):
                  '_enable_secondary_engine', '_secondary_for_handwriting', '_secondary_for_low_confidence',
                  '_secondary_confidence_threshold')
         values = tuple(getattr(engine, name, None) for name in names)
-        return (id(engine), id(getattr(engine, '_secondary', None)), self.mode, values)
+        return (id(engine), id(getattr(engine, '_secondary', None)), self.mode, self.date_equivalence, values)
 
     def _tracking_key(self, images, *, move):
         if not self.auto_follow:
@@ -666,7 +691,8 @@ class SharedSearchController(QObject):
             self._a_results = deepcopy(self._last_a)
             self._b_result = deepcopy(self._last_b)
         results = {field_id: match_field(self._a_results[field_id], self._b_result,
-                                        mode=self.mode, selected_id=self._selected_ids.get(field_id))
+                                        mode=self.mode, date_equivalence=self.date_equivalence,
+                                        selected_id=self._selected_ids.get(field_id))
                    for field_id in self._fields}
         self._last_key = key
         self._last_payload = deepcopy(results)
@@ -767,7 +793,7 @@ class SharedSearchController(QObject):
             return False
         self.pause()
         if self.tracking_region is None or not self._ready() or not 1 <= self.row_pitch <= 500:
-            self.failed.emit('請先設定表格範圍、A 欄位及每列高度。')
+            self.failed.emit('請先框選輸入表格、數值欄位，再設定每列高度。')
             return False
         self._calibrating = True
         self._token, self._event = uuid4().hex, Event()
@@ -792,7 +818,7 @@ class SharedSearchController(QObject):
             self._tracker, self._baseline_a = tracker, positions
         except (TypeError, ValueError):
             self._reset_tracking()
-            self._fail('未找到完整的彩色選取列；請確認所有 A 欄位都在同一列後再校準。')
+            self._fail('未找到完整的彩色選取列；請確認輸入數值欄位都在同一列後再校準。')
             return
         self._calibrating = False
         self._deadline.stop()

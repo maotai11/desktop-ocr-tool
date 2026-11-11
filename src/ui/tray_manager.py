@@ -57,7 +57,7 @@ class TrayManager:
         act_comparison_pause = menu.addAction('暫停 A／B 核對')
         act_comparison_pause.triggered.connect(self._widget.pause_comparison)
         if hasattr(self._widget, 'open_shared_search'):
-            act_search = menu.addAction('整列搜尋（多 A／共用 B）')
+            act_search = menu.addAction('整列搜尋（數值核對發票）')
             act_search.triggered.connect(self._widget.open_shared_search)
             act_search_pause = menu.addAction('暫停整列搜尋')
             act_search_pause.triggered.connect(self._widget.pause_shared_search)

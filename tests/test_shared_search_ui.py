@@ -302,7 +302,7 @@ def test_cleared_controller_results_remove_marks_before_next_capture(window):
 
 
 def test_numeric_mode_and_interval_controls_match_controller_contract(window):
-    assert window._mode.currentText() == '數字嚴格／文字近似'
+    assert window._mode.currentText() == '數值核對／相似提醒'
     assert '95%' in window._mode.toolTip()
     assert '前導零' in window._mode.toolTip()
     assert window._row_pitch.value() == window.controller.row_pitch == 30
@@ -365,19 +365,24 @@ def test_overlay_pin_is_independent_of_normal_panel_and_minimize(window, qtbot):
     assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
 
 
-def test_inline_text_is_below_a_without_b_text_cards_or_original_text_overlap(qtbot, qapp):
+def test_inline_text_is_below_selected_invoice_field_without_b_text_or_source_overlap(qtbot, qapp):
     overlay = SearchHighlightOverlay()
     qtbot.addWidget(overlay)
     scale = qapp.primaryScreen().devicePixelRatio()
     anchors = [(20 * scale, (20 + index * 70) * scale, 180 * scale, 25 * scale) for index in range(3)]
+    invoice = (300 * scale, 100 * scale, 400 * scale, 300 * scale)
+    targets = [(320 * scale, (120 + index * 70) * scale, 100 * scale, 20 * scale) for index in range(3)]
     marks = [{'name': 'DO NOT DISPLAY', 'a_text': '<b>王</b>\n測試\u202e' + '金額' * 1000,
               'b_text': 'B SHOULD NOT DISPLAY', 'status': 'matched' if index else 'similar',
-              'anchor': anchor, 'boxes': []} for index, anchor in enumerate(anchors)]
+              'anchor': anchor, 'bounds': invoice, 'similarity': 1.0 if index else 0.8,
+              'boxes': [[[x, y], [x + w, y], [x + w, y + h], [x, y + h]]]}
+             for index, (anchor, (x, y, w, h)) in enumerate(zip(anchors, targets))]
     assert overlay.set_marks(marks)
     labels = overlay.callouts
     assert len(labels) == 3 and overlay.overflow_count == 0
-    for label, physical_anchor in zip(labels, anchors):
-        anchor = QRectF(*(value / scale for value in physical_anchor))
+    for label, physical_anchor, target in zip(labels, anchors, targets):
+        anchor = QRectF(*(value / scale for value in target))
+        assert label['source_anchor'] == tuple(value / scale for value in physical_anchor)
         rectangle = QRectF(*label['rect'])
         assert tuple(anchor.getRect()) == label['anchor']
         assert rectangle.top() == anchor.bottom() + 3
@@ -387,8 +392,8 @@ def test_inline_text_is_below_a_without_b_text_cards_or_original_text_overlap(qt
         assert 'B SHOULD NOT DISPLAY' not in label['display_lines'][0]
         assert '\n' not in label['a_text'] and '\u202e' not in label['a_text']
         assert len(label['a_text']) <= 241
-    assert '需確認' in labels[0]['display_lines'][0]
-    assert '一致' in labels[1]['display_lines'][0]
+    assert labels[0]['display_lines'][0].endswith(' · 80%')
+    assert labels[1]['display_lines'][0].endswith(' · 100%')
     assert not overlay.grab().isNull()
 
 
@@ -403,7 +408,7 @@ def test_near_or_low_confidence_selected_result_never_has_green_callout(window):
     assert window.highlight_overlay.overflow_count == 0
 
 
-def test_small_b_does_not_clip_a_text_and_colliding_labels_report_overflow(qtbot, qapp):
+def test_tight_invoice_has_no_space_and_reports_overflow_instead_of_wrong_position(qtbot, qapp):
     overlay = SearchHighlightOverlay()
     qtbot.addWidget(overlay)
     scale = qapp.primaryScreen().devicePixelRatio()
@@ -413,9 +418,8 @@ def test_small_b_does_not_clip_a_text_and_colliding_labels_report_overflow(qtbot
     mark = {'name': '窄欄位', 'a_text': 'A', 'b_text': 'B', 'anchor': (20 * scale, 100 * scale, 30 * scale, 20 * scale),
             'bounds': bounds, 'boxes': box}
     assert overlay.set_marks([mark] * 20)
-    assert len(overlay.callouts) == 2 and overlay.overflow_count == 18
+    assert not overlay.callouts and overlay.overflow_count == 20
     assert overlay.overflow_rect is None
-    assert all(QRectF(*label['rect']).left() == 20 for label in overlay.callouts)
     mark['bounds'] = (310 * scale, 110 * scale, 20 * scale, 20 * scale)
     assert not overlay.set_marks([mark])
     assert not overlay.marks and not overlay.isVisible()
@@ -435,7 +439,8 @@ def test_overlay_clear_invalid_geometry_and_high_dpi_paint(qtbot, qapp):
     assert not overlay.set_marks([{'name': 'A1', 'boxes': candidate()['boxes']},
                                   {'name': 'bad', 'boxes': [[[float('nan'), 1]] * 4]}])
     assert not overlay.marks
-    assert overlay.set_marks([{'name': 'A1', 'boxes': candidate()['boxes']}])
+    assert overlay.set_marks([{'name': 'A1', 'boxes': candidate()['boxes'],
+                               'anchor': (200, 10, 60, 20), 'bounds': (0, 0, 180, 150)}])
     qapp.processEvents()
     assert len(overlay.marks) == 1
     image = overlay.grab().toImage()
@@ -460,11 +465,12 @@ def test_overlay_malformed_input_is_safe_and_overflow_never_leaves_partial_marks
 @pytest.mark.parametrize('status,label', [('missing', '未找到'), ('ambiguous', '多處符合'), ('uncertain', '需確認')])
 def test_nonmatching_result_still_shows_a_recognized_text_and_status(window, status, label):
     window.controller.publish(status, candidates=[])
-    callout = window.highlight_overlay.callouts[0]
-    assert callout['anchor'] == (10.0, 10.0, 80.0, 30.0)
-    assert callout['status'] == status
-    assert '王小明' in callout['display_lines'][0] and label in callout['display_lines'][0]
-    assert callout['boxes'] == ()
+    assert not window.highlight_overlay.callouts
+    assert window.highlight_overlay.overflow_count == 1
+    mark = window.highlight_overlay.marks[0]
+    assert mark['status'] == status and mark['a_text'] == '王小明'
+    assert mark['boxes'] == ()
+    assert '王小明' in window._fields_cards['a1']._text.text()
 
 
 def test_start_hides_panel_restore_opens_normal_panel_pause_removes_floating_ui(window):

@@ -62,3 +62,38 @@ def test_windows_run_requires_actual_native_pixel_proof(qapp, tmp_path, monkeypa
     report = json.loads(path.read_text(encoding='utf-8'))
     assert report['overlay_capture_verified'] is False and report['passed'] is False
     assert report['error_code'] == 'SHARED_SEARCH_PROBE_CHECK_FAILED'
+
+
+def test_invoice_annotation_probe_rejects_source_region_as_result_anchor(qapp, tmp_path, monkeypatch):
+    """An old A-position implementation must not satisfy the new B proof."""
+    from src.ui.search_highlight_overlay import SearchHighlightOverlay
+    real = SearchHighlightOverlay.callouts.fget
+
+    def wrong_anchor(overlay):
+        return tuple({**card, 'anchor': (20., 40., 50., 12.)} for card in real(overlay))
+
+    monkeypatch.setattr(SearchHighlightOverlay, 'callouts', property(wrong_anchor))
+    path = tmp_path / 'wrong-anchor.json'
+    assert probe.run_shared_search_probe(path) == 1
+    report = json.loads(path.read_text(encoding='utf-8'))
+    assert report['passed'] is False
+    assert report['checks']['invoice_match_annotation'] is False
+
+
+def test_near_number_cannot_be_reported_as_verified_by_probe(qapp, tmp_path, monkeypatch):
+    """Inject false-green handling after actual numeric matching has run."""
+    from src.comparison import shared_controller
+    real = shared_controller.match_field
+
+    def false_green(*args, **kwargs):
+        result = real(*args, **kwargs)
+        if result['text'] == '12345' and result['candidates']:
+            result['status'] = 'matched'
+        return result
+
+    monkeypatch.setattr(shared_controller, 'match_field', false_green)
+    path = tmp_path / 'false-green.json'
+    assert probe.run_shared_search_probe(path) == 1
+    report = json.loads(path.read_text(encoding='utf-8'))
+    assert report['passed'] is False
+    assert report['checks']['numeric_similarity_review'] is False

@@ -482,6 +482,21 @@ def _exercise_gui(app, directory, checks):
             search._mode.setCurrentIndex(search._mode.findData('exact'))
             search._pin.setChecked(False)
             search._pin.setChecked(True)
+            search._background_transparency.setValue(40)
+            _require(search.highlight_overlay.background_opacity == 60
+                     and search.highlight_overlay.windowOpacity() == 1.)
+            search._background_transparency.setValue(100)
+            _require(search.highlight_overlay.background_opacity == 0)
+            # Exact mode keeps literal date comparison and disables the option;
+            # return to normalized mode to exercise the real settings route.
+            search._mode.setCurrentIndex(search._mode.findData('normalized'))
+            search._date_equivalence.setChecked(False)
+            _require(not search_controller.date_equivalence)
+            search._date_equivalence.setChecked(True)
+            _require(search_controller.date_equivalence)
+            search._mode.setCurrentIndex(search._mode.findData('exact'))
+            search._manual_button.click()
+            _require(not search_controller.running and not search.manual_button.isVisible())
             search._select_b.click()
             _require(shell._shared_search_selector.isVisible())
             pipeline.start_region_capture('region_image')
@@ -495,7 +510,8 @@ def _exercise_gui(app, directory, checks):
                      and search_controller.mode == 'exact' and search._pin.isChecked()
                      and not search_controller.b_region)
             search.close()
-            checks['shared_search_controls'] = not search.isVisible() and not search_controller.running
+            checks['shared_search_controls'] = (not search.isVisible() and not search_controller.running
+                                               and not search.manual_button.isVisible())
 
             shell.show()
             shell._btn_pause.click()

@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.14'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.15'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
@@ -45,7 +45,8 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'shared_b_reused multiple_a_rows one_b_match_per_a strict_numbers ambiguous_requires_selection '
     'manual_selection_applied manual_row_shift blue_calibration blue_follow_stable same_y_scroll_refreshed '
     'stale_rows_discarded capture_overlay_hidden clipboard_history_untouched overlay_capture_verified '
-    'a_inline_annotation annotation_pin_persistence native_archive_coverage_verified native_security_policy_passed '
+    'invoice_match_annotation annotation_pin_persistence numeric_similarity_review roc_gregorian_date_equivalence '
+    'manual_refresh_rechecks_unchanged_invoice annotation_background_opacity native_archive_coverage_verified native_security_policy_passed '
     'launcher_actions_and_capture_cancel settings_cancel_and_apply history_search_tags_and_pin '
     'editor_save_and_history_refresh ocr_selection_copy_explicit document_import_template_zoom_clear '
     'handwriting_stroke_candidate_copy paired_comparison_controls shared_search_controls '
@@ -320,7 +321,8 @@ def observed_result(value):
              'batch_groups_isolated','batch_serialized','batch_unchanged_skipped','batch_cancel_stops_all',
              'shared_b_reused','multiple_a_rows','one_b_match_per_a','strict_numbers','ambiguous_requires_selection',
              'manual_selection_applied','manual_row_shift','blue_calibration','blue_follow_stable','same_y_scroll_refreshed',
-             'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched','a_inline_annotation','annotation_pin_persistence',
+             'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched','invoice_match_annotation','annotation_pin_persistence',
+             'numeric_similarity_review','roc_gregorian_date_equivalence','manual_refresh_rechecks_unchanged_invoice','annotation_background_opacity',
              'launcher_actions_and_capture_cancel','settings_cancel_and_apply','history_search_tags_and_pin',
              'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',
              'handwriting_stroke_candidate_copy','paired_comparison_controls','shared_search_controls',
