@@ -144,6 +144,33 @@ def test_other_inkpick_window_prevents_capture_before_hiding_overlay(qtbot, tmp_
     widget.shutdown_shared_search()
 
 
+def test_owned_resume_button_is_hidden_for_capture_instead_of_blocking_search(qtbot, tmp_path):
+    widget = _make_widget(tmp_path)
+    qtbot.addWidget(widget)
+    widget.open_shared_search()
+    window, controller = widget._shared_search, widget._shared_search_controller
+    qtbot.addWidget(window)
+    qtbot.addWidget(window.resume_button)
+    window.hide()
+    window.resume_button.setGeometry(120, 140, 110, 30)
+    window.resume_button.show()
+    QApplication.processEvents()
+    screen = QApplication.primaryScreen()
+    origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
+    frame = window.resume_button.frameGeometry()
+    assert controller.set_a_region(controller.fields[0]['id'],
+                                   (round((frame.x() - origin.x()) * dpr),
+                                    round((frame.y() - origin.y()) * dpr), 30, 20, 1))
+    # A legitimate application surface still blocks capture (the preceding
+    # test); our own compact control must instead join capture hide/restore.
+    window.resume_button.show()
+    assert window.resume_button.isVisible()
+    assert widget._shared_search_can_capture()
+    assert not window.resume_button.isVisible()
+    assert not window.highlight_overlay.isVisible()
+    widget.shutdown_shared_search()
+
+
 def test_tray_search_status_and_pause_entry_without_notifications(qtbot, tmp_path, monkeypatch):
     from src.ui.tray_manager import TrayManager
     widget = _make_widget(tmp_path)

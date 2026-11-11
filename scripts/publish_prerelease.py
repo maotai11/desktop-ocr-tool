@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.12. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.13. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -24,7 +24,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.12"
+TAG = "v1.8.0-rc.13"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -133,14 +133,15 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版把整列搜尋的核對文字直接放到 B 搜尋範圍，並將「標示置頂」與控制窗分開。切換其他軟體或最小化控制窗後，仍可在 B 位置看見欄名、A 原文與 B 辨識文字。
+本版把整列搜尋的文字直接放到各 A 框下方。開始搜尋後控制窗收起，白底文件上保留 A 辨識文字、核對狀態及小型「恢復介面」按鈕。
 
-### B 位置直接看 A／B
-- 每個已採用的位置顯示三行文字卡：欄名與「一致／需確認」、A 原文、B 文字。文字卡放在 B 範圍內，過長文字截短；空間不足時顯示還有幾個標示，完整內容仍可在控制窗查看。
-- 「標示置頂」只控制 B 桌面標示，控制窗是一般工作列視窗，可拖動、切換或最小化。B 標示保持點擊穿透；要調位置請回控制窗框選。
-- 擷取前先隱藏標示、等待畫面更新，再擷取；Windows 發布關卡實際擷取自建底圖，確認可見文字卡、置頂、切換前景與最小化控制窗，以及標示不被讀回自己的 OCR 畫面。合成測試不代表實際文件 OCR 準確率。
+### 在 A 框下方直接看文字
+- 各 A 位置下方顯示辨識文字與核對狀態；綠色代表找到，紅色代表未找到，琥珀色代表多處符合或需確認。長文依可用寬度省略，完整內容可回控制窗查看。
+- 按「開始搜尋」後自動收起控制窗。按小型「恢復介面」按鈕返回控制窗，再按「暫停」停止搜尋，或改框、選候選。
+- 「標示置頂」控制文字及恢復按鈕，控制窗保持一般視窗。切回文件、擷取恢復及切換設定後重套用置頂，不需重開整列搜尋；文字點擊穿透，恢復按鈕可點擊。
+- 擷取前同時隱藏文字與按鈕，停止或關閉清除；Windows 探針以自建底圖檢查 A 下方像素、前景切換、重複擷取恢復及不搶焦點。合成測試不代表實際文件 OCR 準確率。
 
-### 這次多查了哪些項目
+### 本版沿用的發布檢查
 - GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫、兩種核對與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
 - 對同一份 EXE 的所有內含 PE 檔建立雜湊、來源、相依匯入與簽章清單；以 Microsoft Defender 自訂掃描 EXE 及抽出的完整原生檔。工具不可用、來源無法對應、相依無法解析或掃描未完成都阻擋發布。公開 metadata 附相對路徑清單，沒有原始 runner 路徑或內容 Log。
 - Windows 執行環境固定為 CPython 3.12.16（Astral python-build-standalone 20261026）及其 OpenSSL 3.5.9，下載檔與原生檔逐一核對固定 SHA256；Qt 固定 6.11.3，排除未使用的 Qt TLS 外掛。必要的 SSL 相依檔隨執行環境一併更新。這些靜態清單與防毒掃描無法證明所有原生檔都沒有未知漏洞；範圍見 ZIP 的 `docs/VALIDATION_COVERAGE.md`，授權原文在 `licenses/`。
@@ -157,8 +158,8 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 - 同一個 Y 座標捲入新資料仍會更新內容；底色消失、多列同色或超出表格時不猜測新位置。手動換列會停用自動跟隨，改框或改列高後需重新校正。白底、斑馬紋、動畫與不等高列可能無法追蹤，請改手動操作。
 
 ### 標示、停止與隱私
-- 控制窗預設 348 × 560，可拖移、調整大小及最小化。「標示置頂」只改 B 桌面標示；桌面標示可調填色濃度，平時點擊穿透；要改位置請用控制窗的「框選」，Esc 取消。
-- 擷取前暫時隱藏標示，等待畫面更新後才取圖，避免讀到自己的框；可能出現短暫閃動。框只精確到 OCR 文字行，不能當作字元或儲存格定位。
+- 控制窗預設 348 × 560，可拖移、調整大小及最小化；搜尋開始後收起，按「恢復介面」返回。「標示置頂」控制桌面文字與恢復按鈕；改位置請用控制窗的「框選」，Esc 取消。
+- 擷取前暫時隱藏標示，等待畫面更新後才取圖，避免讀到自己的文字；可能出現短暫閃動。B 候選位置以 OCR 文字行為單位，不能當作字元或儲存格定位。
 - 暫停、清除或關閉會停止後續檢查，清掉結果與標示；當前原生 OCR 需先返回，晚到結果不會重新顯示舊標示。位置與校正只保留本次執行，不存 A／B 截圖、歷史、剪貼簿或內容 Log。
 - 本版先限主螢幕且來源必須可見；遮住、最小化或畫面外的文字無法搜尋。沒有導入新的表格結構模型，也不會自動辨認合併儲存格或操作來源軟體。
 

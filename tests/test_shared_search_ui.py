@@ -150,6 +150,7 @@ def window(qtbot):
     window = SharedSearchWindow(owner)
     qtbot.addWidget(window)
     qtbot.addWidget(window.highlight_overlay)
+    qtbot.addWidget(window.resume_button)
     yield window
     window.shutdown()
 
@@ -325,20 +326,20 @@ def test_malformed_or_excessive_selected_geometry_does_not_show_partial_success(
     assert window._fields_cards['a1']._status.text() == '等待搜尋'
 
 
-def test_opacity_and_repin_keep_clickthrough_and_do_not_resurrect_hidden_capture(window):
+def test_repin_keeps_clickthrough_and_does_not_resurrect_hidden_capture(window):
     window.controller.publish()
     overlay = window.highlight_overlay
     assert overlay.windowFlags() & Qt.WindowType.WindowTransparentForInput
     assert overlay.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
     assert overlay.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-    window._opacity.setValue(0)
-    assert overlay._fill_opacity == 0 and overlay.windowOpacity() == 1.0
+    assert overlay.windowOpacity() == 1.0
+    assert window.resume_button.isVisible()
     assert window.before_capture()
     window.set_pinned(False)
     window.set_pinned(True)
-    assert not overlay.isVisible()
+    assert not overlay.isVisible() and not window.resume_button.isVisible()
     window.after_capture()
-    assert overlay.isVisible()
+    assert overlay.isVisible() and window.resume_button.isVisible()
     assert overlay.windowFlags() & Qt.WindowType.WindowTransparentForInput
 
 
@@ -364,37 +365,30 @@ def test_overlay_pin_is_independent_of_normal_panel_and_minimize(window, qtbot):
     assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
 
 
-def test_inline_callouts_are_plain_bounded_text_inside_b_without_overlap(qtbot, qapp):
+def test_inline_text_is_below_a_without_b_text_cards_or_original_text_overlap(qtbot, qapp):
     overlay = SearchHighlightOverlay()
     qtbot.addWidget(overlay)
     scale = qapp.primaryScreen().devicePixelRatio()
-    bounds = (20 * scale, 20 * scale, 350 * scale, 260 * scale)
-    box = [[[30 * scale, 40 * scale], [100 * scale, 40 * scale],
-            [100 * scale, 60 * scale], [30 * scale, 60 * scale]]]
-    marks = [{'name': f'欄位 {index}', 'a_text': '<b>王</b>\n測試\u202e' + '🙂金額' * 1000,
-              'b_text': '王́測試\t另一行', 'status': 'matched' if index % 2 else 'similar',
-              'bounds': bounds, 'boxes': box} for index in range(20)]
+    anchors = [(20 * scale, (20 + index * 70) * scale, 180 * scale, 25 * scale) for index in range(3)]
+    marks = [{'name': 'DO NOT DISPLAY', 'a_text': '<b>王</b>\n測試\u202e' + '金額' * 1000,
+              'b_text': 'B SHOULD NOT DISPLAY', 'status': 'matched' if index else 'similar',
+              'anchor': anchor, 'boxes': []} for index, anchor in enumerate(anchors)]
     assert overlay.set_marks(marks)
-    cards = overlay.callouts
-    assert 0 < len(cards) < 20
-    assert overlay.overflow_count + len(cards) == 20
-    b_area = QRectF(*(value / scale for value in bounds))
-    rectangles = [QRectF(*card['rect']) for card in cards]
-    overflow = QRectF(*overlay.overflow_rect)
-    assert b_area.contains(overflow)
-    for index, rectangle in enumerate(rectangles):
-        assert b_area.contains(rectangle) and not rectangle.intersects(overflow)
-        assert all(not rectangle.intersects(other) for other in rectangles[index + 1:])
-    assert '<b>王</b>' in cards[0]['a_text']
-    assert '\n' not in cards[0]['a_text'] and '\u202e' not in cards[0]['a_text']
-    assert len(cards[0]['a_text']) <= 241
-    assert len(cards[0]['display_lines']) == 3
-    assert cards[0]['display_lines'][1].startswith('A  ')
-    assert cards[0]['display_lines'][2].startswith('B  ')
-    assert cards[0]['status'] == 'similar'
-    assert '需確認' in cards[0]['display_lines'][0]
-    overlay.set_fill_opacity(0)
-    assert overlay.callouts == cards
+    labels = overlay.callouts
+    assert len(labels) == 3 and overlay.overflow_count == 0
+    for label, physical_anchor in zip(labels, anchors):
+        anchor = QRectF(*(value / scale for value in physical_anchor))
+        rectangle = QRectF(*label['rect'])
+        assert tuple(anchor.getRect()) == label['anchor']
+        assert rectangle.top() == anchor.bottom() + 3
+        assert all(not rectangle.intersects(QRectF(*(value / scale for value in other))) for other in anchors)
+        assert len(label['display_lines']) == 1
+        assert 'DO NOT DISPLAY' not in label['display_lines'][0]
+        assert 'B SHOULD NOT DISPLAY' not in label['display_lines'][0]
+        assert '\n' not in label['a_text'] and '\u202e' not in label['a_text']
+        assert len(label['a_text']) <= 241
+    assert '需確認' in labels[0]['display_lines'][0]
+    assert '一致' in labels[1]['display_lines'][0]
     assert not overlay.grab().isNull()
 
 
@@ -409,18 +403,20 @@ def test_near_or_low_confidence_selected_result_never_has_green_callout(window):
     assert window.highlight_overlay.overflow_count == 0
 
 
-def test_small_b_shows_overflow_in_bounds_and_rejects_outside_coordinates(qtbot, qapp):
+def test_small_b_does_not_clip_a_text_and_colliding_labels_report_overflow(qtbot, qapp):
     overlay = SearchHighlightOverlay()
     qtbot.addWidget(overlay)
     scale = qapp.primaryScreen().devicePixelRatio()
-    bounds = (100 * scale, 100 * scale, 100 * scale, 35 * scale)
-    box = [[[101 * scale, 101 * scale], [150 * scale, 101 * scale],
-            [150 * scale, 120 * scale], [101 * scale, 120 * scale]]]
-    mark = {'name': '小範圍', 'a_text': 'A', 'b_text': 'B', 'bounds': bounds, 'boxes': box}
-    assert overlay.set_marks([mark])
-    assert not overlay.callouts and overlay.overflow_count == 1
-    assert QRectF(100, 100, 100, 35).contains(QRectF(*overlay.overflow_rect))
-    mark['bounds'] = (110 * scale, 110 * scale, 100 * scale, 35 * scale)
+    bounds = (300 * scale, 100 * scale, 20 * scale, 20 * scale)
+    box = [[[301 * scale, 101 * scale], [315 * scale, 101 * scale],
+            [315 * scale, 115 * scale], [301 * scale, 115 * scale]]]
+    mark = {'name': '窄欄位', 'a_text': 'A', 'b_text': 'B', 'anchor': (20 * scale, 100 * scale, 30 * scale, 20 * scale),
+            'bounds': bounds, 'boxes': box}
+    assert overlay.set_marks([mark] * 20)
+    assert len(overlay.callouts) == 2 and overlay.overflow_count == 18
+    assert overlay.overflow_rect is None
+    assert all(QRectF(*label['rect']).left() == 20 for label in overlay.callouts)
+    mark['bounds'] = (310 * scale, 110 * scale, 20 * scale, 20 * scale)
     assert not overlay.set_marks([mark])
     assert not overlay.marks and not overlay.isVisible()
 
@@ -459,3 +455,88 @@ def test_overlay_malformed_input_is_safe_and_overflow_never_leaves_partial_marks
     assert not overlay.set_marks([{'name': 'too many', 'boxes': candidate()['boxes'] * 513}])
     assert not overlay.marks and not overlay.isVisible()
     assert not overlay.set_marks(None)
+
+
+@pytest.mark.parametrize('status,label', [('missing', '未找到'), ('ambiguous', '多處符合'), ('uncertain', '需確認')])
+def test_nonmatching_result_still_shows_a_recognized_text_and_status(window, status, label):
+    window.controller.publish(status, candidates=[])
+    callout = window.highlight_overlay.callouts[0]
+    assert callout['anchor'] == (10.0, 10.0, 80.0, 30.0)
+    assert callout['status'] == status
+    assert '王小明' in callout['display_lines'][0] and label in callout['display_lines'][0]
+    assert callout['boxes'] == ()
+
+
+def test_start_hides_panel_restore_opens_normal_panel_pause_removes_floating_ui(window):
+    window.open()
+    window._start()
+    assert window.controller.running and not window.isVisible()
+    assert window.resume_button.isVisible()
+    window.controller.publish()
+    assert window.highlight_overlay.isVisible()
+    window.resume_button.click()
+    assert window.isVisible() and window.controller.running
+    assert not window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window._pause_button.click()
+    assert not window.controller.running
+    assert not window.highlight_overlay.isVisible() and not window.resume_button.isVisible()
+
+
+def test_restore_control_remains_available_while_waiting_without_old_results(window):
+    window._start()
+    window.controller.publish()
+    assert window.before_capture()
+    window.controller.state_changed.emit('checking')
+    assert not window.resume_button.isVisible()
+    window.after_capture()
+    assert not window.highlight_overlay.isVisible()
+    assert window.resume_button.isVisible()
+    window.set_pinned(False)
+    assert not window.resume_button.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window.set_pinned(True)
+    assert window.resume_button.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    window.close()
+    window.after_capture()
+    assert not window.resume_button.isVisible()
+
+
+def test_capture_failure_returns_hidden_panel_to_user(window):
+    window._start()
+    window.controller.pause()
+    window.controller.failed.emit('請重新框選')
+    assert window.isVisible() and window._note.text() == '請重新框選'
+    assert not window.resume_button.isVisible()
+
+
+def test_native_annotation_failure_does_not_publish_partial_result(window, monkeypatch):
+    monkeypatch.setattr('src.ui.search_highlight_overlay.apply_native_pin', lambda *args: False)
+    window.controller.publish()
+    assert not window.controller.running and not window.highlight_overlay.isVisible()
+    assert window.isVisible() and window._status.text() == '需要確認'
+
+
+@pytest.mark.parametrize('stage', ['capture_restore', 'toggle'])
+def test_failed_native_repin_restores_controls_and_clears_result(window, monkeypatch, stage):
+    window.controller.publish()
+    if stage == 'capture_restore':
+        assert window.before_capture()
+    monkeypatch.setattr('src.ui.search_highlight_overlay.apply_native_pin', lambda *args: False)
+    if stage == 'capture_restore':
+        window.after_capture()
+    else:
+        window.set_pinned(False)
+    assert not window.controller.running
+    assert not window.highlight_overlay.isVisible()
+    assert not window.resume_button.isVisible()
+    assert window.isVisible()
+
+
+def test_restore_control_restores_previously_minimized_panel_repeatedly(window):
+    window._start()
+    for _ in range(3):
+        window.open()
+        window.showMinimized()
+        assert window.isMinimized()
+        window.resume_button.click()
+        assert window.isVisible() and not window.isMinimized()
+        assert window.controller.running

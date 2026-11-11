@@ -15,13 +15,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from .search_highlight_overlay import SearchHighlightOverlay
+from .search_highlight_overlay import SearchHighlightOverlay, apply_native_pin
 from .theme import (
     _ACCENT,
     _ACCENT_T,
@@ -156,6 +155,18 @@ class SharedSearchWindow(QWidget):
                          | Qt.WindowType.WindowMinimizeButtonHint)
         self.controller = controller
         self.highlight_overlay = SearchHighlightOverlay()
+        self.resume_button = QPushButton('恢復介面')
+        self.resume_button.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+                                         | Qt.WindowType.WindowStaysOnTopHint
+                                         | Qt.WindowType.WindowDoesNotAcceptFocus)
+        self.resume_button.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.resume_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.resume_button.setStyleSheet(f'QPushButton {{ background: {_BG}; color: {_TEXT_PRI}; '
+                                         f'border: 1px solid {_BORDER}; border-radius: 5px; padding: 6px 10px; }}')
+        self.resume_button.clicked.connect(self.open)
+        self.destroyed.connect(self.resume_button.deleteLater)
+        self.resume_button.hide()
+        self._capture_active = False
         self._closing = self._closed_by_user = self._selection_active = False
         self._screen = None
         self._fields_cards = {}
@@ -195,7 +206,7 @@ class SharedSearchWindow(QWidget):
         self._status.setStyleSheet('font-size: 15px; font-weight: 600;')
         title.addWidget(self._status, 1)
         self._pin = QCheckBox('標示置頂')
-        self._pin.setToolTip('只讓 B 區的文字標示置頂；搜尋面板維持一般視窗。')
+        self._pin.setToolTip('讓 A 欄下的文字與恢復介面按鈕置頂；設定面板維持一般視窗。')
         self._pin.setChecked(True)
         self._pin.toggled.connect(self.set_pinned)
         title.addWidget(self._pin)
@@ -270,17 +281,10 @@ class SharedSearchWindow(QWidget):
         self._interval.valueChanged.connect(controller.set_interval)
         row.addWidget(self._interval)
         body.addLayout(row)
-        body.addWidget(_label('標記填色濃度（文字保持清楚）'))
-        self._opacity = QSlider(Qt.Orientation.Horizontal)
-        self._opacity.setRange(0, 60)
-        self._opacity.setValue(12)
-        self._opacity.setAccessibleName('標記填色濃度')
-        self._opacity.valueChanged.connect(self.highlight_overlay.set_fill_opacity)
-        body.addWidget(self._opacity)
         body.addStretch()
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
-        self._note = _label('桌面標記可穿透點擊；結果不會自動複製或留檔。')
+        self._note = _label('開始後，辨識文字與核對狀態顯示在 A 欄下方。')
         self._note.setObjectName('muted')
         outer.addWidget(self._note)
         buttons = QHBoxLayout()
@@ -345,6 +349,7 @@ class SharedSearchWindow(QWidget):
     def _clear_visuals(self):
         self._visual_epoch += 1
         self.highlight_overlay.clear()
+        self.resume_button.setText('恢復介面')
 
     def _cancel_countdown(self):
         self._calibration_timer.stop()
@@ -355,6 +360,7 @@ class SharedSearchWindow(QWidget):
         self._cancel_countdown()
         self._clear_visuals()
         self.controller.pause()
+        self.resume_button.hide()
         self._refresh_fields()
 
     def _select(self, key):
@@ -448,8 +454,12 @@ class SharedSearchWindow(QWidget):
         if self._closing or self._selection_active:
             return
         self._cancel_countdown()
-        self.avoid_regions()
+        self.hide()
         self.controller.start()
+        if self.controller.running:
+            self._show_resume_control()
+        else:
+            self.show()
         self._refresh_fields()
 
     def _state_changed(self, state):
@@ -468,6 +478,8 @@ class SharedSearchWindow(QWidget):
                                 'changed': '畫面已變，重新確認…', 'ready': '已更新目前結果',
                                 'unchanged': '畫面未變，等待變化。'}.get(state, '請查看目前狀態'))
         self._refresh_fields()
+        if not self.controller.running:
+            self.resume_button.hide()
 
     def _failed(self, message):
         self._clear_visuals()
@@ -475,6 +487,8 @@ class SharedSearchWindow(QWidget):
         self._status.setStyleSheet(f'font-size: 15px; font-weight: 600; color: {_WARNING};')
         self._note.setText(message)
         self._refresh_fields()
+        if not self._closing and not self._closed_by_user and not self._selection_active:
+            self.open()
 
     def _updated(self, snapshot):
         if self._closing or self._closed_by_user or self._selection_active:
@@ -492,7 +506,7 @@ class SharedSearchWindow(QWidget):
                 self._activity.setText(f'{datetime.fromisoformat(stamp).strftime("%H:%M:%S")} · 第 {snapshot.get("cycle", 0)} 次搜尋')
             except (ValueError, TypeError):
                 pass
-        self._note.setText('在 B 旁直接查看 A／B 文字；框線代表辨識行。')
+        self._note.setText('辨識文字與核對狀態顯示在 A 欄下方。')
         b_region = snapshot.get('b_region', self.controller.b_region)
         marks = []
         if self.controller.running and b_region is not None:
@@ -501,9 +515,10 @@ class SharedSearchWindow(QWidget):
                 result = field.get('result') or {}
                 selected = next((candidate for candidate in result.get('candidates', [])
                                  if candidate.get('id') == result.get('selected_id')), None)
-                if selected is not None:
-                    boxes = selected.get('boxes')
-                    if not isinstance(boxes, (list, tuple)) or not boxes:
+                region = field.get('region')
+                if result and region is not None:
+                    boxes = selected.get('boxes') if selected is not None else []
+                    if selected is not None and (not isinstance(boxes, (list, tuple)) or not boxes):
                         self.pause()
                         self._failed('辨識位置無效，請調整 B 範圍後重試。')
                         return
@@ -512,14 +527,23 @@ class SharedSearchWindow(QWidget):
                         self.pause()
                         self._failed('辨識位置無效，請調整 B 範圍後重試。')
                         return
-                    status = ('similar' if selected.get('match_type') == 'similar' else
-                              'uncertain' if selected.get('needs_review') or result.get('status') != 'matched' else 'matched')
+                    if selected is not None:
+                        status = ('similar' if selected.get('match_type') == 'similar' else
+                                  'uncertain' if selected.get('needs_review') or result.get('status') != 'matched' else 'matched')
+                    else:
+                        status = result.get('status', 'uncertain')
+                        if status == 'matched':
+                            status = 'uncertain'
                     marks.append({'name': field['name'], 'status': status, 'a_text': result.get('text', ''),
-                                  'b_text': selected.get('text', ''), 'bounds': tuple(b_region[:4]),
+                                  'anchor': tuple(region[:4]),
+                                  'b_text': selected.get('text', '') if selected else '',
+                                  'bounds': tuple(b_region[:4]),
                                   'boxes': [[[x + bx, y + by] for x, y in box] for box in polygons]})
         if not self.highlight_overlay.set_marks(marks):
             self.pause()
-            self._failed('標記過多或位置無效，請縮小 B 範圍後重試。')
+            self._failed('文字標示位置無效，請重新框選後重試。')
+        elif self.controller.running:
+            self._show_resume_control()
 
     def _physical_window_rect(self):
         screen = QApplication.primaryScreen()
@@ -542,17 +566,42 @@ class SharedSearchWindow(QWidget):
         if not self.can_capture():
             return False
         self._capture_epoch = self._visual_epoch
+        self._capture_active = True
+        self.resume_button.hide()
         self.highlight_overlay.hide_for_capture()
         return True
 
     def after_capture(self):
         if (self._capture_epoch == self._visual_epoch and not self._closing and not self._closed_by_user
                 and not self._selection_active and self.controller.running):
-            self.highlight_overlay.restore_after_capture()
+            if not self.highlight_overlay.restore_after_capture():
+                self.pause()
+                self._failed('無法顯示置頂文字，請重新開啟搜尋。')
         else:
             self.highlight_overlay.clear()
             self.highlight_overlay.restore_after_capture()
         self._capture_epoch = None
+        self._capture_active = False
+        if self.controller.running:
+            self._show_resume_control()
+
+    def _show_resume_control(self):
+        if (self._closing or self._closed_by_user or self._selection_active
+                or self._capture_active or not self.controller.running):
+            return
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        overflow = self.highlight_overlay.overflow_count
+        self.resume_button.setText(f'恢復介面 · {overflow} 筆未展開' if overflow else '恢復介面')
+        self.resume_button.adjustSize()
+        area = screen.availableGeometry()
+        self.resume_button.move(area.right() - self.resume_button.width() - 10,
+                                area.bottom() - self.resume_button.height() - 10)
+        self.resume_button.show()
+        if not apply_native_pin(self.resume_button, self._pin.isChecked()):
+            self.pause()
+            self._failed('無法顯示浮動控制，請重新開啟搜尋。')
 
     def avoid_regions(self):
         if self.can_capture() or not self.isVisible():
@@ -581,7 +630,11 @@ class SharedSearchWindow(QWidget):
     def set_pinned(self, pinned):
         with QSignalBlocker(self._pin):
             self._pin.setChecked(bool(pinned))
-        self.highlight_overlay.set_pinned(pinned)
+        if not self.highlight_overlay.set_pinned(pinned):
+            self.pause()
+            self._failed('無法更新文字置頂，請重新開啟搜尋。')
+        self.resume_button.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(pinned))
+        self._show_resume_control()
 
     def _bind_screen(self, screen, initial=False):
         if self._screen is not None:
@@ -608,9 +661,11 @@ class SharedSearchWindow(QWidget):
         if self._closing:
             return
         self._closed_by_user = False
-        self.show()
+        self.showNormal()
         self.raise_()
         self.activateWindow()
+        if self.controller.running:
+            self.avoid_regions()
 
     def closeEvent(self, event):
         self._closed_by_user = True

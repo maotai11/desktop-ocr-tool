@@ -48,6 +48,7 @@ RELEASE_DOCUMENTATION = {
     "docs/VALIDATION_COVERAGE.md": "docs/VALIDATION_COVERAGE.md",
     "docs/ui/shared-search-window.png": "docs/ui/shared-search-window.png",
     "docs/ui/b-inline-callouts.png": "docs/ui/b-inline-callouts.png",
+    "docs/ui/a-inline-annotations.png": "docs/ui/a-inline-annotations.png",
 }
 
 # Exact root-level outputs written by the validation workflow. Tracked files

@@ -744,7 +744,7 @@ class FloatingWidget(QWidget):
         origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
         regions = [QRect(*region[:4]) for region in controller.target_regions]
         for other in QApplication.topLevelWidgets():
-            if (other is window or other is window.highlight_overlay
+            if (other is window or other is window.highlight_overlay or other is window.resume_button
                     or not other.isVisible() or other.isMinimized()):
                 continue
             frame = other.frameGeometry()
