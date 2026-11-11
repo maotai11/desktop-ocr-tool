@@ -5,6 +5,7 @@ workflow. This receipt binds bytes and provenance; it is not a signature and
 must never authorize publication of arbitrary user-uploaded archives.
 """
 from pathlib import Path
+import re
 
 from scripts import publish_prerelease as p
 from scripts.prepare_public_validation import strict_json
@@ -48,10 +49,17 @@ def load_prepared(root, context):
     except (ValueError, TypeError, RecursionError):
         raise p.PublicationError('Invalid public receipt') from None
     p.require(isinstance(value, dict) and set(value) == {'schema','repository','version','source_commit','run_id','run_attempt','assets'}, 'Invalid receipt fields')
+    evidence_attempt = value['run_attempt']
+    p.require(isinstance(evidence_attempt, str)
+              and re.fullmatch(r'[1-9][0-9]{0,8}', evidence_attempt) is not None
+              and isinstance(context.run_attempt, str)
+              and re.fullmatch(r'[1-9][0-9]{0,8}', context.run_attempt) is not None
+              and int(evidence_attempt) <= int(context.run_attempt),
+              'Public receipt attempt is invalid or newer than this runner')
     p.require(type(value['schema']) is int and value['schema'] == 1
               and value['repository'] == p.REPOSITORY and value['version'] == p.VERSION
-              and value['source_commit'] == context.source_commit and value['run_id'] == context.run_id
-              and value['run_attempt'] == context.run_attempt, 'Public receipt belongs to another build')
+              and value['source_commit'] == context.source_commit and value['run_id'] == context.run_id,
+              'Public receipt belongs to another build')
     records = value['assets']
     p.require(isinstance(records, dict) and set(records) == set(expected), 'Incomplete asset receipt')
     assets = []
