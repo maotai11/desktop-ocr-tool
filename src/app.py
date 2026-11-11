@@ -144,7 +144,6 @@ def main(smoke_report=None) -> int:
         # 讓 settings dialog 可以即時更新 OCR engine 參數
         widget._ocr_engine = ocr_engine
 
-        overlay.cancelled.connect(widget.show)
         tray = TrayManager(widget)
         tray.show()
         if not cfg.get("general", "start_minimized", default=True) or not tray.is_available():
@@ -159,26 +158,10 @@ def main(smoke_report=None) -> int:
         hk = cfg.get('hotkeys', default={})
 
         def do_region_ocr():
-            if pipeline.closing:
-                return
-            widget.hide()
-            from src.clipboard.writer import get_clipboard_epoch
-            clipboard_epoch = get_clipboard_epoch()
-            overlay.start_capture(
-                lambda x, y, w, h, mon:
-                    capture_worker.capture_region(x, y, w, h, mon, 'region_ocr', clipboard_epoch)
-            )
+            pipeline.start_region_capture('region_ocr')
 
         def do_region_image():
-            if pipeline.closing:
-                return
-            widget.hide()
-            from src.clipboard.writer import get_clipboard_epoch
-            clipboard_epoch = get_clipboard_epoch()
-            overlay.start_capture(
-                lambda x, y, w, h, mon:
-                    capture_worker.capture_region(x, y, w, h, mon, 'region_image', clipboard_epoch)
-            )
+            pipeline.start_region_capture('region_image')
 
         def do_fullscreen():
             if not pipeline.closing:
@@ -212,6 +195,7 @@ def main(smoke_report=None) -> int:
         pipeline = Pipeline(capture_worker, ocr_worker, db_worker, db_thread,
                             db, item_repo, file_mgr, widget, cfg,
                             hotkey_listener, clip_watcher)
+        pipeline.set_capture_overlay(overlay)
         # Lifecycle owners are explicit: settings changes revoke old callbacks,
         # and shutdown stops maintenance before draining database work.
         from src.clipboard.monitoring import ClipboardMonitoringController

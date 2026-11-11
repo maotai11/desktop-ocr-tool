@@ -14,6 +14,8 @@ GUI_CHECK_NAMES = (
     'ocr_selection_copy_explicit', 'document_import_template_zoom_clear',
     'handwriting_stroke_candidate_copy', 'paired_comparison_controls',
     'shared_search_controls', 'tray_pause_and_quit_route',
+    'minimized_windows_restore', 'capture_cancel_restart_ignores_old_gesture',
+    'shutdown_rejects_late_tool_entries',
     'windows_and_workers_closed', 'temporary_files_cleaned',
 )
 
@@ -116,19 +118,32 @@ def _escape(widget):
                                              Qt.KeyboardModifier.NoModifier))
 
 
-def _stroke(widget, start, end):
-    """Send real local/global pointer events without QtTest or desktop input."""
-    from PySide6.QtCore import QEvent, QPointF, Qt
+def _pointer(widget, kind, point, buttons):
+    """Send a real local/global pointer event without QtTest or desktop input."""
+    from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtWidgets import QApplication
+    local = QPointF(point)
+    event = QMouseEvent(kind, local, QPointF(widget.mapToGlobal(local.toPoint())),
+                        Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(widget, event)
+
+
+def _stroke(widget, start, end):
+    from PySide6.QtCore import QEvent, QPointF, Qt
     for kind, point, buttons in (
         (QEvent.Type.MouseButtonPress, start, Qt.MouseButton.LeftButton),
         (QEvent.Type.MouseButtonRelease, end, Qt.MouseButton.NoButton),
     ):
-        local = QPointF(point)
-        event = QMouseEvent(kind, local, QPointF(widget.mapToGlobal(local.toPoint())),
-                            Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier)
-        QApplication.sendEvent(widget, event)
+        _pointer(widget, kind, QPointF(point), buttons)
+
+
+def _dispatch_for(milliseconds):
+    """Let a known short debounce/delivery deadline expire without blocking Qt."""
+    from PySide6.QtCore import QEventLoop, QTimer
+    loop = QEventLoop()
+    QTimer.singleShot(milliseconds, loop.quit)
+    loop.exec()
 
 
 def _context_action(console, label):
@@ -252,12 +267,13 @@ def _exercise_gui(app, directory, checks):
             tray.set_quit_callback(pipeline.shutdown)
             overlay = CaptureOverlay()
             cancelled, selected = [], []
-            overlay.cancelled.connect(shell.show)
+            pipeline.set_capture_overlay(overlay)
             overlay.cancelled.connect(lambda: cancelled.append(True))
-            def begin():
-                shell.hide()
-                overlay.start_capture(lambda *args: selected.append(args))
-            shell.set_capture_callbacks(begin, begin)
+            # Cancellation probes must never acquire the desktop, including if
+            # a regression accidentally delivers the retired selection.
+            patches.enter_context(_replace(capture, 'capture_region', lambda *args: selected.append(args)))
+            shell.set_capture_callbacks(lambda: pipeline.start_region_capture('region_ocr'),
+                                        lambda: pipeline.start_region_capture('region_image'))
             shell.show()
 
             for button in (shell._btn_ocr, shell._btn_screenshot):
@@ -269,6 +285,25 @@ def _exercise_gui(app, directory, checks):
             _require(bool(shell._storage_menu.actions()))
             shell._storage_menu.close()
             checks['launcher_actions_and_capture_cancel'] = len(cancelled) == 2 and not selected and not capture._started_once
+
+            shell.showMinimized()
+            _require(shell.isMinimized())
+            shell.toggle_visibility()
+            _until(lambda: shell.isVisible() and not shell.isMinimized())
+
+            shell._btn_ocr.click()
+            _pointer(overlay, QEvent.Type.MouseButtonPress, QPointF(10, 10), Qt.MouseButton.LeftButton)
+            _escape(overlay)
+            shell._btn_ocr.click()
+            _pointer(overlay, QEvent.Type.MouseButtonRelease, QPointF(40, 40), Qt.MouseButton.NoButton)
+            _require(overlay.isVisible() and not overlay._is_drawing)
+            _dispatch_for(200)
+            _require(not selected)
+            _stroke(overlay, QPointF(20, 20), QPointF(60, 60))
+            overlay.close()  # Closing during the compositor delay must retire delivery.
+            _dispatch_for(200)
+            checks['capture_cancel_restart_ignores_old_gesture'] = (
+                not selected and not overlay.isVisible() and not capture._started_once)
 
             def settings_cancel(dialog):
                 dialog._sp_archive_days.setValue(0)
@@ -291,6 +326,10 @@ def _exercise_gui(app, directory, checks):
             item_id = save_ids[0]
             shell._btn_console.click()
             console = shell._console
+            console.showMinimized()
+            _require(console.isMinimized())
+            shell.open_console()
+            _until(lambda: console.isVisible() and not console.isMinimized())
             console._search.setText('searchable')
             _button(console, '搜尋').click()
             _require(len(console._current_items) == 1 and console._current_items[0].id == item_id)
@@ -316,6 +355,11 @@ def _exercise_gui(app, directory, checks):
 
             _context_action(console, '編輯')
             editor = console._editor_windows[item_id]
+            editor.showMinimized()
+            _require(editor.isMinimized())
+            console._open_editor(repo.get_by_id(item_id))
+            _until(lambda: editor.isVisible() and not editor.isMinimized())
+            checks['minimized_windows_restore'] = True
             editor._text_edit.setPlainText('GUI searchable edited')
             editor._note_edit.setPlainText('GUI note')
             _button(editor, '儲存').click()
@@ -394,8 +438,14 @@ def _exercise_gui(app, directory, checks):
             _require(app.clipboard().text() == '甲')
             geometry = ink.pad.canvas_rect()
             _stroke(ink.pad, geometry.center(), geometry.center())
-            ink._debounce.stop()
             _require(ink.pad.canvas_rect() == geometry and len(ink.pad.buffer.strokes) == 2)
+            generation = ink.controller.generation
+            ink.hide()
+            _dispatch_for(420)  # Longer than the handwriting recognition debounce.
+            _require(ink.controller.generation == generation and not ink._debounce.isActive()
+                     and not ink._candidate_scroll.isActive() and ink.is_stopped)
+            shell.open_handwriting()
+            _require(ink.isVisible() and ink.controller.generation == generation)
             ink.undo_button.click()
             _require(len(ink.pad.buffer.strokes) == 1)
             ink.clear_button.click()
@@ -414,6 +464,12 @@ def _exercise_gui(app, directory, checks):
             comparison._mini_button.click()
             comparison._setup_buttons['A'].click()
             _require(shell._comparison_overlay.isVisible())
+            pipeline.start_region_capture('region_ocr')
+            _require(overlay.isVisible() and not shell._comparison_overlay.isVisible()
+                     and not comparison._selection_active and not comparison.isVisible())
+            shell.open_comparison()
+            _require(not overlay.isVisible())
+            comparison._setup_buttons['A'].click()
             _escape(shell._comparison_overlay)
             _require(not comparison._selection_active and not comparison_controller.regions)
             comparison._close_button.click()
@@ -428,6 +484,12 @@ def _exercise_gui(app, directory, checks):
             search._pin.setChecked(True)
             search._select_b.click()
             _require(shell._shared_search_selector.isVisible())
+            pipeline.start_region_capture('region_image')
+            _require(overlay.isVisible() and not shell._shared_search_selector.isVisible()
+                     and not search._selection_active and not search.isVisible())
+            shell.open_shared_search()
+            _require(not overlay.isVisible())
+            search._select_b.click()
             _escape(shell._shared_search_selector)
             _require(len(search_controller.fields) == 2 and search_controller.row_pitch == 24
                      and search_controller.mode == 'exact' and search._pin.isChecked()
@@ -440,9 +502,45 @@ def _exercise_gui(app, directory, checks):
             _require(shell._clip_paused and watcher.is_paused and tray._act_pause.isChecked())
             tray._act_pause.trigger()
             _require(not shell._clip_paused and not watcher.is_paused and not shell._btn_pause.isChecked())
+            pipeline.start_region_capture('region_ocr')
+            _require(overlay.isVisible())
             tray._quit_action.trigger()
             _until(lambda: pipeline.closed)
             checks['tray_pause_and_quit_route'] = pipeline.closing and pipeline.closed and watcher._stopped
+            _require(not overlay.isVisible())
+            tool_names = ('_console', '_handwriting', '_documents', '_comparison', '_shared_search')
+            owned_tools = tuple(getattr(shell, name) for name in tool_names)
+            unexpected_modals = []
+            modal_guard = QTimer()
+            modal_guard.setInterval(5)
+
+            def reject_unexpected_modal():
+                dialog = app.activeModalWidget()
+                if dialog is not None:
+                    unexpected_modals.append(True)
+                    dialog.close()
+
+            modal_guard.timeout.connect(reject_unexpected_modal)
+            modal_guard.start()
+            try:
+                for action in tray._tray.contextMenu().actions():
+                    if not action.isSeparator():
+                        action.trigger()
+                for entry in (shell.toggle_visibility, shell.open_console, shell.open_handwriting,
+                              shell.open_document_template, shell.open_comparison, shell.open_shared_search,
+                              shell.open_settings, shell.trigger_capture_ocr, shell.trigger_capture_image):
+                    entry()
+                pipeline.start_region_capture('region_image')
+                app.processEvents()
+            finally:
+                modal_guard.stop()
+            checks['shutdown_rejects_late_tool_entries'] = (
+                not unexpected_modals and tuple(getattr(shell, name) for name in tool_names) == owned_tools
+                and not selected and not watcher.active and maintenance.is_stopped
+                and not any(window.isVisible() for window in app.topLevelWidgets()
+                            if id(window) not in before_windows)
+                and shell.handwriting_is_stopped() and shell.documents_is_stopped()
+                and shell.comparison_is_stopped() and shell.shared_search_is_stopped())
             _require(not forbidden_captures)
         finally:
             if pipeline is not None:

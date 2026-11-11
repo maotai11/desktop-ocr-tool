@@ -176,6 +176,54 @@ def test_reentrant_result_request_and_close_reopen_leave_no_idle_helper(qtbot, f
     assert results[-1][0] == newest and not failures
 
 
+@pytest.mark.parametrize('failure_mode', ['generation', 'failed_start'])
+def test_retry_from_failure_waits_for_old_helper_reap(qtbot, fake_controller, tmp_path, failure_mode):
+    from dataclasses import replace
+
+    controller = fake_controller('generation' if failure_mode == 'generation' else 'delay')
+    good_assets = replace(controller._assets, arguments=(controller._assets.arguments[0], 'delay'))
+    if failure_mode == 'failed_start':
+        controller._assets = replace(good_assets, program=tmp_path / 'missing-helper')
+    failures, results, retries, busy = [], [], [], []
+    controller.busy_changed.connect(busy.append)
+    controller.candidates.connect(lambda generation, values: results.append((generation, values)))
+
+    def retry(generation, message):
+        failures.append(generation)
+        if not retries:
+            controller._assets = good_assets
+            retries.append(controller.submit((((2, 2),),)))
+
+    controller.request_failed.connect(retry)
+    first = controller.submit((((1, 1),),))
+    qtbot.waitUntil(lambda: controller.is_stopped, timeout=4000)
+    assert retries and retries[0] > first
+    assert [generation for generation, _ in results] == retries
+    assert failures == [first]
+    assert busy[-1] is False
+    assert controller._pending is None and controller._active is None
+    assert not controller._deadline.isActive() and not controller._stop_timer.isActive()
+
+
+def test_stop_in_failure_handler_cancels_a_reentrant_retry(qtbot, fake_controller):
+    controller = fake_controller('generation')
+    results, failures, retries = [], [], []
+    controller.candidates.connect(lambda *result: results.append(result))
+
+    def retry_then_close(generation, message):
+        failures.append(generation)
+        retries.append(controller.submit((((2, 2),),)))
+        controller.stop()
+
+    controller.request_failed.connect(retry_then_close)
+    first = controller.submit((((1, 1),),))
+    qtbot.waitUntil(lambda: controller.is_stopped, timeout=3000)
+    assert retries and retries[0] > first
+    assert failures == [first] and not results
+    assert controller._closing and controller._pending is None
+    assert not controller._deadline.isActive() and not controller._stop_timer.isActive()
+
+
 def test_failed_start_during_immediate_shutdown_releases_owner(qtbot, tmp_path):
     controller = HandwritingController(assets=HelperAssets(tmp_path / 'missing-helper', (), frozenset({'臺'})))
     controller.submit((((1, 1),),))
@@ -214,6 +262,47 @@ def test_window_candidate_exact_copy_and_stale_revision(qtbot, qapp, fake_contro
     window.pad.clear()
     window._copy('灣', old_revision)
     assert qapp.clipboard().text() == '臺'
+    window.close()
+
+
+def test_hidden_window_reaps_hung_helper_and_explicit_reopen_recognition_succeeds(qtbot, fake_controller):
+    from dataclasses import replace
+
+    from src.ui.handwriting_window import HandwritingWindow
+
+    controller = fake_controller('hang')
+    window = HandwritingWindow(controller=controller)
+    qtbot.addWidget(window)
+    results, failures = [], []
+    controller.candidates.connect(lambda *result: results.append(result))
+    controller.request_failed.connect(lambda *failure: failures.append(failure))
+    window.show()
+    window.pad.buffer.begin(1, 1)
+    window.pad.buffer.finish()
+    window.recognize()
+    qtbot.waitUntil(lambda: controller._active is not None and controller._stdout_bytes == 1)
+    first_generation = controller._generation
+    assert controller._process.processId() > 0
+
+    window.hide()
+    qtbot.waitUntil(lambda: window.is_stopped, timeout=3000)
+    assert controller._process is None and controller._job is None
+    assert controller._active is None and controller._pending is None
+    assert controller._closing and window._submitted is None
+    assert not controller._deadline.isActive() and not controller._stop_timer.isActive()
+    assert not results and not failures and not window._buttons
+    window.recognize()
+    assert controller._generation == first_generation and controller.is_stopped
+
+    controller._assets = replace(controller._assets,
+                                 arguments=(controller._assets.arguments[0], 'delay'))
+    window.show()
+    assert controller._generation == first_generation and controller.is_stopped
+    window.recognize()
+    qtbot.waitUntil(lambda: bool(window._buttons) and controller.is_stopped, timeout=3000)
+    assert len(results) == 1 and results[0][0] > first_generation
+    assert tuple(candidate.label for candidate in results[0][1]) == ('臺',)
+    assert not failures
     window.close()
 
 

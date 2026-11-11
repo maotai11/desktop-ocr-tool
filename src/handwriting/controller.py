@@ -191,15 +191,20 @@ class HandwritingController(QObject):
         self._fail('手寫引擎已停止，請重試')
 
     def _fail(self, message):
+        process = self._process
         self._deadline.stop()
         generation = self._latest_request_generation()
         self._pending = self._active = None
         self._ready = False
-        self._retiring = False
+        # Error handlers may immediately retry while the failed helper still
+        # owns its process. Keep that new request pending until the old owner
+        # is reaped, exactly as for an explicit cancellation.
+        self._retiring = process is not None
+        self.busy_changed.emit(False)
         if not self._closing:
             self._emit_error(generation, message)
-        self.busy_changed.emit(False)
-        self._kill()
+        if process is not None and self._process is process:
+            process.kill()
 
     def _kill(self):
         if self._process is not None:

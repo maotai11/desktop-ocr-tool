@@ -42,6 +42,7 @@ class HandwritingWindow(QWidget):
         self._submitted = None
         self._submitting_revision = None
         self._shutting_down = False
+        self._suspended = True
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.workspace_scroll = QScrollArea(self)
@@ -219,7 +220,8 @@ class HandwritingWindow(QWidget):
 
     def recognize(self):
         self._debounce.stop()
-        if self._shutting_down or self.pad.buffer.active is not None or not self.pad.buffer.strokes:
+        if (self._shutting_down or self._suspended or not self.isVisible()
+                or self.pad.buffer.active is not None or not self.pad.buffer.strokes):
             return
         self._cancel_image()
         if hasattr(self.controller, 'cancel_current'):
@@ -275,6 +277,8 @@ class HandwritingWindow(QWidget):
             self._set_status('影像補辨中，可再次按下取消…')
 
     def recognize_image(self):
+        if self._shutting_down or self._suspended or not self.isVisible():
+            return
         if self._image_submitted is not None:
             self._cancel_image()
             self._ready_status()
@@ -337,20 +341,38 @@ class HandwritingWindow(QWidget):
     def _stopped(self):
         if self.is_stopped:
             self.stopped.emit()
-        if self.isVisible() and not self._shutting_down:
+        if self.isVisible() and not self._shutting_down and not self._suspended:
             self.controller.resume()
 
     def showEvent(self, event):
-        self.controller.resume()
-        self._fit_screen()
+        if not self._shutting_down:
+            self._suspended = False
+            self.controller.resume()
+            self._fit_screen()
         super().showEvent(event)
 
-    def closeEvent(self, event):
+    def _suspend(self):
+        # stop() can synchronously emit stopped while closeEvent still reports
+        # the window as visible. Retire the UI before any helper callback.
+        self._suspended = True
         self._debounce.stop()
         self._copy_feedback.stop()
+        self._candidate_scroll.stop()
+        self._submitted = None
+        self._submitting_revision = None
+        self._image_submitted = None
+        self._image_submitting = None
         self.pad.cancel_active_stroke()
         self.controller.stop()
         self.image_controller.stop()
+
+    def hideEvent(self, event):
+        if not self._suspended:
+            self._suspend()
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        self._suspend()
         super().closeEvent(event)
 
     def shutdown(self):

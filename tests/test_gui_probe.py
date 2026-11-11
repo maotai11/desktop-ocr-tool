@@ -110,3 +110,39 @@ def test_interrupted_editor_control_cannot_claim_later_actions_passed(qapp, tmp_
     assert checks['ocr_selection_copy_explicit'] is False
     assert checks['windows_and_workers_closed'] is True
     assert checks['temporary_files_cleaned'] is True
+
+
+def test_capture_probe_detects_drag_state_surviving_escape(qapp, tmp_path, monkeypatch):
+    from src.ui.capture_overlay import CaptureOverlay
+    # Reintroduce the actual stale-drag defect while retaining the real Qt input
+    # and pipeline owner routes, rather than substituting the report itself.
+    monkeypatch.setattr(CaptureOverlay, '_reset_drag', lambda self: None)
+    destination = tmp_path / 'stale-drag.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
+    assert checks['launcher_actions_and_capture_cancel'] is True
+    assert checks['capture_cancel_restart_ignores_old_gesture'] is False
+    assert checks['windows_and_workers_closed'] is True
+    assert checks['temporary_files_cleaned'] is True
+
+
+def test_shutdown_probe_detects_late_launcher_resurrection(qapp, tmp_path, monkeypatch):
+    from src.ui.widget import FloatingWidget
+    original = FloatingWidget.toggle_visibility
+
+    def stale_toggle(widget):
+        if widget._ui_closing:
+            widget.show()
+        else:
+            original(widget)
+
+    monkeypatch.setattr(FloatingWidget, 'toggle_visibility', stale_toggle)
+    destination = tmp_path / 'late-launcher.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
+    assert checks['minimized_windows_restore'] is True
+    assert checks['capture_cancel_restart_ignores_old_gesture'] is True
+    assert checks['tray_pause_and_quit_route'] is True
+    assert checks['shutdown_rejects_late_tool_entries'] is False
+    assert checks['windows_and_workers_closed'] is True
+    assert checks['temporary_files_cleaned'] is True

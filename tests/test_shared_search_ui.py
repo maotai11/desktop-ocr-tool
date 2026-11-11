@@ -508,6 +508,48 @@ def test_capture_failure_returns_hidden_panel_to_user(window):
     assert not window.resume_button.isVisible()
 
 
+@pytest.mark.parametrize('trigger', ['screen_change', 'late_failure'])
+def test_inactive_hidden_search_cannot_reopen_on_failure(window, monkeypatch, trigger):
+    window.open()
+    window._start()
+    window.pause()
+    window.hide()
+    activations = []
+    monkeypatch.setattr(window, 'activateWindow', lambda: activations.append('activate'))
+    if trigger == 'screen_change':
+        window._screen_changed()
+    else:
+        window.controller.failed.emit('舊工作已失效')
+    assert not window.isVisible()
+    assert not window.resume_button.isVisible()
+    assert not window.highlight_overlay.isVisible()
+    assert not window.controller.running and not activations
+
+
+def test_screen_change_recovers_active_compact_search_without_stale_marks(window):
+    window._start()
+    window.controller.publish()
+    window._screen_changed()
+    assert window.isVisible() and not window.controller.running
+    assert not window.highlight_overlay.isVisible() and not window.resume_button.isVisible()
+    assert '重新框選' in window._note.text()
+
+
+def test_queued_start_after_close_cannot_restart_hidden_search(window):
+    window.open()
+    window.close()
+    window._start()
+    assert window.controller.starts == 0 and not window.controller.running
+    assert not window.isVisible() and not window.resume_button.isVisible()
+
+
+def test_close_during_start_notification_cannot_reshow_controls(window):
+    window.controller.state_changed.connect(lambda state: window.close() if state == 'running' else None)
+    window._start()
+    assert not window.controller.running and window._closed_by_user
+    assert not window.isVisible() and not window.resume_button.isVisible()
+
+
 def test_native_annotation_failure_does_not_publish_partial_result(window, monkeypatch):
     monkeypatch.setattr('src.ui.search_highlight_overlay.apply_native_pin', lambda *args: False)
     window.controller.publish()

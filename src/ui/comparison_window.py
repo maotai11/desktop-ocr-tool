@@ -880,7 +880,7 @@ class ComparisonWindow(QWidget):
         if self._closing:
             return
         self._closed_by_user = False
-        self.show()
+        self.showNormal()
         self.raise_()
         self.activateWindow()
 

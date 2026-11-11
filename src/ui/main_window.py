@@ -135,6 +135,7 @@ class MainWindow(QMainWindow):
         self._current_items = []
         self._batch_mode = False
         self._shared_history_refresh = False
+        self._shutting_down = False
 
         from ..core.version import APP_DISPLAY_NAME
         from ..core.branding import application_icon
@@ -468,6 +469,8 @@ class MainWindow(QMainWindow):
         self._db_worker.purge_done.connect(self._on_purge_done)
 
     def _on_items_soft_deleted(self, ids: list):
+        if self._shutting_down:
+            return
         deleted_set = set(ids)
         if self._selected_item and self._selected_item.id in deleted_set:
             self._selected_item = None
@@ -478,6 +481,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _on_purge_done(self, n: int):
+        if self._shutting_down:
+            return
         self._worker_history_changed()
         QMessageBox.information(self, "完成", f"已清理 {n} 筆紀錄。")
 
@@ -490,11 +495,15 @@ class MainWindow(QMainWindow):
             self._refresh_current()
 
     def _local_history_changed(self, *_):
+        if self._shutting_down:
+            return
         if not self._shared_history_refresh:
             self._refresh_current()
         self.history_changed.emit()
 
     def _load_items(self, category: str = 'all', search: str = ''):
+        if self._shutting_down:
+            return
         self._table.setRowCount(0)
         try:
             if search:
@@ -617,7 +626,7 @@ class MainWindow(QMainWindow):
         )
 
     def _copy_selected(self):
-        if not self._selected_item:
+        if self._shutting_down or not self._selected_item:
             return
         text = self._selected_item.get_effective_text()
         if text:
@@ -627,6 +636,8 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _delete_selected(self):
+        if self._shutting_down:
+            return
         selected_rows = self._table.selectionModel().selectedRows()
         if not selected_rows:
             return
@@ -646,7 +657,7 @@ class MainWindow(QMainWindow):
             self, "確認刪除", msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if ret == QMessageBox.StandardButton.Yes:
+        if ret == QMessageBox.StandardButton.Yes and not self._shutting_down:
             self.request_soft_delete.emit(ids)
 
     def _clear_detail_panel(self):
@@ -656,6 +667,8 @@ class MainWindow(QMainWindow):
         self._info_view.setPlainText('')
 
     def _clear_deleted(self):
+        if self._shutting_down:
+            return
         total = self._item_repo.count(show_deleted=True)
         active = self._item_repo.count()
         soft_del = total - active
@@ -664,11 +677,13 @@ class MainWindow(QMainWindow):
             f"將永久刪除 {soft_del} 筆已軟刪除的紀錄（含圖片）。\n確定繼續？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if ret == QMessageBox.StandardButton.Yes:
+        if ret == QMessageBox.StandardButton.Yes and not self._shutting_down:
             self.request_purge.emit()
 
     def _export_csv(self):
         """舊版快捷方法（保留相容性）。"""
+        if self._shutting_down:
+            return
         if not self._current_items:
             QMessageBox.information(self, "匯出", "沒有可匯出的資料。")
             return
@@ -679,6 +694,8 @@ class MainWindow(QMainWindow):
 
     def _export_with_dialog(self, fmt: str):
         """顯示匯出對話框，選擇格式與範圍。"""
+        if self._shutting_down:
+            return
         if not self._current_items:
             QMessageBox.information(self, "匯出", "目前沒有可匯出的資料。\n請先載入列表或使用搜尋。")
             return
@@ -730,7 +747,7 @@ class MainWindow(QMainWindow):
         btns.rejected.connect(dlg.reject)
         layout.addWidget(btns)
         
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        if dlg.exec() != QDialog.DialogCode.Accepted or self._shutting_down:
             return
 
         # 決定匯出資料
@@ -779,6 +796,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_current(self):
         """依目前搜尋欄與 sidebar 分類重新載入列表（保持使用者上下文）。"""
+        if self._shutting_down:
+            return
         selected_ids = {self._current_items[index.row()].id
                         for index in self._table.selectionModel().selectedRows()
                         if 0 <= index.row() < len(self._current_items)}
@@ -826,6 +845,8 @@ class MainWindow(QMainWindow):
     # 右鍵選單
     # ------------------------------------------------------------------
     def _on_table_context_menu(self, pos):
+        if self._shutting_down:
+            return
         row = self._table.rowAt(pos.y())
         if row < 0 or row >= len(self._current_items):
             return
@@ -890,6 +911,8 @@ class MainWindow(QMainWindow):
     # 動作實作
     # ------------------------------------------------------------------
     def _copy_item_text(self, item):
+        if self._shutting_down:
+            return
         text = item.get_effective_text()
         if text:
             from ..clipboard.writer import copy_text
@@ -898,7 +921,7 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _copy_item_image(self, item):
-        if not item.raw_image_path:
+        if self._shutting_down or not item.raw_image_path:
             return
         abs_p = self._file_mgr.get_abs_path(item.raw_image_path)
         from ..clipboard.writer import write_image_to_clipboard
@@ -907,7 +930,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, self, lambda: self._status_lbl.setText("就緒"))
 
     def _save_item_image(self, item):
-        if not item.raw_image_path:
+        if self._shutting_down or not item.raw_image_path:
             return
         src = self._file_mgr.get_abs_path(item.raw_image_path)
         ext = os.path.splitext(src)[1] or '.png'
@@ -915,14 +938,20 @@ class MainWindow(QMainWindow):
             self, "另存圖片", f"capture_{item.id}{ext}",
             "圖片 (*.png *.jpg *.bmp);;所有檔案 (*)"
         )
-        if dest:
+        if dest and not self._shutting_down:
             import shutil
             shutil.copy2(src, dest)
             self._status_lbl.setText(f"已匯出：{dest}")
 
     def _open_editor(self, item):
+        if self._shutting_down:
+            return
         if item.id in self._editor_windows:
             w = self._editor_windows[item.id]
+            if w.isMinimized():
+                w.showNormal()
+            else:
+                w.show()
             w.raise_()
             w.activateWindow()
             return
@@ -934,9 +963,25 @@ class MainWindow(QMainWindow):
             ocr_worker=self._ocr_worker,
             parent=self,
         )
+        editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         editor.item_updated.connect(self._local_history_changed)
-        editor.destroyed.connect(
-            lambda: self._editor_windows.pop(item.id, None)
-        )
+        def forget_editor(*_):
+            # finished precedes deferred destruction; an immediate reopen must
+            # use the new database snapshot, and old destruction must not evict it.
+            if self._editor_windows.get(item.id) is editor:
+                self._editor_windows.pop(item.id, None)
+        editor.finished.connect(forget_editor)
+        editor.destroyed.connect(forget_editor)
         self._editor_windows[item.id] = editor
         editor.show()
+
+    def shutdown(self):
+        """Stop late worker/modal callbacks without saving open drafts."""
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self.blockSignals(True)  # Also stops actions in an already-open menu.
+        for editor in tuple(self._editor_windows.values()):
+            editor.shutdown()
+        self.setEnabled(False)
+        self.hide()

@@ -20,7 +20,8 @@ function Assert-GuiProbe($Report, [string]$Version, [string]$Hash) {
     $checkNames = @('launcher_actions_and_capture_cancel', 'settings_cancel_and_apply', 'history_search_tags_and_pin',
         'editor_save_and_history_refresh', 'ocr_selection_copy_explicit', 'document_import_template_zoom_clear',
         'handwriting_stroke_candidate_copy', 'paired_comparison_controls', 'shared_search_controls',
-        'tray_pause_and_quit_route', 'windows_and_workers_closed', 'temporary_files_cleaned')
+        'tray_pause_and_quit_route', 'minimized_windows_restore', 'capture_cancel_restart_ignores_old_gesture',
+        'shutdown_rejects_late_tool_entries', 'windows_and_workers_closed', 'temporary_files_cleaned')
     if ($Report.checks -isnot [System.Management.Automation.PSCustomObject] -or
         (@($Report.checks.PSObject.Properties.Name | Sort-Object) -join '|') -cne
         (@($checkNames | Sort-Object) -join '|')) {

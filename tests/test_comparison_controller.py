@@ -222,6 +222,49 @@ def test_occupied_ocr_slot_retries_without_accepting_extra_frames(qtbot, control
     assert not controller._retry.isActive()
 
 
+@pytest.mark.parametrize('restart', [False, True])
+def test_waiting_callback_cancellation_cannot_rearm_retry(controlled, restart):
+    controller, ocr, capture = controlled
+    ocr.busy = True
+    callbacks = []
+
+    def cancel(state):
+        if state != 'waiting' or callbacks:
+            return
+        callbacks.append(state)
+        controller.pause()
+        if restart:
+            assert controller.start()
+
+    controller.state_changed.connect(cancel)
+    controller.start()
+    capture.finish()
+    assert callbacks and not controller._retry.isActive()
+    assert controller.running == restart
+
+
+def test_checking_callback_restart_releases_unsubmitted_capture(controlled):
+    controller, ocr, capture = controlled
+    callbacks = []
+
+    def restart(state):
+        if state != 'checking' or callbacks:
+            return
+        callbacks.append(state)
+        controller.pause()
+        assert controller.start()
+
+    controller.state_changed.connect(restart)
+    controller.start()
+    assert not capture.requests and controller._capture_token is None
+    controller._cycle_timer.stop()
+    controller._begin_cycle()
+    assert len(capture.requests) == 1 and capture.requests[0][0] == controller._token
+    assert controller._token is not None
+    capture.finish()
+    assert len(ocr.requests) == 1
+
+
 def test_display_guard_blocks_capture_and_layout_change_requires_reselection(controlled):
     controller, _, capture = controlled
     controller.before_capture = lambda: False

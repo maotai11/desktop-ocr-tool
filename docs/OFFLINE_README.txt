@@ -1,4 +1,4 @@
-﻿InkPick 拾字筆 v1.8.0-rc.13
+﻿InkPick 拾字筆 v1.8.0-rc.14
 完整離線操作說明
 ========================================
 
@@ -8,7 +8,15 @@
 點回來源文件後標示持續可見；要暫停或改位置，先按「恢復介面」。
 原有多 A 共用 B、換列跟隨、固定位置 A／B 核對、90 天封存及文件套版保留。
 ZIP 內 OFFLINE_README.txt 與 README.txt 內容相同；Release 單獨提供的
-InkPick-v1.8.0-rc.13-README.txt 也是同一份 UTF-8（含 BOM）文字說明。
+InkPick-v1.8.0-rc.14-README.txt 也是同一份 UTF-8（含 BOM）文字說明。
+
+本版操作修正
+- 最小化工具後再從入口開啟會還原；同一個尚未關閉的編輯器保留未儲存草稿。
+- 取消、關閉或重新框選不沿用上次拖曳；文件縮放／切換平移時取消未完成框選。
+- 核對快速暫停再開始，舊回覆不會清掉新一輪；已停止並隱藏的搜尋不被晚到錯誤重開。
+- 隱藏手寫視窗會停止延遲辨識及該次工作，只有明確重開才恢復；helper 重試先等舊程序收尾。
+- 退出期間，舊框選、設定／標籤對話及 DB 回覆不再建立視窗、儲存設定或排入辨識。
+完整重現情境與測試範圍見 docs\FLOATING_STATE_AUDIT.md；這些有限檢查不代表任意 GUI 操作都無缺陷。
 
 一、下載、核對與啟動
 ----------------------------------------
@@ -17,24 +25,24 @@ EXE 已包含 Python、Qt、PDFium、兩組 OCR 模型與手寫引擎。
 使用電腦不需安裝 Python、pip、PDF 閱讀器、Windows 手寫語言套件，
 首次執行也不需要下載模型，可以斷網使用。
 
-1. 在能上網的電腦下載同版 InkPick-v1.8.0-rc.13.zip，再用隨身碟帶到離線電腦。
+1. 在能上網的電腦下載同版 InkPick-v1.8.0-rc.14.zip，再用隨身碟帶到離線電腦。
 2. 將整份 ZIP 解壓到有寫入權限的資料夾，例如 D:\Tools\InkPick。
    不要直接在 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 InkPick-v1.8.0-rc.13.exe，不需要管理員權限。
+3. 執行 InkPick-v1.8.0-rc.14.exe，不需要管理員權限。
 4. 預設會縮到右下角系統匣。點拾字筆圖示顯示／隱藏浮動窗；
    也可在圖示按右鍵，選擇功能。浮動窗出現「可擷取文字」後可開始。
 5. 第一次執行會先解開內含資源、載入模型，請等待完成。
    結束程式請從系統匣選「退出」，讓辨識、儲存與背景程序先結束。
 
 同版下載檔案：
-- InkPick-v1.8.0-rc.13.zip：EXE、離線說明、文件套版圖文說明、授權及模型來源。
-- InkPick-v1.8.0-rc.13.exe：單獨的相同執行檔，已內含所需執行環境與模型。
-- InkPick-v1.8.0-rc.13-README.txt：本份離線操作說明。
-- InkPick-v1.8.0-rc.13-SHA256SUMS.txt：同版檔案 SHA256。
-- InkPick-v1.8.0-rc.13-validation-metadata.zip：去識別驗證摘要，執行程式不需要它。
+- InkPick-v1.8.0-rc.14.zip：EXE、離線說明、文件套版圖文說明、授權及模型來源。
+- InkPick-v1.8.0-rc.14.exe：單獨的相同執行檔，已內含所需執行環境與模型。
+- InkPick-v1.8.0-rc.14-README.txt：本份離線操作說明。
+- InkPick-v1.8.0-rc.14-SHA256SUMS.txt：同版檔案 SHA256。
+- InkPick-v1.8.0-rc.14-validation-metadata.zip：去識別驗證摘要，執行程式不需要它。
 
 可在 PowerShell 核對下載檔：
-Get-FileHash .\InkPick-v1.8.0-rc.13.exe -Algorithm SHA256
+Get-FileHash .\InkPick-v1.8.0-rc.14.exe -Algorithm SHA256
 將結果與同版 SHA256SUMS 裡的 EXE 那一列比對。
 不要把其他版本的 EXE、ZIP 或校驗檔混在一起。
 
@@ -579,5 +587,5 @@ Linux 來源驗證可使用 Python 3.12 執行上面相同的依賴、模型與�
 Linux 無桌面測試可設定 QT_QPA_PLATFORM=offscreen。
 
 有網路時可查閱的版本與來源（主要操作不依賴這些網址）：
-https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.13
+https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.14
 https://github.com/maotai11/desktop-ocr-tool

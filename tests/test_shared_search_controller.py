@@ -160,6 +160,45 @@ def test_unchanged_skips_all_ocr_and_a_changes_reuse_only_b_cache(controlled):
     assert ocr.requests[-1][2] == 'B'
 
 
+@pytest.mark.parametrize('signal_name', ['fields_changed', 'state_changed', 'updated'])
+@pytest.mark.parametrize('cached', [False, True])
+def test_result_callback_restart_cannot_cancel_new_capture_generation(controlled, signal_name, cached):
+    controller, ocr, capture, first = controlled
+    controller.start()
+    take(controller, capture)
+    if cached:
+        complete_search(controller, ocr, capture)
+        next_cycle(controller)
+    else:
+        ocr.finish()
+        ocr.finish()
+    new_tokens, updates = [], []
+
+    def restart(*args):
+        if new_tokens:
+            return
+        if signal_name == 'state_changed' and args[0] not in ('ready', 'unchanged'):
+            return
+        new_tokens.append(None)
+        controller.pause()
+        assert controller.start()
+        new_tokens[0] = controller._token
+
+    getattr(controller, signal_name).connect(restart)
+    controller.updated.connect(updates.append)
+    take(controller, capture)
+    assert new_tokens and controller._token == new_tokens[0]
+    assert controller._capture_generation == new_tokens[0]
+    assert controller._settle.isActive() and controller._deadline.isActive()
+    assert not controller._poll.isActive()
+    # Listeners that invalidated the old result before publication must not receive it.
+    if signal_name != 'updated':
+        assert not updates
+    take(controller, capture)
+    complete_search(controller, ocr, capture)
+    assert updates[-1]['fields'][0]['result']['status'] == 'matched'
+
+
 def test_ocr_settings_change_invalidates_b_cache(controlled):
     controller, ocr, capture, first = controlled
     controller.start()
@@ -204,6 +243,67 @@ def test_pause_cancels_all_boundaries_and_restore_hook_runs_once(controlled, sta
     assert len(ocr.requests) == requests_before and len(capture.requests) == captures_before
     assert hooks.count('hide') == hooks.count('restore')
     assert len(updates) == int(stage == 'poll')
+
+
+@pytest.mark.parametrize('state', ['checking', 'reading', 'waiting', 'changed', 'tracking_pending', 'tracking_lost'])
+@pytest.mark.parametrize('restart', [False, True])
+def test_state_callback_cancellation_never_rearms_old_work(controlled, state, restart):
+    controller, ocr, capture, first = controlled
+    if state.startswith('tracking_'):
+        calibrate(controller, capture)
+    if state == 'waiting':
+        ocr.busy = True
+    callbacks = []
+
+    def cancel(observed):
+        if observed != state or callbacks:
+            return
+        callbacks.append(None)
+        controller.pause()
+        if restart:
+            assert controller.start()
+            callbacks[0] = controller._token
+
+    controller.state_changed.connect(cancel)
+    controller.start()
+    if state != 'checking':
+        take(controller, capture, band=state != 'tracking_lost')
+    if state == 'changed':
+        ocr.finish()
+        ocr.finish()
+        take(controller, capture, {first: 9})
+    assert callbacks
+    if restart:
+        assert controller.running and controller._token == callbacks[0]
+        assert controller._capture_generation == callbacks[0]
+        assert controller._capture_phase == 'source'
+        assert controller._settle.isActive() and controller._deadline.isActive()
+        assert not controller._poll.isActive() and not controller._retry.isActive()
+    else:
+        assert not controller.running and controller.state == 'paused'
+        assert not any(timer.isActive() for timer in (controller._poll, controller._retry,
+                                                       controller._settle, controller._deadline))
+
+
+def test_poll_clear_results_callback_restart_keeps_only_new_cycle(controlled):
+    controller, ocr, capture, first = controlled
+    controller.start()
+    take(controller, capture)
+    complete_search(controller, ocr, capture)
+    tokens = []
+
+    def restart():
+        if tokens:
+            return
+        tokens.append(None)
+        controller.pause()
+        assert controller.start()
+        tokens[0] = controller._token
+
+    controller.fields_changed.connect(restart)
+    next_cycle(controller)
+    assert controller._token == tokens[0]
+    assert controller._settle.isActive() and not controller._poll.isActive()
 
 
 def test_candidate_choice_is_one_per_a_and_requires_current_frame(controlled):

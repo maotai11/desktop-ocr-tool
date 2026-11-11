@@ -140,6 +140,7 @@ class SettingsDialog(QDialog):
         self._cfg = cfg
         self._ocr_engine = ocr_engine
         self._tag_repo = tag_repo
+        self._closed = False
         self.setWindowTitle("設定")
         self.setMinimumSize(520, 420)
         self._setup_ui()
@@ -370,7 +371,8 @@ class SettingsDialog(QDialog):
         layout.addWidget(btn_box)
 
     def _save(self):
-
+        if self._closed:
+            return
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
         self._cfg.set('history', 'auto_archive_days', self._sp_archive_days.value())
@@ -393,6 +395,23 @@ class SettingsDialog(QDialog):
         logger.info('設定已儲存；複製選項立即生效，辨識引擎設定需重新啟動')
         # 最後才關閉 dialog
         self.accept()
+
+    def done(self, result):
+        if self._closed:
+            return
+        # A nested tag/color/message dialog may still have an accepted callback
+        # queued when its owner closes. Mark the owner terminal before unwinding.
+        self._closed = True
+        for child in reversed(self.findChildren(QDialog)):
+            if child.isVisible():
+                child.setEnabled(False)
+                child.reject()
+        super().done(result)
+
+    def shutdown(self):
+        """Cancel this settings session and its children without saving."""
+        self.setEnabled(False)
+        self.reject()
 
     def _create_tag_management_tab(self) -> QWidget:
         """建立標籤管理分頁。"""
@@ -459,7 +478,7 @@ class SettingsDialog(QDialog):
 
     def _load_tags(self):
         """載入所有標籤到列表和統計表。"""
-        if self._tag_repo is None:
+        if self._closed or self._tag_repo is None:
             return
 
         # 清空
@@ -502,6 +521,8 @@ class SettingsDialog(QDialog):
 
     def _add_tag_dialog(self):
         """顯示新增標籤對話框。"""
+        if self._closed:
+            return
         from PySide6.QtWidgets import (
             QDialog, QFormLayout, QColorDialog,
             QDialogButtonBox,
@@ -532,7 +553,7 @@ class SettingsDialog(QDialog):
         btns.rejected.connect(dlg.reject)
         layout.addRow(btns)
 
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        if dlg.exec() != QDialog.DialogCode.Accepted or self._closed:
             return
 
         name = self._new_tag_name.text().strip()
@@ -555,6 +576,8 @@ class SettingsDialog(QDialog):
 
     def _edit_tag_dialog(self):
         """顯示編輯標籤對話框。"""
+        if self._closed:
+            return
         from PySide6.QtWidgets import (
             QDialog, QFormLayout, QColorDialog,
             QDialogButtonBox,
@@ -593,7 +616,7 @@ class SettingsDialog(QDialog):
         btns.rejected.connect(dlg.reject)
         layout.addRow(btns)
 
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        if dlg.exec() != QDialog.DialogCode.Accepted or self._closed:
             return
 
         new_name = self._edit_tag_name.text().strip()
@@ -612,6 +635,8 @@ class SettingsDialog(QDialog):
 
     def _delete_tag_confirm(self):
         """確認刪除標籤。"""
+        if self._closed:
+            return
         from PySide6.QtWidgets import QMessageBox
 
         current_item = self._tag_list.currentItem()
@@ -628,7 +653,7 @@ class SettingsDialog(QDialog):
             QMessageBox.StandardButton.No
         )
 
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == QMessageBox.StandardButton.Yes and not self._closed:
             self._tag_repo.delete(tag.id)
             self._load_tags()
             self.history_changed.emit()
@@ -636,6 +661,8 @@ class SettingsDialog(QDialog):
 
     def _pick_color(self):
         """顏色選擇器。"""
+        if self._closed:
+            return
         from PySide6.QtWidgets import QColorDialog
         from PySide6.QtGui import QColor
 
@@ -643,12 +670,14 @@ class SettingsDialog(QDialog):
         current_color = QColor(btn.text())
         color = QColorDialog.getColor(current_color, self, "選擇顏色")
 
-        if color.isValid():
+        if color.isValid() and not self._closed:
             hex_color = color.name()
             btn.setText(hex_color)
             btn.setStyleSheet(f"background: {hex_color}; color: white;")
 
     def _apply_tag_to_selected(self, tag_id: int):
+        if self._closed:
+            return
         from PySide6.QtWidgets import QMessageBox
         owner = self.parent()
         selected = set(getattr(owner, '_selected_items', set()))

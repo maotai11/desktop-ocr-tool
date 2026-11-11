@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.13'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.14'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
@@ -49,7 +49,8 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'launcher_actions_and_capture_cancel settings_cancel_and_apply history_search_tags_and_pin '
     'editor_save_and_history_refresh ocr_selection_copy_explicit document_import_template_zoom_clear '
     'handwriting_stroke_candidate_copy paired_comparison_controls shared_search_controls '
-    'tray_pause_and_quit_route windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
+    'tray_pause_and_quit_route minimized_windows_restore capture_cancel_restart_ignores_old_gesture '
+    'shutdown_rejects_late_tool_entries windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
@@ -323,7 +324,8 @@ def observed_result(value):
              'launcher_actions_and_capture_cancel','settings_cancel_and_apply','history_search_tags_and_pin',
              'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',
              'handwriting_stroke_candidate_copy','paired_comparison_controls','shared_search_controls',
-             'tray_pause_and_quit_route','windows_and_workers_closed')))
+             'tray_pause_and_quit_route','minimized_windows_restore','capture_cancel_restart_ignores_old_gesture',
+             'shutdown_rejects_late_tool_entries','windows_and_workers_closed')))
         for r in records)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'

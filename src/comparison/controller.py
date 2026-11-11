@@ -321,9 +321,11 @@ class ComparisonController(QObject):
         self._event = Event()
         self._results = {}
         self._cycle_timestamp = datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
+        token = self._token
         self.state_changed.emit('checking')
-        if not self.running or self._closing:
-            self._capture_token = None
+        if not self.running or self._closing or token != self._token:
+            if self._capture_token == token:
+                self._capture_token = None
             return
         try:
             self._capture.capture(self._token, group['regions'], self._layout, self._event)
@@ -406,8 +408,10 @@ class ComparisonController(QObject):
             self.pause()
             self.failed.emit('目前的辨識工作尚未結束，請稍後重新開始核對。')
         else:
+            token = self._token
             self.state_changed.emit('waiting')
-            self._retry.start()
+            if self.running and not self._closing and token == self._token:
+                self._retry.start()
 
     def _recognized(self, token, page, name, result):
         if (self._closing or not self.running or token != self._token or page != 0
