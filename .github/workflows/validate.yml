@@ -178,14 +178,26 @@ jobs:
             & ./scripts/validate_handwriting_firewall.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
             if ($LASTEXITCODE -ne 0) { throw 'Outer/helper outbound-blocked handwriting gate failed' }
             $stressReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-runtime-stress.json'
-            $stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru
-            if (-not $stressProcess.WaitForExit(900000)) { $stressProcess.Kill(); throw 'Frozen stress timed out' }
-            if ($stressProcess.ExitCode -ne 0) { throw 'Frozen stress failed' }
-            $stress = Get-Content $stressReport -Raw -Encoding UTF8 | ConvertFrom-Json
-            if (-not $stress.passed -or $stress.iterations_per_profile -ne 500 -or -not $stress.frozen -or $stress.executable_sha256 -ne $manifest.executable_sha256 -or $stress.version -ne $manifest.version) { throw 'Incomplete frozen stress report' }
-            foreach ($profile in @('v6-small', 'v6-medium')) {
-              $record = $stress.profiles.$profile
-              if (-not $record.passed -or $record.iterations_completed -ne 500 -or $record.identity.profile -ne $profile) { throw ('Incomplete stress profile: ' + $profile) }
+            $stressProcess = $null
+            try {
+              $stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru
+              if (-not $stressProcess.WaitForExit(900000)) { throw 'Frozen stress timed out' }
+              if ($stressProcess.ExitCode -ne 0) { throw 'Frozen stress failed' }
+              $stress = Get-Content $stressReport -Raw -Encoding UTF8 | ConvertFrom-Json
+              if (-not $stress.passed -or $stress.iterations_per_profile -ne 500 -or -not $stress.frozen -or $stress.executable_sha256 -ne $manifest.executable_sha256 -or $stress.version -ne $manifest.version) { throw 'Incomplete frozen stress report' }
+              foreach ($profile in @('v6-small', 'v6-medium')) {
+                $record = $stress.profiles.$profile
+                if (-not $record.passed -or $record.iterations_completed -ne 500 -or $record.identity.profile -ne $profile) { throw ('Incomplete stress profile: ' + $profile) }
+              }
+            } finally {
+              if ($null -ne $stressProcess) {
+                try {
+                  if (-not $stressProcess.HasExited) { $stressProcess.Kill($true) }
+                  if (-not $stressProcess.WaitForExit(10000)) { throw 'Frozen stress process did not terminate' }
+                } finally {
+                  $stressProcess.Dispose()
+                }
+              }
             }
           } finally {
             Remove-NetFirewallRule -DisplayName $rule
