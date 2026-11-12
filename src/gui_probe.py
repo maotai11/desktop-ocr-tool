@@ -309,18 +309,68 @@ def _exercise_gui(app, directory, checks):
             checks['capture_cancel_restart_ignores_old_gesture'] = (
                 not selected and not overlay.isVisible() and not capture._started_once)
 
+            cleanup_literals = {'commas': '[C]', 'apostrophes': "'Q'", 'newlines': ' / ',
+                                'punctuation': '·'}
+            cleanup_sample = "甲,乙，丙'丁’戊\r\n己 \t！庚"
+            cleanup_expected = "甲[C]乙[C]丙'Q'丁'Q'戊 / 己···庚"
+
+            def choose_cleanup(dialog, action, *, enabled=True):
+                dialog._tabs.setCurrentIndex(3)
+                for suffix, literal in cleanup_literals.items():
+                    key = 'copy_remove_' + suffix
+                    checkbox = dialog._copy_cleanup_checks[key]
+                    mode = dialog._copy_cleanup_modes[key]
+                    entry = dialog._copy_cleanup_replacements[key]
+                    checkbox.setChecked(enabled)
+                    mode.setCurrentIndex(mode.findData(action))
+                    entry.setText(literal)
+                    _require(mode.isEnabled() == enabled and entry.isEnabled() == enabled
+                             and entry.isHidden() == (action != 'replace'))
+
+            before_settings = Path(cfg._settings_path).read_bytes()
             def settings_cancel(dialog):
                 dialog._sp_archive_days.setValue(0)
                 dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
+                dialog._cb_autostart.setChecked(True)
+                choose_cleanup(dialog, 'replace')
                 dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel).click()
             _modal(shell._btn_settings.click, [settings_cancel])
-            _require(cfg.get('history', 'auto_archive_days') == 90 and not saved_settings and not autostart_calls)
+            _require(cfg.get('history', 'auto_archive_days') == 90 and not saved_settings and not autostart_calls
+                     and Path(cfg._settings_path).read_bytes() == before_settings
+                     and all(cfg.get('clipboard', 'copy_remove_' + suffix) is False
+                             for suffix in cleanup_literals))
             def settings_accept(dialog):
                 dialog._sp_archive_days.setValue(0)
                 dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
+                dialog._cb_autostart.setChecked(True)
+                choose_cleanup(dialog, 'replace')
                 dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
             _modal(shell._btn_settings.click, [settings_accept])
-            checks['settings_cancel_and_apply'] = (saved_settings == [True] and autostart_calls == [False]
+            persisted = ConfigManager()
+            _require(all(persisted.get('clipboard', 'copy_remove_' + suffix) is True
+                         and persisted.get('clipboard', 'copy_cleanup_mode_' + suffix) == 'replace'
+                         and persisted.get('clipboard', 'copy_replace_' + suffix) == literal
+                         for suffix, literal in cleanup_literals.items()))
+            copy_text(cleanup_sample, cfg)
+            _require(app.clipboard().text() == cleanup_expected)
+
+            def settings_remove(dialog):
+                for suffix, literal in cleanup_literals.items():
+                    _require(dialog._copy_cleanup_replacements['copy_remove_' + suffix].text() == literal)
+                choose_cleanup(dialog, 'remove')
+                dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+            _modal(shell._btn_settings.click, [settings_remove])
+            copy_text(cleanup_sample, cfg)
+            _require(app.clipboard().text() == '甲乙丙丁戊己庚')
+
+            def settings_disable(dialog):
+                choose_cleanup(dialog, 'remove', enabled=False)
+                dialog._cb_autostart.setChecked(False)
+                dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+            _modal(shell._btn_settings.click, [settings_disable])
+            copy_text(cleanup_sample, cfg)
+            _require(app.clipboard().text() == cleanup_sample)
+            checks['settings_cancel_and_apply'] = (saved_settings == [True] * 3 and autostart_calls == [True, False]
                 and ConfigManager().get('clipboard', 'ocr_copy_mode') == 'select'
                 and maintenance.days == 0 and not watcher.active)
 
@@ -343,6 +393,7 @@ def _exercise_gui(app, directory, checks):
             shell._filter_buttons['pinned'].click()
             _require({item.id for item in shell._items} == {item_id})
             shell._selected_item_id = item_id
+            settings_saves_before_tags = len(saved_settings)
             def manage_tags(dialog):
                 def enter_tag(child):
                     dialog._new_tag_name.setText('GUI fixture tag')
@@ -355,7 +406,7 @@ def _exercise_gui(app, directory, checks):
                 dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel).click()
             _modal(shell._btn_settings.click, [manage_tags])
             checks['history_search_tags_and_pin'] = (len(tags.get_tags_for_item(item_id)) == 1
-                and console._search.text() == 'searchable' and len(saved_settings) == 1)
+                and console._search.text() == 'searchable' and len(saved_settings) == settings_saves_before_tags)
 
             _context_action(console, '編輯')
             editor = console._editor_windows[item_id]
@@ -417,8 +468,12 @@ def _exercise_gui(app, directory, checks):
             document._recognize_button.click()
             _until(lambda: len(document._results) == 2 and not document._busy)
             _require(document._output.toPlainText() == 'GUI GUI DOCUMENT\n\nGUI GUI DOCUMENT')
+            cfg.set('clipboard', 'copy_remove_punctuation', True)
+            cfg.set('clipboard', 'copy_cleanup_mode_punctuation', 'replace')
             document._copy_button.click()
-            _require(app.clipboard().text() == document._output.toPlainText())
+            _require(app.clipboard().text() == 'GUI GUI DOCUMENT\n\nGUI GUI DOCUMENT'
+                     and document._output.toPlainText() == 'GUI GUI DOCUMENT\n\nGUI GUI DOCUMENT')
+            cfg.set('clipboard', 'copy_remove_punctuation', False)
             document._clear_region_button.click()
             _require(document._layout.region_for('辨識1', 0) is None and not document._recognize_button.isEnabled())
             _modal(document._clear_documents_button.click,

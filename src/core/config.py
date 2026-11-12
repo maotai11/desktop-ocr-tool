@@ -74,7 +74,15 @@ DEFAULT_SETTINGS = {
         "copy_remove_commas": False,
         "copy_remove_apostrophes": False,
         "copy_remove_newlines": False,
-        "copy_remove_punctuation": False
+        "copy_remove_punctuation": False,
+        "copy_replace_commas": "",
+        "copy_replace_apostrophes": "",
+        "copy_replace_newlines": "",
+        "copy_replace_punctuation": "",
+        "copy_cleanup_mode_commas": "remove",
+        "copy_cleanup_mode_apostrophes": "remove",
+        "copy_cleanup_mode_newlines": "remove",
+        "copy_cleanup_mode_punctuation": "remove"
     },
     "documents": {
         "max_file_size_mb": 100
