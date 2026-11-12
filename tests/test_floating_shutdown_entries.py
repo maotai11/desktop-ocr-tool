@@ -85,6 +85,7 @@ def test_normal_and_comparison_selectors_are_mutually_exclusive(
             widget.open_comparison()
             return widget._comparison, widget._comparison_overlay, lambda: widget._select_comparison_region('A')
         widget.open_shared_search()
+        widget._shared_search_controller.set_source_mode('fields')
         field = widget._shared_search_controller.fields[0]['id']
         return widget._shared_search, widget._shared_search_selector, lambda: widget._select_shared_search_region(field)
 

@@ -39,6 +39,7 @@ PUBLIC_DOCUMENTATION = {
     'docs/ui/b-inline-callouts.png': 'docs/ui/b-inline-callouts.png',
     'docs/ui/a-inline-annotations.png': 'docs/ui/a-inline-annotations.png',
     'docs/ui/invoice-field-callouts.png': 'docs/ui/invoice-field-callouts.png',
+    'docs/ui/invoice-row-callouts.png': 'docs/ui/invoice-row-callouts.png',
     'docs/SECURITY_REVIEW.md': 'docs/SECURITY_REVIEW.md',
     'docs/ui/floating-window.png': 'docs/ui/floating-window.png',
     'docs/ui/ocr-selection.png': 'docs/ui/ocr-selection.png',

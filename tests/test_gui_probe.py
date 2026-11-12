@@ -146,3 +146,20 @@ def test_shutdown_probe_detects_late_launcher_resurrection(qapp, tmp_path, monke
     assert checks['shutdown_rejects_late_tool_entries'] is False
     assert checks['windows_and_workers_closed'] is True
     assert checks['temporary_files_cleaned'] is True
+
+
+@pytest.mark.parametrize('defect', ['ineffective_adjustment', 'retained_snapshot'])
+def test_preview_probe_rejects_ineffective_controls_and_retained_screen(qapp, tmp_path, monkeypatch, defect):
+    from PySide6.QtWidgets import QDialog
+    from src.ui.region_preview_dialog import RegionPreviewDialog
+    if defect == 'ineffective_adjustment':
+        monkeypatch.setattr(RegionPreviewDialog, 'nudge', lambda *_: True)
+    else:
+        monkeypatch.setattr(RegionPreviewDialog, 'done', QDialog.done)
+    destination = tmp_path / 'preview-failure.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    report = json.loads(destination.read_text(encoding='utf-8'))
+    assert report['checks']['shared_search_controls'] is True
+    assert report['checks']['region_preview_adjustment'] is False
+    assert report['checks']['windows_and_workers_closed'] is True
+    assert report['checks']['temporary_files_cleaned'] is True

@@ -246,7 +246,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.15'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.16'
     runs-on: ubuntu-latest
     permissions:
       contents: write

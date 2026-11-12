@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
-from math import isfinite
+from math import ceil, floor, isfinite
 from threading import Event
 from time import monotonic
 import unicodedata
@@ -16,7 +16,7 @@ from PySide6.QtGui import QGuiApplication
 
 from .capture import ComparisonCaptureError, regions_overlap, validate_region
 from .shared_capture import SharedCaptureWorker, validate_regions
-from .search_matching import match_field
+from .row_values import extract_source_rows, match_row_values
 from .row_tracking import RowTracker, translate_regions
 
 
@@ -45,6 +45,13 @@ class SharedSearchController(QObject):
         self._ocr.document_ocr_done.connect(self._recognized)
         field_id = uuid4().hex
         self._fields = {field_id: {'id': field_id, 'name': '欄位 1', 'region': None, 'result': None}}
+        self.source_mode = 'fields'
+        self.source_region = None
+        self._source_rows = []
+        self._row_fields = {}
+        self.current_row_index = 0
+        self.source_reason = ''
+        self._tracking_active_row = None
         self.b_region = None
         self.tracking_region = None
         self.row_pitch = 30
@@ -57,6 +64,7 @@ class SharedSearchController(QObject):
         self.before_capture = None
         self.after_capture = None
         self._closing = False
+        self._pause_epoch = 0
         self._calibrating = False
         self._tracker = None
         self._baseline_a = None
@@ -107,7 +115,76 @@ class SharedSearchController(QObject):
 
     @property
     def fields(self):
-        return deepcopy(list(self._fields.values()))
+        return deepcopy(list(self._visible_fields().values()))
+
+    def _visible_fields(self):
+        return self._row_fields if self.source_mode == 'rows' else self._fields
+
+    @property
+    def source_rows(self):
+        return deepcopy(self._source_rows)
+
+    @property
+    def active_row_region(self):
+        if self.source_mode != 'rows' or not 0 <= self.current_row_index < len(self._source_rows):
+            return None
+        return self._source_rows[self.current_row_index]['region']
+
+    def _clear_source_rows(self):
+        self._source_rows = []
+        self._row_fields = {}
+        self.current_row_index = 0
+        self.source_reason = ''
+        self._tracking_active_row = None
+
+    def set_source_mode(self, mode):
+        if self._closing or mode not in ('fields', 'rows'):
+            return False
+        if mode == self.source_mode:
+            return True
+        if not self._pause_for_configuration():
+            return False
+        self.source_mode = mode
+        self._clear_source_rows()
+        self._reset_tracking()
+        self._layout = None
+        self.fields_changed.emit()
+        return True
+
+    def set_source_region(self, region):
+        if self._closing:
+            return False
+        if not self._pause_for_configuration():
+            return False
+        try:
+            region = validate_region(region)
+            if region[4] != 1:
+                raise ComparisonCaptureError('目前只支援主螢幕，請在主螢幕重新框選。')
+            regions = {'SOURCE': region}
+            if self.b_region is not None:
+                regions['B'] = self.b_region
+            self._validate_configuration(regions)
+        except ComparisonCaptureError as exc:
+            self.failed.emit(str(exc))
+            return False
+        self.source_region = region
+        self._clear_source_rows()
+        self._reset_tracking()
+        self._layout = None
+        self.fields_changed.emit()
+        return True
+
+    def set_current_row(self, index):
+        if (self._closing or self.source_mode != 'rows' or type(index) is not int
+                or not 0 <= index < len(self._source_rows)):
+            return False
+        if not self._pause_for_configuration():
+            return False
+        self.current_row_index = index
+        self._row_fields = {}
+        self._reset_tracking()
+        self.fields_changed.emit()
+        return self.start()
 
     @property
     def calibrated(self):
@@ -126,7 +203,9 @@ class SharedSearchController(QObject):
         return tuple(self._regions().values())
 
     def _regions(self):
-        regions = {key: field['region'] for key, field in self._fields.items() if field['region'] is not None}
+        regions = ({'SOURCE': self.source_region} if self.source_mode == 'rows' and self.source_region is not None
+                   else {} if self.source_mode == 'rows' else
+                   {key: field['region'] for key, field in self._fields.items() if field['region'] is not None})
         if self.b_region is not None:
             regions['B'] = self.b_region
         if self.tracking_region is not None:
@@ -139,7 +218,7 @@ class SharedSearchController(QObject):
 
     def _clear_results(self):
         changed = False
-        for field in self._fields.values():
+        for field in self._visible_fields().values():
             changed = changed or field['result'] is not None
             field['result'] = None
         if changed:
@@ -218,7 +297,8 @@ class SharedSearchController(QObject):
     def _set_region(self, name, region):
         if self._closing:
             return False
-        self.pause()
+        if not self._pause_for_configuration():
+            return False
         try:
             region = validate_region(region)
             if region[4] != 1:
@@ -244,6 +324,7 @@ class SharedSearchController(QObject):
 
     def _reset_tracking(self):
         self._tracker = self._baseline_a = None
+        self._tracking_active_row = None
         self.auto_follow = False
 
     def set_row_pitch(self, value):
@@ -313,6 +394,8 @@ class SharedSearchController(QObject):
         self.pause()
         for field in self._fields.values():
             field['region'] = None
+        self.source_region = None
+        self._clear_source_rows()
         self.b_region = self.tracking_region = self._layout = None
         self._b_cache = None
         self._reset_tracking()
@@ -321,7 +404,9 @@ class SharedSearchController(QObject):
             self.failed.emit(message)
 
     def _ready(self):
-        if self.b_region is None or any(field['region'] is None for field in self._fields.values()):
+        sources_ready = (self.source_region is not None if self.source_mode == 'rows' else
+                         all(field['region'] is not None for field in self._fields.values()))
+        if self.b_region is None or not sources_ready:
             self.failed.emit('請先框選發票位置，以及每個輸入數值欄位。')
             return False
         return True
@@ -333,7 +418,13 @@ class SharedSearchController(QObject):
         self._begin_cycle()
         return self.running
 
+    def _pause_for_configuration(self):
+        expected = self._pause_epoch + 1
+        self.pause()
+        return not self._closing and not self.running and self._pause_epoch == expected
+
     def pause(self):
+        self._pause_epoch += 1
         self.running = self._calibrating = False
         self._cancel_cycle()
         self._last_key = self._last_payload = self._last_a = self._last_b = None
@@ -513,7 +604,7 @@ class SharedSearchController(QObject):
                  '_enable_secondary_engine', '_secondary_for_handwriting', '_secondary_for_low_confidence',
                  '_secondary_confidence_threshold')
         values = tuple(getattr(engine, name, None) for name in names)
-        return (id(engine), id(getattr(engine, '_secondary', None)), self.mode, self.date_equivalence, values)
+        return (id(engine), id(getattr(engine, '_secondary', None)), self.mode, self.date_equivalence, self.source_mode, values)
 
     def _tracking_key(self, images, *, move):
         if not self.auto_follow:
@@ -531,6 +622,17 @@ class SharedSearchController(QObject):
         row, delta = result.get('row'), result.get('delta_y')
         if row is None or type(delta) is not int:
             return None
+        if self.source_mode == 'rows':
+            try:
+                row = validate_region(row)
+                if self.source_region is None or not regions_overlap(row, self.source_region):
+                    raise ValueError('Tracked row lies outside source')
+                if move:
+                    self._tracking_active_row = row
+            except (TypeError, ValueError, ComparisonCaptureError):
+                self._set_state('tracking_lost')
+                return None
+            return (tuple(row), result.get('fingerprint'))
         if move:
             try:
                 positions = translate_regions(self._baseline_a, delta,
@@ -551,6 +653,11 @@ class SharedSearchController(QObject):
         return (tuple(row), result.get('fingerprint'))
 
     def _key(self, hashes, tracking):
+        if self.source_mode == 'rows':
+            if any(key not in hashes or not isinstance(hashes[key], (bytes, str)) for key in ('SOURCE', 'B')):
+                raise ValueError('Missing frame fingerprints')
+            return (self.source_region, hashes['SOURCE'], self.current_row_index,
+                    self.b_region, hashes['B'], tracking, self._settings_signature())
         keys = tuple(self._fields) + ('B',)
         if any(key not in hashes or not isinstance(hashes[key], (bytes, str)) for key in keys):
             raise ValueError('Missing frame fingerprints')
@@ -575,7 +682,7 @@ class SharedSearchController(QObject):
             return
         if key == self._last_key and self._last_payload is not None:
             for field_id, result in self._last_payload.items():
-                self._fields[field_id]['result'] = deepcopy(result)
+                self._visible_fields()[field_id]['result'] = deepcopy(result)
             self.fields_changed.emit()
             if self._emit_snapshot('unchanged', token):
                 self._wait_next(self.interval * 1000)
@@ -591,10 +698,10 @@ class SharedSearchController(QObject):
         if self._b_cache is not None and self._b_cache[0] == cache_key:
             self._b_result = deepcopy(self._b_cache[1])
             self._images.pop('B')
-            self._work = list(self._fields)
+            self._work = ['SOURCE'] if self.source_mode == 'rows' else list(self._fields)
         else:
             self._b_result = None
-            self._work = ['B', *self._fields]
+            self._work = ['B', 'SOURCE'] if self.source_mode == 'rows' else ['B', *self._fields]
         self._cache_key = cache_key
         self._set_state('reading')
         if self._active_generation(token):
@@ -690,20 +797,75 @@ class SharedSearchController(QObject):
         if phase == 'choice':
             self._a_results = deepcopy(self._last_a)
             self._b_result = deepcopy(self._last_b)
-        results = {field_id: match_field(self._a_results[field_id], self._b_result,
-                                        mode=self.mode, date_equivalence=self.date_equivalence,
-                                        selected_id=self._selected_ids.get(field_id))
-                   for field_id in self._fields}
+        if self.source_mode == 'rows':
+            results = self._row_results(self._a_results.get('SOURCE', {}), self._b_result)
+            key = self._key(hashes, tracking)
+        else:
+            values = [{**self._a_results[field_id], 'id': field_id} for field_id in self._fields]
+            matched = match_row_values(values, self._b_result, mode=self.mode,
+                                       date_equivalence=self.date_equivalence,
+                                       selected_ids=self._selected_ids, exclusive=True,
+                                       numeric_near_threshold=None)
+            results = dict(zip(self._fields, matched))
         self._last_key = key
         self._last_payload = deepcopy(results)
         self._last_a, self._last_b = deepcopy(self._a_results), deepcopy(self._b_result)
         for field_id, result in results.items():
-            self._fields[field_id]['result'] = result
+            self._visible_fields()[field_id]['result'] = result
         if phase != 'choice':
             self._cycle += 1
         self.fields_changed.emit()
         if self._emit_snapshot('ready', token):
             self._wait_next(self.interval * 1000)
+
+    def _row_results(self, source, invoice):
+        extracted = extract_source_rows(source)
+        rows = extracted['rows']
+        origin_x, origin_y, _width, _height, monitor = self.source_region
+        metadata = []
+        for row in rows:
+            x, y, width, height = row['region']
+            left, top = floor(x), floor(y)
+            right, bottom = ceil(x + width), ceil(y + height)
+            metadata.append({'id': row['id'], 'region': (origin_x + left, origin_y + top,
+                                                        right - left, bottom - top, monitor),
+                             'value_count': len(row['values'])})
+        self._source_rows = metadata
+        self.source_reason = extracted.get('reason', '')
+        if self.auto_follow and self._tracking_active_row is not None:
+            tracked = self._tracking_active_row
+            selected = [index for index, row in enumerate(metadata)
+                        if tracked[1] <= row['region'][1] + row['region'][3] / 2 <= tracked[1] + tracked[3]]
+            if len(selected) != 1:
+                self._row_fields = {}
+                self.source_reason = '無法確認目前選取列，請調整框選或改用箭頭換列。'
+                return {}
+            self.current_row_index = selected[0]
+        if not 0 <= self.current_row_index < len(rows):
+            self._row_fields = {}
+            self.source_reason = '目前這一列沒有可定位的數值，請重新框選或選擇其他列。'
+            return {}
+        values = rows[self.current_row_index]['values']
+        results = match_row_values(values, invoice, selected_ids=self._selected_ids,
+                                  mode=self.mode, date_equivalence=self.date_equivalence, exclusive=True)
+        self._row_fields = {}
+        output = {}
+        for index, (value, result) in enumerate(zip(values, results)):
+            # Keep provenance at real OCR-line precision; never invent digit boxes.
+            polygons = value.get('source_boxes') or [item['box'] for item in value.get('detail', [])]
+            points = [point for polygon in polygons for point in polygon]
+            if not points:
+                continue
+            left, top = floor(min(point[0] for point in points)), floor(min(point[1] for point in points))
+            right, bottom = ceil(max(point[0] for point in points)), ceil(max(point[1] for point in points))
+            field_id = value['id']
+            self._row_fields[field_id] = {'id': field_id, 'name': f'數值 {index + 1}',
+                                         'region': (origin_x + left, origin_y + top,
+                                                    right - left, bottom - top, monitor), 'result': None}
+            if extracted.get('truncated') and result.get('status') == 'matched':
+                result = {**result, 'status': 'uncertain', 'reason': '數值範圍超過處理上限，請縮小框選。'}
+            output[field_id] = result
+        return output
 
     def _active_generation(self, token):
         return (token is not None and token == self._token and self.running
@@ -718,6 +880,9 @@ class SharedSearchController(QObject):
         if not self._active_generation(token):
             return False
         self.updated.emit({'fields': self.fields, 'b_region': self.b_region,
+                           'source_mode': self.source_mode, 'source_region': self.source_region,
+                           'source_rows': self.source_rows, 'current_row_index': self.current_row_index,
+                           'active_row_region': self.active_row_region, 'source_reason': self.source_reason,
                            'tracking_region': self.tracking_region, 'row_pitch': self.row_pitch,
                            'auto_follow': self.auto_follow, 'calibrated': self.calibrated,
                            'timestamp': self._timestamp, 'cycle': self._cycle, 'state': state})
@@ -737,13 +902,16 @@ class SharedSearchController(QObject):
             self._poll.start(milliseconds)
 
     def select_candidate(self, field_id, candidate_id):
-        field = self._fields.get(field_id)
+        field = self._visible_fields().get(field_id)
         if (self._closing or not self.running or self._token is not None or self._capture_token is not None
                 or field is None or not isinstance(candidate_id, str) or self._last_key is None
                 or field['result'] is None
                 or not any(candidate['id'] == candidate_id for candidate in field['result']['candidates'])):
             return False
         self._poll.stop()
+        # Explicitly reselecting a value makes its pin the most recent one.
+        # Matching resolves conflicts newest-first without moving other pins.
+        self._selected_ids.pop(field_id, None)
         self._selected_ids[field_id] = candidate_id
         self._token, self._event = uuid4().hex, Event()
         self._started = monotonic()
@@ -752,7 +920,8 @@ class SharedSearchController(QObject):
         return True
 
     def _monitor_bounds(self):
-        regions = [field['region'] for field in self._fields.values() if field['region'] is not None]
+        regions = ([self.source_region] if self.source_mode == 'rows' and self.source_region is not None else
+                   [field['region'] for field in self._fields.values() if field['region'] is not None])
         if not regions:
             raise ValueError('No source regions')
         monitor = regions[0][4]
@@ -767,7 +936,15 @@ class SharedSearchController(QObject):
     def move_rows(self, delta):
         if self._closing or type(delta) is not int or not delta or abs(delta) > 1000:
             return False
-        self.pause()
+        if self.source_mode == 'rows':
+            index = self.current_row_index + delta
+            # If rows disappeared, one explicit upward click returns to the
+            # last remaining row; never silently switch during OCR publication.
+            if delta < 0 and self.current_row_index >= len(self._source_rows):
+                index = min(index, len(self._source_rows) - 1)
+            return self.set_current_row(index)
+        if not self._pause_for_configuration():
+            return False
         self.auto_follow = False
         if not self._ready() or not 1 <= self.row_pitch <= 500:
             self.failed.emit('請先設定每列高度。')
@@ -804,7 +981,10 @@ class SharedSearchController(QObject):
 
     def _calibrated_capture(self, images):
         try:
-            positions = {key: field['region'] for key, field in self._fields.items()}
+            positions = ({'SOURCE_ROW': self.active_row_region} if self.source_mode == 'rows' else
+                         {key: field['region'] for key, field in self._fields.items()})
+            if any(region is None for region in positions.values()):
+                raise ValueError('Read source rows before calibration')
             if getattr(self._capture, 'supports_analysis', False) and self._capture_analysis is None:
                 raise ValueError('Missing worker analysis')
             tracker = self._calibration_tracker_candidate or self._make_tracker()
@@ -827,7 +1007,10 @@ class SharedSearchController(QObject):
         self._set_state('calibrated')
 
     def _make_tracker(self):
-        positions = [field['region'] for field in self._fields.values()]
+        positions = ([self.active_row_region] if self.source_mode == 'rows' else
+                     [field['region'] for field in self._fields.values()])
+        if any(region is None for region in positions):
+            raise ValueError('Read source rows before calibration')
         top = min(region[1] for region in positions)
         bottom = max(region[1] + region[3] for region in positions)
         x, _y, width, _height, monitor = self.tracking_region
@@ -845,6 +1028,7 @@ class SharedSearchController(QObject):
         self._closing = True
         self.pause()
         self._b_cache = None
+        self._clear_source_rows()
         self._reset_tracking()
         self._capture.stop()
         if not self._capture.isRunning():

@@ -82,8 +82,8 @@ def test_invoice_annotation_probe_rejects_source_region_as_result_anchor(qapp, t
 
 def test_near_number_cannot_be_reported_as_verified_by_probe(qapp, tmp_path, monkeypatch):
     """Inject false-green handling after actual numeric matching has run."""
-    from src.comparison import shared_controller
-    real = shared_controller.match_field
+    from src.comparison import row_values
+    real = row_values.match_field
 
     def false_green(*args, **kwargs):
         result = real(*args, **kwargs)
@@ -91,9 +91,74 @@ def test_near_number_cannot_be_reported_as_verified_by_probe(qapp, tmp_path, mon
             result['status'] = 'matched'
         return result
 
-    monkeypatch.setattr(shared_controller, 'match_field', false_green)
+    monkeypatch.setattr(row_values, 'match_field', false_green)
     path = tmp_path / 'false-green.json'
     assert probe.run_shared_search_probe(path) == 1
     report = json.loads(path.read_text(encoding='utf-8'))
     assert report['passed'] is False
     assert report['checks']['numeric_similarity_review'] is False
+
+
+def test_whole_source_probe_runs_actual_default_rows_and_releases_workers(qapp):
+    from src.comparison import shared_capture
+    provider = shared_capture.mss.mss
+    clipboard = qapp.clipboard().text()
+    checks = probe._row_region_checks(qapp)
+    assert len(checks) == 7 and all(checks.values())
+    assert shared_capture.mss.mss is provider and qapp.clipboard().text() == clipboard
+
+
+def test_whole_source_probe_rejects_old_invoice_result_after_changed_pixels(qapp, monkeypatch):
+    """A stale OCR cache must fail even when the worker did run again."""
+    from copy import deepcopy
+    from src.comparison.shared_controller import SharedSearchController
+    recognized = SharedSearchController._recognized
+    reused = []
+
+    def stale_invoice(self, token, page, name, result):
+        if name == 'B' and self._b_cache is not None:
+            reused.append(name)
+            result = deepcopy(self._b_cache[1])
+        return recognized(self, token, page, name, result)
+
+    monkeypatch.setattr(SharedSearchController, '_recognized', stale_invoice)
+    checks = probe._row_region_checks(qapp)
+    assert reused and checks['changed_invoice_refreshes_matches'] is False
+    assert checks['workers_stopped'] and checks['clipboard_history_untouched']
+
+
+def test_whole_source_probe_rejects_arrow_left_on_previous_row(qapp, monkeypatch):
+    from src.ui.search_highlight_overlay import SearchHighlightOverlay
+    original = SearchHighlightOverlay.source_row_arrow.fget
+    observed = []
+
+    def stationary_arrow(self):
+        arrow = original(self)
+        if arrow is None:
+            return None
+        observed.append(arrow)
+        return observed[0]
+
+    monkeypatch.setattr(SearchHighlightOverlay, 'source_row_arrow', property(stationary_arrow))
+    checks = probe._row_region_checks(qapp)
+    assert len(set(observed)) >= 2
+    assert checks['source_region_rows_extracted'] is True
+    assert checks['source_row_arrow_navigation'] is False and checks['workers_stopped']
+
+
+def test_whole_source_probe_rejects_numeric_near_value_marked_as_verified(qapp, monkeypatch):
+    from src.comparison import row_values
+    match = row_values.match_field
+    altered = []
+
+    def false_green(*args, **kwargs):
+        result = match(*args, **kwargs)
+        if result['text'] == '67890' and result['candidates']:
+            altered.append(result['score'])
+            result['status'] = 'matched'
+        return result
+
+    monkeypatch.setattr(row_values, 'match_field', false_green)
+    checks = probe._row_region_checks(qapp)
+    assert altered and checks['near_candidates_visible_for_review'] is False
+    assert checks['workers_stopped'] and checks['clipboard_history_untouched']

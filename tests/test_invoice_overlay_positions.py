@@ -96,3 +96,16 @@ def test_all_visible_annotations_remain_inside_invoice_and_screen(overlay, qapp)
         assert QRectF(*(value / scale for value in label['bounds'])).contains(rectangle)
         assert overlay.rect().contains(rectangle.toAlignedRect())
         assert all(not rectangle.intersects(QRectF(*other['rect'])) for other in labels[index + 1:])
+
+
+def test_near_value_remains_visible_beside_dense_invoice_line(overlay, qapp):
+    scale = qapp.primaryScreen().devicePixelRatio()
+    near = _mark(scale, score=.8, status='similar')
+    next_field = _mark(scale, y=143)
+    assert overlay.set_marks([near, next_field])
+    label = next(card for card in overlay.callouts if card['status'] == 'similar')
+    assert label['display_lines'] == ('12345 · 80%',)
+    rectangle = QRectF(*label['rect'])
+    anchor = QRectF(*label['anchor'])
+    assert rectangle.left() == anchor.right() + 6 and rectangle.top() == anchor.top()
+    assert not rectangle.intersects(QRectF(270, 143, 80, 20))
