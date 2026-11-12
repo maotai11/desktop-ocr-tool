@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.15'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.16'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
@@ -46,10 +46,10 @@ BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed wor
     'manual_selection_applied manual_row_shift blue_calibration blue_follow_stable same_y_scroll_refreshed '
     'stale_rows_discarded capture_overlay_hidden clipboard_history_untouched overlay_capture_verified '
     'invoice_match_annotation annotation_pin_persistence numeric_similarity_review roc_gregorian_date_equivalence '
-    'manual_refresh_rechecks_unchanged_invoice annotation_background_opacity native_archive_coverage_verified native_security_policy_passed '
+    'manual_refresh_rechecks_unchanged_invoice annotation_background_opacity source_region_rows_extracted row_values_exclusive_invoice_positions near_candidates_visible_for_review source_row_arrow_navigation changed_invoice_refreshes_matches native_archive_coverage_verified native_security_policy_passed '
     'launcher_actions_and_capture_cancel settings_cancel_and_apply history_search_tags_and_pin '
     'editor_save_and_history_refresh ocr_selection_copy_explicit document_import_template_zoom_clear '
-    'handwriting_stroke_candidate_copy paired_comparison_controls shared_search_controls '
+    'handwriting_stroke_candidate_copy paired_comparison_controls shared_search_controls region_preview_adjustment '
     'tray_pause_and_quit_route minimized_windows_restore capture_cancel_restart_ignores_old_gesture '
     'shutdown_rejects_late_tool_entries windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
@@ -323,9 +323,10 @@ def observed_result(value):
              'manual_selection_applied','manual_row_shift','blue_calibration','blue_follow_stable','same_y_scroll_refreshed',
              'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched','invoice_match_annotation','annotation_pin_persistence',
              'numeric_similarity_review','roc_gregorian_date_equivalence','manual_refresh_rechecks_unchanged_invoice','annotation_background_opacity',
+             'source_region_rows_extracted','row_values_exclusive_invoice_positions','near_candidates_visible_for_review','source_row_arrow_navigation','changed_invoice_refreshes_matches',
              'launcher_actions_and_capture_cancel','settings_cancel_and_apply','history_search_tags_and_pin',
              'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',
-             'handwriting_stroke_candidate_copy','paired_comparison_controls','shared_search_controls',
+             'handwriting_stroke_candidate_copy','paired_comparison_controls','shared_search_controls','region_preview_adjustment',
              'tray_pause_and_quit_route','minimized_windows_restore','capture_cancel_restart_ignores_old_gesture',
              'shutdown_rejects_late_tool_entries','windows_and_workers_closed')))
         for r in records)

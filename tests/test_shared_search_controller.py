@@ -115,7 +115,11 @@ def test_one_b_ocr_for_all_as_and_no_publish_before_revalidation(controlled):
     assert [request[2] for request in ocr.requests] == ['B', first, second]
     take(controller, capture)
     assert len(updates) == 1
-    assert all(field['result']['status'] == 'matched' for field in updates[0]['fields'])
+    # Both sources contain the same value; one physical invoice line may
+    # serve only one source value in shared search.
+    results = [field['result'] for field in updates[0]['fields']]
+    assert [result['status'] for result in results] == ['matched', 'uncertain']
+    assert results[0]['selected_id'] is not None and results[1]['selected_id'] is None
     assert len(capture.requests) == 2 and not controller._images
     assert not controller._deadline.isActive()
 
@@ -706,3 +710,69 @@ def test_date_setting_is_part_of_cache_identity_and_preserves_regions(controlled
     assert not controller.set_date_equivalence(1)
     controller.shutdown()
     assert not controller.set_date_equivalence(True)
+
+
+def test_legacy_shared_near_ties_have_one_visible_unverified_suggestion(controlled):
+    controller, ocr, capture, first = controlled
+    controller.start(); take(controller, capture)
+    ocr.finish('12346', duplicate=True)
+    ocr.finish('12345')
+    take(controller, capture)
+    result = controller.fields[0]['result']
+    assert result['status'] == 'uncertain' and result['selected_id'] is not None
+    assert result['score'] == .8 and result['provisional'] is True
+    assert len(result['candidates']) == 2
+    assert controller.select_candidate(first, result['candidates'][1]['id'])
+    take(controller, capture)
+    assert controller.fields[0]['result']['status'] == 'uncertain'
+    assert controller.fields[0]['result']['score'] == .8
+
+
+def test_legacy_shared_exact_ties_still_require_a_manual_location(controlled):
+    controller, ocr, capture, first = controlled
+    controller.start(); take(controller, capture)
+    complete_search(controller, ocr, capture, duplicate=True)
+    result = controller.fields[0]['result']
+    assert result['status'] == 'ambiguous' and result['selected_id'] is None
+    assert controller.select_candidate(first, result['candidates'][1]['id'])
+    take(controller, capture)
+    assert controller.fields[0]['result']['status'] == 'matched'
+
+
+def test_latest_manual_invoice_pin_wins_conflict_and_keeps_unrelated_pin(controlled):
+    controller, ocr, capture, first = controlled
+    second = controller.add_field('第二欄')
+    third = controller.add_field('第三欄')
+    assert controller.set_a_region(second, (30, 10, 15, 10, 1))
+    assert controller.set_a_region(third, (55, 10, 15, 10, 1))
+    controller.start(); take(controller, capture)
+    token, page, name, *_ = ocr.requests[-1]
+    rows = [{'text': text, 'confidence': .99,
+             'box': [[0, y], [60, y], [60, y + 12], [0, y + 12]]}
+            for text, y in [('12345', 0), ('12345', 25), ('7000', 50)]]
+    ocr.document_ocr_done.emit(token, page, name, {'text': 'invoice', 'status': 'done', 'detail': rows})
+    ocr.finish('12345'); ocr.finish('12345'); ocr.finish('7000')
+    take(controller, capture)
+    values = {field['id']: field['result'] for field in controller.fields}
+    shared = values[first]['candidates'][0]['id']
+    alternate = values[first]['candidates'][1]['id']
+    independent = values[third]['candidates'][0]['id']
+    assert controller.select_candidate(first, shared)
+    take(controller, capture)
+    assert controller.select_candidate(third, independent)
+    take(controller, capture)
+    assert controller.select_candidate(second, shared)
+    take(controller, capture)
+    values = {field['id']: field['result'] for field in controller.fields}
+    assert values[first]['status'] == 'uncertain' and values[first]['selected_id'] is None
+    assert values[second]['status'] == 'matched' and values[second]['selected_id'] == shared
+    assert values[third]['status'] == 'matched' and values[third]['selected_id'] == independent
+    # Explicitly moving the displaced value to another real line preserves
+    # both of the other manual choices and allows all three to be verified.
+    assert controller.select_candidate(first, alternate)
+    take(controller, capture)
+    values = {field['id']: field['result'] for field in controller.fields}
+    assert all(result['status'] == 'matched' for result in values.values())
+    assert len({result['selected_id'] for result in values.values()}) == 3
+    assert values[second]['selected_id'] == shared and values[third]['selected_id'] == independent
+    assert list(controller._selected_ids) == [third, second, first]

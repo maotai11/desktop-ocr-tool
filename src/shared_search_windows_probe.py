@@ -274,6 +274,7 @@ def verify_overlay_capture(app) -> bool:
         capture_worker = SharedCaptureWorker(capture=real_capture)
         controller = SharedSearchController(worker, capture_worker=capture_worker)
         window = SharedSearchWindow(controller)
+        window._source_mode.setCurrentIndex(window._source_mode.findData('fields'))
         overlay = window.highlight_overlay
         get_style = getattr(user32, 'GetWindowLongPtrW', user32.GetWindowLongW)
         get_style.argtypes = [wintypes.HWND, ctypes.c_int]
@@ -311,12 +312,23 @@ def verify_overlay_capture(app) -> bool:
             _require(not failures and len(snapshots) >= count)
             _require(snapshots[-1]['fields'][0]['result']['status'] == 'matched')
             _require(overlay.isVisible())
+            # Real row extraction/navigation is checked by the controller
+            # probe. Here prove the arrow's native pixels, hide and pin paths.
+            _require(overlay.set_source_row(a_region))
 
         def pixels():
             return capture_shared({'LABEL': label_region}, layout)[0]['LABEL']
 
         def no_ink():
-            return bool(np.all(pixels() == (245, 245, 245)))
+            return bool(np.all(pixels() == (245, 245, 245)) and all(
+                np.all(image == (245, 245, 245))
+                for image in capture_shared(arrow_regions, layout)[0].values()))
+
+        def visible_ink():
+            arrows = capture_shared(arrow_regions, layout)[0]
+            return bool(np.count_nonzero(np.any(pixels() < 230, axis=2)) >= 5
+                        and np.count_nonzero(np.any(arrows['ARROW_FIRST'] < 230, axis=2)) >= 5
+                        and np.all(arrows['ARROW_NEXT'] == (245, 245, 245)))
 
         window.open()
         window._start_button.click()
@@ -340,6 +352,32 @@ def verify_overlay_capture(app) -> bool:
         # The rect beneath the located B text contains A's value and similarity
         # on our owned paper. A box outline cannot satisfy this sample.
         _require(displayed.size > 0 and np.count_nonzero(np.any(displayed < 230, axis=2)) >= 5)
+        from math import ceil, floor
+
+        def arrow_bounds():
+            polygon = overlay.source_row_arrow
+            _require(polygon is not None)
+            left = floor(min(point[0] for point in polygon) * scale)
+            top = floor(min(point[1] for point in polygon) * scale)
+            right = ceil(max(point[0] for point in polygon) * scale)
+            bottom = ceil(max(point[1] for point in polygon) * scale)
+            return left, top, right - left, bottom - top, 1
+
+        arrow_regions = {'ARROW_FIRST': arrow_bounds()}
+        first_arrow = capture_shared(arrow_regions, layout)[0]['ARROW_FIRST']
+        _require(np.count_nonzero(np.any(first_arrow < 230, axis=2)) >= 5)
+        moved_row = (a_region[0], a_region[1] + round(40 * scale), *a_region[2:])
+        _require(overlay.set_source_row(moved_row))
+        _wait(50)
+        arrow_regions['ARROW_NEXT'] = arrow_bounds()
+        changed = capture_shared(arrow_regions, layout)[0]
+        _require(np.all(changed['ARROW_FIRST'] == (245, 245, 245))
+                 and np.count_nonzero(np.any(changed['ARROW_NEXT'] < 230, axis=2)) >= 5)
+        _require(overlay.set_source_row(a_region))
+        _wait(50)
+        restored = capture_shared(arrow_regions, layout)[0]
+        _require(np.all(restored['ARROW_NEXT'] == (245, 245, 245))
+                 and np.count_nonzero(np.any(restored['ARROW_FIRST'] < 230, axis=2)) >= 5)
         _require(native_pinned(overlay) and native_pinned(window.resume_button)
                  and native_pinned(window.manual_button) and not native_pinned(window))
         for pinned in (False, True):
@@ -367,7 +405,7 @@ def verify_overlay_capture(app) -> bool:
                 _until(lambda: user32.GetForegroundWindow() == foreground
                        and app.applicationState() == Qt.ApplicationState.ApplicationInactive, timeout=2000)
                 _wait(50)
-                _require(native_pinned(overlay) and overlay.isVisible() and not no_ink()
+                _require(native_pinned(overlay) and overlay.isVisible() and visible_ink()
                          and not native_pinned(window) and window.isMinimized())
                 _require(window.before_capture())
                 _wait(50)
@@ -375,7 +413,7 @@ def verify_overlay_capture(app) -> bool:
                 window.after_capture()
                 _wait(50)
                 _require(overlay.isVisible() and window.resume_button.isVisible()
-                         and window.manual_button.isVisible() and not no_ink()
+                         and window.manual_button.isVisible() and visible_ink()
                          and user32.GetForegroundWindow() == foreground)
 
         # Let the real controller's next timer perform its own 50 ms settle and
@@ -402,6 +440,7 @@ def verify_overlay_capture(app) -> bool:
         _wait(50)
         _require(not overlay.isVisible() and not overlay.marks and not window.resume_button.isVisible()
                  and not window.manual_button.isVisible()
+                 and overlay.source_row is None
                  and no_ink())
 
         count = len(snapshots)
@@ -414,6 +453,7 @@ def verify_overlay_capture(app) -> bool:
         _wait(50)
         _require(not controller.running and not overlay.isVisible() and not overlay.marks and not window.resume_button.isVisible()
                  and not window.manual_button.isVisible()
+                 and overlay.source_row is None
                  and no_ink())
         return True
     finally:

@@ -6,11 +6,16 @@ import pytest
 from test_widget_interactions import _make_widget
 
 
+def _open_legacy_search(widget):
+    widget.open_shared_search()
+    widget._shared_search_controller.set_source_mode('fields')
+
+
 def test_launcher_selection_and_late_callback_cannot_reopen_after_shutdown(qtbot, tmp_path, monkeypatch):
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
     QApplication.clipboard().setText('原本的內容')
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     window, controller = widget._shared_search, widget._shared_search_controller
     qtbot.addWidget(window)
     assert not controller.running and widget.shared_search_is_stopped()
@@ -37,7 +42,7 @@ def test_launcher_selection_and_late_callback_cannot_reopen_after_shutdown(qtbot
 def test_field_edit_cancels_selector_and_rejects_its_old_callback(qtbot, tmp_path, monkeypatch):
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     window, controller = widget._shared_search, widget._shared_search_controller
     qtbot.addWidget(window)
     field_id = controller.fields[0]['id']
@@ -55,7 +60,7 @@ def test_field_edit_cancels_selector_and_rejects_its_old_callback(qtbot, tmp_pat
 def test_saved_settings_cancel_search_cache_and_pending_calibration(qtbot, tmp_path):
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     window, controller = widget._shared_search, widget._shared_search_controller
     qtbot.addWidget(window)
     controller._b_cache = ('old profile and frame', {'text': '先前內容'})
@@ -73,14 +78,14 @@ def test_switching_modes_reuses_windows_and_does_not_start_ocr(qtbot, tmp_path):
     widget.open_comparison()
     paired = widget._comparison
     qtbot.addWidget(paired)
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     search = widget._shared_search
     qtbot.addWidget(search)
     assert not paired.isVisible() and not widget._comparison_controller.running
     widget.open_comparison()
     assert widget._comparison is paired
     assert not search.isVisible() and not widget._shared_search_controller.running
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     assert widget._shared_search is search and not widget._shared_search_controller.running
     widget.shutdown_comparison()
     widget.shutdown_shared_search()
@@ -97,9 +102,9 @@ def test_mode_switch_cancels_the_other_selector_and_ignores_late_selection(
         old_window = widget._comparison
         monkeypatch.setattr(widget._comparison_overlay, 'start_capture', callbacks.append)
         widget._select_comparison_region('A')
-        widget.open_shared_search()
+        _open_legacy_search(widget)
     else:
-        widget.open_shared_search()
+        _open_legacy_search(widget)
         old_window = widget._shared_search
         monkeypatch.setattr(widget._shared_search_selector, 'start_capture', callbacks.append)
         widget._select_shared_search_region(widget._shared_search_controller.fields[0]['id'])
@@ -119,7 +124,7 @@ def test_mode_switch_cancels_the_other_selector_and_ignores_late_selection(
 def test_other_inkpick_window_prevents_capture_before_hiding_overlay(qtbot, tmp_path, monkeypatch):
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     window, controller = widget._shared_search, widget._shared_search_controller
     qtbot.addWidget(window)
     blocker = QWidget()
@@ -147,7 +152,7 @@ def test_other_inkpick_window_prevents_capture_before_hiding_overlay(qtbot, tmp_
 def test_owned_resume_button_is_hidden_for_capture_instead_of_blocking_search(qtbot, tmp_path):
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     window, controller = widget._shared_search, widget._shared_search_controller
     qtbot.addWidget(window)
     qtbot.addWidget(window.resume_button)
@@ -192,7 +197,7 @@ def test_calibration_countdown_is_cancelled_by_all_external_pause_entries(
     from src.ui.tray_manager import TrayManager
     widget = _make_widget(tmp_path)
     qtbot.addWidget(widget)
-    widget.open_shared_search()
+    _open_legacy_search(widget)
     window = widget._shared_search
     qtbot.addWidget(window)
     calibrated = []

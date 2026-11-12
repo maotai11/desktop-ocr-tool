@@ -23,7 +23,8 @@ function Assert-SharedSearchProbe($Report, [string]$Version, [string]$Hash) {
         'capture_overlay_hidden', 'close_stops_polling', 'workers_stopped',
         'clipboard_history_untouched', 'temporary_files_cleaned', 'invoice_match_annotation', 'annotation_pin_persistence',
         'numeric_similarity_review', 'roc_gregorian_date_equivalence',
-        'manual_refresh_rechecks_unchanged_invoice', 'annotation_background_opacity')
+        'manual_refresh_rechecks_unchanged_invoice', 'annotation_background_opacity',
+        'source_region_rows_extracted', 'row_values_exclusive_invoice_positions', 'near_candidates_visible_for_review', 'source_row_arrow_navigation', 'changed_invoice_refreshes_matches')
     if ($Report.checks -isnot [System.Management.Automation.PSCustomObject] -or
         (@($Report.checks.PSObject.Properties.Name | Sort-Object) -join '|') -cne
         (@($checkNames | Sort-Object) -join '|')) {

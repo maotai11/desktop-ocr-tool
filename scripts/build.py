@@ -51,6 +51,7 @@ RELEASE_DOCUMENTATION = {
     "docs/ui/b-inline-callouts.png": "docs/ui/b-inline-callouts.png",
     "docs/ui/a-inline-annotations.png": "docs/ui/a-inline-annotations.png",
     "docs/ui/invoice-field-callouts.png": "docs/ui/invoice-field-callouts.png",
+    "docs/ui/invoice-row-callouts.png": "docs/ui/invoice-row-callouts.png",
 }
 
 # Exact root-level outputs written by the validation workflow. Tracked files

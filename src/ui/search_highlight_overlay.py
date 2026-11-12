@@ -60,6 +60,9 @@ class SearchHighlightOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._marks = ()
+        self._source_row = None
+        self._marks_wanted = False
+        self._source_row_wanted = False
         self._suspended = False
         self._wanted = False
         self._pinned = True
@@ -72,6 +75,58 @@ class SearchHighlightOverlay(QWidget):
     @property
     def marks(self):
         return tuple(dict(mark) for mark in self._marks)
+
+    @property
+    def source_row(self):
+        """Current A row in primary-monitor-local physical pixels."""
+        return self._source_row
+
+    def set_source_row(self, region, *, show=True):
+        """Set a rect4, or rect5 with primary monitor 1; None clears only A's arrow."""
+        if region is None:
+            self._source_row = None
+            self._source_row_wanted = False
+        else:
+            valid = (isinstance(region, (tuple, list)) and len(region) in (4, 5)
+                     and (len(region) == 4 or type(region[4]) is int and region[4] == 1)
+                     and self._valid_rect(region[:4]))
+            screen = QApplication.primaryScreen()
+            if valid and screen is not None:
+                scale = screen.devicePixelRatio()
+                valid = QRectF(0, 0, screen.geometry().width() * scale,
+                               screen.geometry().height() * scale).contains(QRectF(*region[:4]))
+            if not valid or screen is None:
+                self.clear()
+                return False
+            self._source_row = tuple(region[:4])
+            self._source_row_wanted = bool(show)
+        self._wanted = self._marks_wanted or self._source_row_wanted
+        self.update()
+        if not self._suspended and not self.restore_after_capture():
+            self.clear()
+            return False
+        return True
+
+    @property
+    def source_row_arrow(self):
+        """Logical-screen polygon for the current A row; never an invoice result."""
+        screen = QApplication.primaryScreen()
+        if screen is None or self._source_row is None or not self._source_row_wanted:
+            return None
+        scale = screen.devicePixelRatio()
+        row = QRectF(*(value / scale for value in self._source_row))
+        width, height = min(16., row.width()), min(14., row.height())
+        x = row.left() - width - 3
+        y = row.center().y() - height / 2
+        rectangle = QRectF(x, y, width, height)
+        invoice_bounds = [QRectF(*(value / scale for value in mark['bounds']))
+                          for mark in self._marks if mark['bounds'] is not None]
+        if x < 1 or any(rectangle.intersects(bounds) for bounds in invoice_bounds):
+            x = row.left()
+        return ((x, y + height * .28), (x + width * .55, y + height * .28),
+                (x + width * .55, y), (x + width, y + height / 2),
+                (x + width * .55, y + height), (x + width * .55, y + height * .72),
+                (x, y + height * .72))
 
     @property
     def background_opacity(self):
@@ -179,7 +234,8 @@ class SearchHighlightOverlay(QWidget):
                              'b_text': self._plain_text(mark.get('b_text', '')),
                              'similarity': similarity, 'match_type': mark.get('match_type')})
         self._marks = tuple(prepared)
-        self._wanted = bool(show and self._marks)
+        self._marks_wanted = bool(show and self._marks)
+        self._wanted = self._marks_wanted or self._source_row_wanted
         self.update()
         if not self._suspended and not self.restore_after_capture():
             self.clear()
@@ -193,7 +249,7 @@ class SearchHighlightOverlay(QWidget):
     def restore_after_capture(self):
         self._suspended = False
         screen = QApplication.primaryScreen()
-        if self._wanted and self._marks and screen is not None:
+        if self._wanted and (self._marks or self._source_row is not None) and screen is not None:
             self.setGeometry(screen.geometry())
             self.show()
             return apply_native_pin(self, self._pinned)
@@ -202,6 +258,8 @@ class SearchHighlightOverlay(QWidget):
 
     def clear(self):
         self._marks = ()
+        self._source_row = None
+        self._marks_wanted = self._source_row_wanted = False
         self._wanted = False
         self.hide()
         self.update()
@@ -252,9 +310,18 @@ class SearchHighlightOverlay(QWidget):
             x = max(invoice_area.left(), min(anchor.left(), invoice_area.right() - width))
             height = line_height + 6
             rectangle = QRectF(x, anchor.bottom() + 3, width, height)
-            if (not invoice_area.contains(rectangle)
-                    or any(rectangle.intersects(other) for other in occupied)
-                    or any(rectangle.intersects(other) for other in protected)):
+            def fits(candidate):
+                return (invoice_area.contains(candidate)
+                        and not any(candidate.intersects(other) for other in occupied)
+                        and not any(candidate.intersects(other) for other in protected))
+            if not fits(rectangle) and mark['status'] == 'similar':
+                # Dense invoice rows may leave no room below a near value.
+                # Keep its review visible immediately beside the actual OCR
+                # box, never at an unrelated template or previous-row point.
+                alternatives = (QRectF(anchor.right() + 6, anchor.top(), width, height),
+                                QRectF(anchor.left() - width - 6, anchor.top(), width, height))
+                rectangle = next((candidate for candidate in alternatives if fits(candidate)), rectangle)
+            if not fits(rectangle):
                 continue
             occupied.append(rectangle)
             preview = metrics.elidedText(text, Qt.TextElideMode.ElideRight,
@@ -272,8 +339,13 @@ class SearchHighlightOverlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        arrow = self.source_row_arrow
+        if arrow is not None:
+            painter.setPen(QPen(QColor('#ffffff'), 2))
+            painter.setBrush(QColor('#175cd3'))
+            painter.drawPolygon(QPolygonF([QPointF(*point) for point in arrow]))
         metrics = QFontMetricsF(self.font())
-        for label in self.callouts:
+        for label in self.callouts if self._marks_wanted else ():
             rectangle = QRectF(*label['rect'])
             if self._background_opacity:
                 painter.fillRect(rectangle, QColor(255, 255, 255,

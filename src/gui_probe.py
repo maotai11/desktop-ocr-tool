@@ -13,7 +13,7 @@ GUI_CHECK_NAMES = (
     'history_search_tags_and_pin', 'editor_save_and_history_refresh',
     'ocr_selection_copy_explicit', 'document_import_template_zoom_clear',
     'handwriting_stroke_candidate_copy', 'paired_comparison_controls',
-    'shared_search_controls', 'tray_pause_and_quit_route',
+    'shared_search_controls', 'region_preview_adjustment', 'tray_pause_and_quit_route',
     'minimized_windows_restore', 'capture_cancel_restart_ignores_old_gesture',
     'shutdown_rejects_late_tool_entries',
     'windows_and_workers_closed', 'temporary_files_cleaned',
@@ -170,6 +170,7 @@ def _exercise_gui(app, directory, checks):
         Signal,
     )
     from PySide6.QtWidgets import QDialogButtonBox, QFileDialog, QMessageBox
+    from PySide6.QtGui import QColor, QImage, QPixmap
 
     from .clipboard.monitoring import ClipboardMonitoringController
     from .clipboard.writer import copy_text
@@ -240,6 +241,9 @@ def _exercise_gui(app, directory, checks):
         patches.enter_context(_replace(handwriting_window, 'ImageHandwritingController', InkOracle))
         patches.enter_context(_replace(capture_module, 'get_capture_backend', no_desktop))
         patches.enter_context(_replace(mss, 'mss', no_desktop))
+        screen = app.primaryScreen()
+        _require(screen is not None)
+        patches.enter_context(_replace(screen, 'grabWindow', no_desktop))
         try:
             cfg = ConfigManager()
             data_dir = cfg.get_data_directory()
@@ -477,6 +481,7 @@ def _exercise_gui(app, directory, checks):
 
             shell._btn_shared_search.click()
             search, search_controller = shell._shared_search, shell._shared_search_controller
+            search._source_mode.setCurrentIndex(search._source_mode.findData('fields'))
             search._add.click()
             search._row_pitch.setValue(24)
             search._mode.setCurrentIndex(search._mode.findData('exact'))
@@ -512,6 +517,81 @@ def _exercise_gui(app, directory, checks):
             search.close()
             checks['shared_search_controls'] = (not search.isVisible() and not search_controller.running
                                                and not search.manual_button.isVisible())
+
+            # The actual launcher route opens a real modal preview from one
+            # explicit synthetic frame. Never read this runner's desktop.
+            from .ui.region_preview_dialog import RegionPreviewDialog
+            screen_size, scale = screen.geometry().size(), screen.devicePixelRatio()
+            picture = QImage(round(screen_size.width() * scale), round(screen_size.height() * scale),
+                             QImage.Format.Format_RGB32)
+            picture.fill(QColor('#e8f0fc'))
+            preview_captures, preview_dialogs = [], []
+
+            def preview_frame(window_id):
+                _require(window_id == 0 and search._selection_active and not search_controller.running)
+                _require(not search.highlight_overlay.isVisible() and not search.resume_button.isVisible()
+                         and not search.manual_button.isVisible())
+                preview_captures.append(True)
+                return QPixmap.fromImage(picture)
+
+            def open_preview(button):
+                button.click()
+                _until(lambda: not search._selection_active)
+
+            def adjust_preview(dialog):
+                _require(isinstance(dialog, RegionPreviewDialog))
+                preview_dialogs.append(dialog)
+                _require(dialog._image.pixelColor(0, 0) == QColor('#e8f0fc'))
+                _button(dialog, '放大').click()
+                _button(dialog, '縮小').click()
+                _button(dialog, '顯示全畫面').click()
+                _button(dialog, '→').click()
+                _require(dialog.selected_region == (201, 60, 100, 50, 1))
+                view = dialog._view
+                corner = view.mapFromScene(view.rectangle.bottomRight())
+                finish = corner + type(corner)(12, 8)
+                for kind, point, buttons in (
+                    (QEvent.Type.MouseButtonPress, corner, Qt.MouseButton.LeftButton),
+                    (QEvent.Type.MouseMove, finish, Qt.MouseButton.LeftButton),
+                    (QEvent.Type.MouseButtonRelease, finish, Qt.MouseButton.NoButton),
+                ):
+                    _pointer(view.viewport(), kind, point, buttons)
+                _require(dialog.selected_region[:2] == (201, 60)
+                         and dialog.selected_region[2] > 100 and dialog.selected_region[3] > 50)
+                _button(dialog, '套用位置').click()
+
+            def cancel_preview(dialog):
+                _require(isinstance(dialog, RegionPreviewDialog))
+                preview_dialogs.append(dialog)
+                _button(dialog, '↓').click()
+                _button(dialog, '取消').click()
+
+            def close_preview(dialog):
+                _require(isinstance(dialog, RegionPreviewDialog))
+                preview_dialogs.append(dialog)
+                _button(dialog, '→').click()
+                search.close()
+
+            search.open()
+            search._source_mode.setCurrentIndex(search._source_mode.findData('rows'))
+            _require(search.set_region('SOURCE', (20, 20, 100, 60, 1))
+                     and search.set_region('B', (200, 60, 100, 50, 1)))
+            with _replace(screen, 'grabWindow', preview_frame):
+                _modal(lambda: open_preview(search._preview_b), [adjust_preview])
+                accepted_region = search_controller.b_region
+                _require(accepted_region[:2] == (201, 60) and accepted_region[2] > 100)
+                _modal(lambda: open_preview(search._preview_b), [cancel_preview])
+                _require(search_controller.b_region == accepted_region)
+                source_region = search_controller.source_region
+                _modal(lambda: open_preview(search._preview_source), [close_preview])
+                _require(search_controller.source_region == source_region and not search.isVisible())
+            checks['region_preview_adjustment'] = (
+                len(preview_captures) == len(preview_dialogs) == 3
+                and all(dialog._image.isNull() and not dialog._view.scene().items()
+                        for dialog in preview_dialogs)
+                and shell._shared_search_preview is None and not search._selection_active
+                and not search_controller.running and not search_controller._poll.isActive())
+            picture = QImage()
 
             shell.show()
             shell._btn_pause.click()

@@ -49,8 +49,7 @@ def _label(text=''):
 def _region_text(region):
     if region is None:
         return '尚未框選'
-    x, y, width, height, _ = region
-    return f'{x}, {y} · {width} × {height}'
+    return '已框選・可預覽／調整'
 
 
 def _score_text(candidate):
@@ -63,6 +62,7 @@ def _score_text(candidate):
 
 class _FieldCard(QFrame):
     select_requested = Signal(str)
+    preview_requested = Signal(str)
     rename_requested = Signal(str)
     remove_requested = Signal(str)
     candidate_requested = Signal(str, str)
@@ -82,6 +82,8 @@ class _FieldCard(QFrame):
         self._select = QPushButton('框選數值')
         self._select.clicked.connect(lambda: self.select_requested.emit(self.field_id))
         header.addWidget(self._select)
+        self._preview = QPushButton('預覽／調整')
+        self._preview.clicked.connect(lambda: self.preview_requested.emit(self.field_id))
         self._edit = QPushButton('改名')
         self._edit.clicked.connect(lambda: self.rename_requested.emit(self.field_id))
         header.addWidget(self._edit)
@@ -91,7 +93,10 @@ class _FieldCard(QFrame):
         layout.addLayout(header)
         self._region = _label()
         self._region.setObjectName('muted')
-        layout.addWidget(self._region)
+        region_row = QHBoxLayout()
+        region_row.addWidget(self._region, 1)
+        region_row.addWidget(self._preview)
+        layout.addLayout(region_row)
         self._status = _label('等待搜尋')
         layout.addWidget(self._status)
         self._text = _label()
@@ -128,6 +133,7 @@ class _FieldCard(QFrame):
         self._name.setText(field.get('name', '欄位'))
         self._select.setToolTip(f'框住「{self._name.text()}」這一欄輸入的數值。')
         self._region.setText(_region_text(field.get('region')))
+        self._preview.setEnabled(field.get('region') is not None)
         status = result.get('status')
         label, color = {
             'matched': ('已找到', _SUCCESS), 'missing': ('未找到', _ERROR),
@@ -166,9 +172,14 @@ class _FieldCard(QFrame):
         self._apply.setVisible(editable)
         self._apply.setEnabled(self._candidates.currentData() is not None)
 
+    def set_readonly_source(self, readonly):
+        for button in (self._select, self._preview, self._edit, self._remove):
+            button.setVisible(not readonly)
+
 
 class SharedSearchWindow(QWidget):
     select_requested = Signal(str)
+    preview_requested = Signal(str)
     screen_invalidated = Signal()
     closed = Signal()
 
@@ -177,6 +188,11 @@ class SharedSearchWindow(QWidget):
                          | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowCloseButtonHint
                          | Qt.WindowType.WindowMinimizeButtonHint)
         self.controller = controller
+        # A fresh UI opens the whole-region workflow; legacy controllers/fakes
+        # and already configured sessions retain their existing source mode.
+        if (hasattr(controller, 'set_source_mode') and getattr(controller, 'source_region', None) is None
+                and not any(field.get('region') for field in controller.fields)):
+            controller.set_source_mode('rows')
         self.highlight_overlay = SearchHighlightOverlay()
         self.resume_button = QPushButton('恢復介面')
         self.resume_button.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
@@ -239,7 +255,7 @@ class SharedSearchWindow(QWidget):
         self._status.setStyleSheet('font-size: 15px; font-weight: 600;')
         title.addWidget(self._status, 1)
         self._pin = QCheckBox('標示置頂')
-        self._pin.setToolTip('讓各欄下方的文字與恢復介面按鈕置頂；設定面板維持一般視窗。')
+        self._pin.setToolTip('讓發票標示、目前列箭頭與兩個小按鈕置頂；設定面板維持一般視窗。')
         self._pin.setChecked(True)
         self._pin.toggled.connect(self.set_pinned)
         title.addWidget(self._pin)
@@ -256,7 +272,12 @@ class SharedSearchWindow(QWidget):
         self._select_b = QPushButton('框選發票位置（B）')
         self._select_b.setToolTip('所有數值共用此發票範圍，只在範圍內找符合位置。')
         self._select_b.clicked.connect(lambda: self._select('B'))
-        body.addWidget(self._select_b)
+        row = QHBoxLayout()
+        row.addWidget(self._select_b, 1)
+        self._preview_b = QPushButton('預覽／調整')
+        self._preview_b.clicked.connect(lambda: self._preview_region('B'))
+        row.addWidget(self._preview_b)
+        body.addLayout(row)
         self._b_hint = _label('圈住發票上要核對的區域，所有數值共用。')
         self._b_hint.setObjectName('muted')
         body.addWidget(self._b_hint)
@@ -269,6 +290,26 @@ class SharedSearchWindow(QWidget):
         self._a_hint = _label('同一行，每欄各框一個數值。')
         self._a_hint.setObjectName('muted')
         body.addWidget(self._a_hint)
+        self._source_mode = QComboBox()
+        self._source_mode.addItem('框選整區／逐列核對', 'rows')
+        self._source_mode.addItem('逐欄框選（舊版）', 'fields')
+        self._source_mode.setCurrentIndex(self._source_mode.findData(getattr(controller, 'source_mode', 'fields')))
+        apply_combo_box_theme(self._source_mode)
+        self._source_mode.currentIndexChanged.connect(self._source_mode_changed)
+        body.addWidget(self._source_mode)
+        row = QHBoxLayout()
+        self._select_source = QPushButton('框選輸入值範圍（A）')
+        self._select_source.clicked.connect(lambda: self._select('SOURCE'))
+        row.addWidget(self._select_source, 1)
+        self._preview_source = QPushButton('預覽／調整')
+        self._preview_source.clicked.connect(lambda: self._preview_region('SOURCE'))
+        row.addWidget(self._preview_source)
+        body.addLayout(row)
+        self._source_label = _label()
+        self._source_label.setObjectName('muted')
+        body.addWidget(self._source_label)
+        self._current_row = _label('尚未辨識列')
+        body.addWidget(self._current_row)
         self._add = QPushButton('新增數值欄位')
         self._add.clicked.connect(self._add_field)
         body.addWidget(self._add)
@@ -279,7 +320,12 @@ class SharedSearchWindow(QWidget):
         self._select_tracking = QPushButton('框選輸入表格（換列用）')
         self._select_tracking.setToolTip('自動跟隨選取列時，圈住輸入數值所在的表格；發票位置另行框選。')
         self._select_tracking.clicked.connect(lambda: self._select('TRACK'))
-        body.addWidget(self._select_tracking)
+        row = QHBoxLayout()
+        row.addWidget(self._select_tracking, 1)
+        self._preview_tracking = QPushButton('預覽／調整')
+        self._preview_tracking.clicked.connect(lambda: self._preview_region('TRACK'))
+        row.addWidget(self._preview_tracking)
+        body.addLayout(row)
         self._tracking_label = _label()
         self._tracking_label.setObjectName('muted')
         body.addWidget(self._tracking_label)
@@ -289,7 +335,7 @@ class SharedSearchWindow(QWidget):
         self._row_pitch.setRange(1, 500)
         self._row_pitch.setValue(30)
         self._row_pitch.setSuffix(' px')
-        self._row_pitch.setToolTip('請依表格實際列高設定；上一列與下一列會移動所有輸入數值欄位。')
+        self._row_pitch.setToolTip('逐欄模式依此間距換列；整區模式依辨識到的資料列切換，目前列由箭頭標出。')
         self._row_pitch.valueChanged.connect(self._set_row_pitch)
         row.addWidget(self._row_pitch, 1)
         body.addLayout(row)
@@ -310,8 +356,8 @@ class SharedSearchWindow(QWidget):
         self._mode = QComboBox()
         self._mode.addItem('數值核對／相似提醒', 'normalized')
         self._mode.addItem('逐字完全相同', 'exact')
-        self._mode.setToolTip('相同數值列為找到；單一數值的位數與格式相同、只差一位數字時，列為相似供確認。\n'
-                              '正負號、小數點、千分位、百分號與前導零仍須相符；文字近似門檻為 95%。\n'
+        self._mode.setToolTip('相同數值列為找到；位數與格式相同、數字一致比例至少 60% 時，列出一個近似位置供確認。\n'
+                              '正負號、小數點、千分位、百分號與前導零仍須相符；一般文字近似門檻為 95%。\n'
                               '百分比是比對程度，不是 OCR 正確機率。逐字模式停用相似搜尋與日期換算。')
         apply_combo_box_theme(self._mode)
         self._mode.currentIndexChanged.connect(self._mode_changed)
@@ -374,8 +420,11 @@ class SharedSearchWindow(QWidget):
 
     def _refresh_fields(self):
         fields = self.controller.fields
+        rows_mode = getattr(self.controller, 'source_mode', 'fields') == 'rows'
         signature = (tuple((field['id'], field.get('region')) for field in fields),
-                     self.controller.b_region, self.controller.tracking_region)
+                     self.controller.b_region, self.controller.tracking_region,
+                     getattr(self.controller, 'source_region', None), rows_mode,
+                     getattr(self.controller, 'current_row_index', 0))
         if signature != self._last_regions:
             self._last_regions = signature
             self._clear_visuals()
@@ -392,20 +441,51 @@ class SharedSearchWindow(QWidget):
             if card is None:
                 card = _FieldCard(field['id'])
                 card.select_requested.connect(self._select)
+                card.preview_requested.connect(self._preview_region)
                 card.rename_requested.connect(self._rename)
                 card.remove_requested.connect(self._remove)
                 card.candidate_requested.connect(self._select_candidate)
                 self._fields_cards[field['id']] = card
                 self._cards_layout.insertWidget(index, card)
             card.set_field(field)
+            card.set_readonly_source(rows_mode)
         self._b_label.setText(_region_text(self.controller.b_region))
+        self._preview_b.setEnabled(self.controller.b_region is not None and not self._closing)
         self._tracking_label.setText(_region_text(self.controller.tracking_region))
+        self._preview_tracking.setEnabled(self.controller.tracking_region is not None and not self._closing)
+        self._select_source.setVisible(rows_mode)
+        self._preview_source.setVisible(rows_mode)
+        self._source_label.setVisible(rows_mode)
+        self._current_row.setVisible(rows_mode)
+        self._add.setVisible(not rows_mode)
+        self._a_hint.setText('一次圈住多列數值，箭頭標出目前核對列。' if rows_mode else '同一行，每欄各框一個數值。')
+        near_hint = ('位數與格式相同、數字一致比例至少 60% 時，列出一個近似位置供確認；發票位置不重複分配。'
+                     if rows_mode else '位數與格式相同、只差一位數字時，列為相似供確認。')
+        self._mode.setToolTip('相同數值列為找到；' + near_hint + '\n'
+                              '正負號、小數點、千分位、百分號與前導零仍須相符；一般文字近似門檻為 95%。\n'
+                              '百分比是比對程度，不是 OCR 正確機率。逐字模式停用相似搜尋與日期換算。')
+        source_region = getattr(self.controller, 'source_region', None)
+        self._source_label.setText(_region_text(source_region))
+        self._preview_source.setEnabled(source_region is not None and not self._closing)
+        rows = getattr(self.controller, 'source_rows', [])
+        index = getattr(self.controller, 'current_row_index', 0)
+        source_reason = getattr(self.controller, 'source_reason', '')
+        if rows and 0 <= index < len(rows):
+            self._current_row.setText(f'▶ 第 {index + 1} 列／共 {len(rows)} 列')
+        else:
+            self._current_row.setText(source_reason or '開始後辨識各列，箭頭顯示目前核對列。')
+        self._previous.setEnabled(not self._closing and (not rows_mode or bool(rows) and index > 0))
+        self._next.setEnabled(not self._closing and (not rows_mode or index + 1 < len(rows)))
+        with QSignalBlocker(self._source_mode):
+            self._source_mode.setCurrentIndex(self._source_mode.findData('rows' if rows_mode else 'fields'))
+        self._source_mode.setEnabled(hasattr(self.controller, 'set_source_mode') and not self._closing)
         with QSignalBlocker(self._auto):
             self._auto.setChecked(self.controller.auto_follow)
         with QSignalBlocker(self._row_pitch):
             self._row_pitch.setValue(self.controller.row_pitch)
         self._add.setEnabled(len(fields) < 20 and not self._closing)
-        configured = bool(fields) and self.controller.b_region is not None and all(field['region'] for field in fields)
+        configured = (source_region is not None if rows_mode else bool(fields) and all(field['region'] for field in fields))
+        configured = configured and self.controller.b_region is not None
         self._start_button.setEnabled(configured and not self.controller.running and not self._closing)
         self._manual_button.setEnabled(self.controller.running and not self._closing)
         self._pause_button.setEnabled(self.controller.running or self._calibration_timer.isActive())
@@ -431,8 +511,36 @@ class SharedSearchWindow(QWidget):
         self._refresh_fields()
 
     def _select(self, key):
+        if self._closing or self._closed_by_user or self._selection_active:
+            return
+        if (getattr(self.controller, 'source_mode', 'fields') == 'rows'
+                and key not in ('SOURCE', 'B', 'TRACK')):
+            return
         self.pause()
-        self.select_requested.emit(key)
+        if not self._closing and not self._closed_by_user and not self._selection_active:
+            self.select_requested.emit(key)
+
+    def _preview_region(self, key):
+        if (self._closing or self._closed_by_user or self._selection_active
+                or (getattr(self.controller, 'source_mode', 'fields') == 'rows'
+                    and key not in ('SOURCE', 'B', 'TRACK'))):
+            return
+        self.pause()
+        if not self._closing and not self._closed_by_user and not self._selection_active:
+            self.preview_requested.emit(key)
+
+    def _source_mode_changed(self):
+        if self._closing or self._closed_by_user:
+            with QSignalBlocker(self._source_mode):
+                self._source_mode.setCurrentIndex(self._source_mode.findData(
+                    getattr(self.controller, 'source_mode', 'fields')))
+            return
+        mode = self._source_mode.currentData()
+        self.pause()
+        if self._closing or self._closed_by_user or self._selection_active:
+            return
+        self.controller.set_source_mode(mode)
+        self._refresh_fields()
 
     def set_selection_active(self, active):
         if self._closing or self._closed_by_user:
@@ -445,21 +553,30 @@ class SharedSearchWindow(QWidget):
             self.show()
 
     def set_region(self, key, region):
+        if self._closing or self._closed_by_user:
+            return False
         self.pause()
+        if self._closing or self._closed_by_user:
+            return False
         if not isinstance(region, (tuple, list)) or len(region) != 5 or region[4] != 1:
             self._failed('請在主螢幕框選輸入數值欄位、發票位置與輸入表格。')
             return False
         accepted = (self.controller.set_b_region(region) if key == 'B' else
+                    self.controller.set_source_region(region) if key == 'SOURCE' else
                     self.controller.set_tracking_region(region) if key == 'TRACK' else
                     self.controller.set_a_region(key, region))
         self._refresh_fields()
         return accepted
 
     def _add_field(self):
+        if self._closing or self._closed_by_user or getattr(self.controller, 'source_mode', 'fields') == 'rows':
+            return
         self.pause()
         self.controller.add_field()
 
     def _rename(self, field_id):
+        if self._closing or self._closed_by_user or getattr(self.controller, 'source_mode', 'fields') == 'rows':
+            return
         field = next((item for item in self.controller.fields if item['id'] == field_id), None)
         if field is None:
             return
@@ -469,6 +586,8 @@ class SharedSearchWindow(QWidget):
             self.controller.rename_field(field_id, name)
 
     def _remove(self, field_id):
+        if self._closing or self._closed_by_user or getattr(self.controller, 'source_mode', 'fields') == 'rows':
+            return
         self.pause()
         self.controller.remove_field(field_id)
 
@@ -483,6 +602,8 @@ class SharedSearchWindow(QWidget):
         self._refresh_fields()
 
     def _move_rows(self, delta):
+        if self._closing or self._closed_by_user or self._selection_active:
+            return
         self._cancel_countdown()
         self._clear_visuals()
         self.controller.move_rows(delta)
@@ -644,6 +765,10 @@ class SharedSearchWindow(QWidget):
                                   'boxes': [[[x + bx, y + by] for x, y in box] for box in polygons]})
         if not self.highlight_overlay.set_marks(marks):
             self._pause_with_error('文字標示位置無效，請重新框選後重試。')
+        elif (self.controller.running and getattr(self.controller, 'source_mode', 'fields') == 'rows'
+              and not self.highlight_overlay.set_source_row(snapshot.get(
+                  'active_row_region', getattr(self.controller, 'active_row_region', None)))):
+            self._pause_with_error('目前列標示位置無效，請重新框選輸入值範圍。')
         elif self.controller.running:
             self._show_resume_control()
 

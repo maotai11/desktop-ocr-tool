@@ -126,6 +126,7 @@ class FloatingWidget(QWidget):
         self._shared_search = None
         self._shared_search_controller = None
         self._shared_search_selector = None
+        self._shared_search_preview = None
         self._shared_search_closing = False
         self._shared_search_selection = 0
         self._shared_search_selection_signature = None
@@ -709,6 +710,7 @@ class FloatingWidget(QWidget):
             self._shared_search_controller = controller
             self._shared_search_selector = selector
             window.select_requested.connect(self._select_shared_search_region)
+            window.preview_requested.connect(self._preview_shared_search_region)
             window.screen_invalidated.connect(self._cancel_shared_search_selection)
             window.closed.connect(self._cancel_shared_search_selection)
             selector.cancelled.connect(self._shared_search_selection_cancelled)
@@ -727,7 +729,8 @@ class FloatingWidget(QWidget):
         if controller is None:
             return None
         return (tuple((field['id'], field.get('region')) for field in controller.fields),
-                controller.b_region, controller.tracking_region, controller.row_pitch)
+                controller.b_region, controller.tracking_region, controller.row_pitch,
+                getattr(controller, 'source_mode', 'fields'), getattr(controller, 'source_region', None))
 
     def _shared_search_fields_changed(self):
         window = self._shared_search
@@ -739,6 +742,10 @@ class FloatingWidget(QWidget):
     def _cancel_shared_search_selection(self):
         self._shared_search_selection += 1
         self._shared_search_selection_signature = None
+        preview = self._shared_search_preview
+        self._shared_search_preview = None
+        if preview is not None:
+            preview.reject()
         if self._shared_search_selector is not None:
             self._shared_search_selector._cancel()
         if (self._shared_search is not None and self._shared_search._selection_active
@@ -756,14 +763,14 @@ class FloatingWidget(QWidget):
             return
         self.region_tool_requested.emit()
         controller, window = self._shared_search_controller, self._shared_search
-        if name not in ('B', 'TRACK') and name not in {field['id'] for field in controller.fields}:
+        if name not in ('B', 'TRACK', 'SOURCE') and name not in {field['id'] for field in controller.fields}:
             return
         self._cancel_shared_search_selection()
         token = self._shared_search_selection
         self.hide()
         window.set_selection_active(True)
         self._shared_search_selection_signature = self._shared_search_region_signature()
-        label = ('發票位置（B）' if name == 'B' else '輸入表格（換列用）' if name == 'TRACK' else
+        label = ('發票位置（B）' if name == 'B' else '輸入值範圍（A）' if name == 'SOURCE' else '輸入表格（換列用）' if name == 'TRACK' else
                  '輸入數值（A）')
         self._shared_search_selector.selection_prompt = f'框選 {label} · Esc 取消'
 
@@ -772,7 +779,7 @@ class FloatingWidget(QWidget):
                     or getattr(window, '_closed_by_user', False) or not window._selection_active
                     or self._shared_search_selection_signature != self._shared_search_region_signature()):
                 return
-            if name not in ('B', 'TRACK') and name not in {field['id'] for field in controller.fields}:
+            if name not in ('B', 'TRACK', 'SOURCE') and name not in {field['id'] for field in controller.fields}:
                 return
             self._shared_search_applying_selection = True
             try:
@@ -783,6 +790,64 @@ class FloatingWidget(QWidget):
                 window.set_selection_active(False)
 
         self._shared_search_selector.start_capture(selected)
+
+    def _preview_shared_search_region(self, name):
+        """Pause first; preview a single explicit in-memory desktop snapshot."""
+        if self._ui_closing or self._shared_search_closing or self._shared_search is None:
+            return
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QDialog
+        from .region_preview_dialog import RegionPreviewDialog
+        controller, window = self._shared_search_controller, self._shared_search
+        region = (controller.b_region if name == 'B' else controller.tracking_region if name == 'TRACK'
+                  else getattr(controller, 'source_region', None) if name == 'SOURCE'
+                  else next((field['region'] for field in controller.fields if field['id'] == name), None))
+        screen = QApplication.primaryScreen()
+        if region is None or screen is None:
+            return
+        self.region_tool_requested.emit()
+        self._cancel_shared_search_selection()
+        token = self._shared_search_selection
+        self.hide()
+        window.set_selection_active(True)
+        signature = self._shared_search_region_signature()
+        self._shared_search_selection_signature = signature
+        geometry, scale = screen.geometry(), screen.devicePixelRatio()
+
+        def valid():
+            current = QApplication.primaryScreen()
+            return (not self._ui_closing and not self._shared_search_closing
+                    and token == self._shared_search_selection and window._selection_active
+                    and not window._closed_by_user and signature == self._shared_search_region_signature()
+                    and current is screen and current.geometry() == geometry and current.devicePixelRatio() == scale)
+
+        def preview():
+            if not valid():
+                return
+            try:
+                image = screen.grabWindow(0).toImage()
+                image.setDevicePixelRatio(1)
+                if (image.width(), image.height()) != (round(geometry.width() * scale), round(geometry.height() * scale)):
+                    raise ValueError('Incomplete screen snapshot')
+                dialog = RegionPreviewDialog(image, region)
+                image = None
+                self._shared_search_preview = dialog
+                accepted = dialog.exec() == QDialog.DialogCode.Accepted
+                if accepted and valid():
+                    self._shared_search_applying_selection = True
+                    try:
+                        window.set_region(name, dialog.selected_region)
+                    finally:
+                        self._shared_search_applying_selection = False
+            except (ValueError, RuntimeError):
+                if valid():
+                    window._failed('暫時無法預覽，請重新框選後再試。')
+            finally:
+                self._shared_search_preview = None
+                if token == self._shared_search_selection:
+                    self._shared_search_selection_signature = None
+                    window.set_selection_active(False)
+        QTimer.singleShot(100, preview)
 
     def _shared_search_can_capture(self):
         window, controller = self._shared_search, self._shared_search_controller

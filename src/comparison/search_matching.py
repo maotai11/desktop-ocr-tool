@@ -246,27 +246,32 @@ def _decimal_signature(value):
     return digits, shape, leading_zeroes
 
 
-def _numeric_similarity(query, atoms, source, spans):
+def _numeric_similarity(query, atoms, source, spans, minimum=None):
     if len(query) != 1 or not isinstance(query[0], tuple):
         return 0.0, 0
     signature = _decimal_signature(query[0][1])
     if signature is None:
         return 0.0, 0
     digits, shape, leading = signature
-    occurrences = 0
+    occurrences, best = 0, 0.0
     for index, atom in enumerate(atoms):
         if not isinstance(atom, tuple) or not _boundaries(query, source, spans, index, 1):
             continue
         other = _decimal_signature(atom[1])
         if other is None or other[1:] != (shape, leading) or len(other[0]) != len(digits):
             continue
-        if sum(a != b for a, b in zip(digits, other[0])) == 1:
-            occurrences += 1
-    return ((len(digits) - 1) / len(digits) if occurrences else 0.0), occurrences
+        differences = sum(a != b for a, b in zip(digits, other[0]))
+        score = (len(digits) - differences) / len(digits)
+        if differences and (differences == 1 if minimum is None else score >= minimum):
+            if score > best:
+                best, occurrences = score, 1
+            elif score == best:
+                occurrences += 1
+    return best, occurrences
 
 
 def match_field(a_result, b_result, *, threshold=0.95, selected_id=None, mode='normalized',
-                date_equivalence=True):
+                date_equivalence=True, numeric_near_threshold=None):
     """Find a verified value or explicitly unverified near candidate in B.
 
     Scores measure text/digit agreement, never OCR certainty. Decimal numbers
@@ -277,6 +282,9 @@ def match_field(a_result, b_result, *, threshold=0.95, selected_id=None, mode='n
         raise ValueError('mode must be normalized or exact')
     if type(date_equivalence) is not bool:
         raise ValueError('date_equivalence must be a boolean')
+    if numeric_near_threshold is not None and (type(numeric_near_threshold) not in (int, float)
+            or not math.isfinite(numeric_near_threshold) or not 0.5 <= numeric_near_threshold < 1):
+        raise ValueError('numeric_near_threshold must be None or between 0.5 and 1')
     if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0.80 <= threshold <= 1:
         raise ValueError('threshold must be between 0.80 and 1.00')
     if not isinstance(a_result, dict) or not isinstance(b_result, dict):
@@ -353,7 +361,7 @@ def match_field(a_result, b_result, *, threshold=0.95, selected_id=None, mode='n
             kind, similarity_kind = 'similar', 'text'
         numeric_score, numeric_count = (0.0, 0)
         if not count and mode != 'exact' and threshold < 1:
-            numeric_score, numeric_count = _numeric_similarity(query, atoms, source, spans)
+            numeric_score, numeric_count = _numeric_similarity(query, atoms, source, spans, numeric_near_threshold)
             if numeric_score:
                 score, count = numeric_score, numeric_count
                 kind, similarity_kind = 'similar', 'numeric'

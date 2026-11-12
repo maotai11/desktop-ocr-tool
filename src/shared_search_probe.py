@@ -17,6 +17,9 @@ CHECK_NAMES = (
     'invoice_match_annotation', 'annotation_pin_persistence',
     'numeric_similarity_review', 'roc_gregorian_date_equivalence',
     'manual_refresh_rechecks_unchanged_invoice', 'annotation_background_opacity',
+    'source_region_rows_extracted', 'row_values_exclusive_invoice_positions',
+    'near_candidates_visible_for_review', 'source_row_arrow_navigation',
+    'changed_invoice_refreshes_matches',
 )
 
 
@@ -144,6 +147,7 @@ def _logical_checks(app):
         worker = OcrWorker(Oracle())
         controller = SharedSearchController(worker, capture_worker=capture)
         window = SharedSearchWindow(controller)
+        window._source_mode.setCurrentIndex(window._source_mode.findData('fields'))
         def before():
             visible = window.highlight_overlay.isVisible()
             accepted = window.before_capture()
@@ -179,10 +183,12 @@ def _logical_checks(app):
         pixels['a40'] = (13, 19)
         reused = ready(controller.start)['fields']
         checks['shared_b_reused'] = (calls.count(200) == 1 and calls.count(13) == 1
-            and all(field['result']['status'] == 'matched' for field in reused)
-            and reused[0]['result']['selected_id'] == reused[1]['result']['selected_id'])
+            and sum(field['result']['status'] == 'matched' for field in reused) == 1
+            and sum(field['result']['selected_id'] is not None for field in reused) == 1
+            and any(field['result']['status'] == 'uncertain'
+                    and field['result']['selected_id'] is None for field in reused))
         # Use separate detected invoice lines for the placement proof. Two A
-        # fields may share one B match, but cannot both occupy the same label.
+        # values must reserve distinct B positions, including legacy fields.
         controller.pause()
         pixels['a40'] = (13, 15)
         distinct = ready(controller.start)['fields']
@@ -314,6 +320,185 @@ def _logical_checks(app):
         capture_module.mss.mss = screen_factory
     tracking = _tracking_checks(app)
     checks['blue_calibration'], checks['blue_follow_stable'] = tracking
+    for name, passed in _row_region_checks(app).items():
+        if name in ('workers_stopped', 'clipboard_history_untouched'):
+            checks[name] &= passed
+        else:
+            checks[name] = passed
+    return checks
+
+
+def _row_region_checks(app):
+    """Read a synthetic source region through real capture/OCR queues and UI."""
+    import numpy as np
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPolygonF
+    from .comparison import shared_capture as capture_module
+    from .comparison.shared_controller import SharedSearchController
+    from .ui.shared_search_window import SharedSearchWindow
+    from .workers.ocr_worker import OcrWorker
+
+    names = ('source_region_rows_extracted', 'row_values_exclusive_invoice_positions',
+             'near_candidates_visible_for_review', 'source_row_arrow_navigation',
+             'changed_invoice_refreshes_matches')
+    checks = dict.fromkeys(names, False)
+    factory = capture_module.mss.mss
+    window = controller = worker = None
+    hidden = Event()
+    pixels = {'invoice': 200}
+    calls, snapshots, history, captures = [], [], [], []
+    clipboard = app.clipboard().text()
+    source_region, invoice_region = (30, 30, 330, 200, 1), (400, 20, 350, 650, 1)
+
+    def line(text, x, y, width=60):
+        return {'text': text, 'confidence': 1.,
+                'box': [[x, y], [x + width, y], [x + width, y + 12], [x, y + 12]]}
+
+    source_lines = [line('12345', 5, 20), line('12345', 95, 20), line('67890', 185, 20, 70),
+                    line('54321', 5, 90), line('13579', 95, 90)]
+
+    class Screen:
+        monitors = ({'left': 0, 'top': 0, 'width': 1200, 'height': 1000},) * 2
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def grab(self, region):
+            if not hidden.is_set():
+                raise ValueError('Row capture preceded overlay hide')
+            captures.append(dict(region))
+            canvas = np.full((1000, 1200, 4), 25, np.uint8)
+            canvas[:, :, 3] = 255
+            canvas[30:230, 30:360, :3] = 31
+            canvas[20:670, 400:750, :3] = pixels['invoice']
+            x, y, width, height = (region[key] for key in ('left', 'top', 'width', 'height'))
+            return canvas[y:y + height, x:x + width].copy()
+
+    class Oracle:
+        def set_progress_callback(self, callback):
+            pass
+        def is_ready(self):
+            return True
+        def run_ocr(self, image, mode):
+            code = int(image[0, 0, 0])
+            calls.append(code)
+            if code == 31:
+                rows = source_lines
+            elif code in (200, 201):
+                offset = 20 if code == 201 else 0
+                rows = [line(text, 10, 20 + index * 100 + offset, 150)
+                        for index, text in enumerate(('12345', '67891', '54321', '13579'))]
+            else:
+                raise ValueError('Unexpected synthetic crop')
+            return {'text': '\n'.join(row['text'] for row in rows), 'status': 'done', 'detail': rows}
+
+    def ready(action):
+        count = len(snapshots)
+        if action() is False:
+            raise ValueError('Row action refused')
+        _until(lambda: len(snapshots) > count or not controller.running)
+        if len(snapshots) <= count or snapshots[-1]['state'] != 'ready':
+            raise ValueError('Row results were not published after verification')
+        return snapshots[-1]
+
+    def chosen(field):
+        result = field.get('result') or {}
+        return next((candidate for candidate in result.get('candidates', [])
+                     if candidate['id'] == result.get('selected_id')), None)
+
+    def arrow_matches(snapshot):
+        region = snapshot['active_row_region']
+        polygon = window.highlight_overlay.source_row_arrow
+        if not region or not polygon or window.highlight_overlay.source_row != tuple(region[:4]):
+            return False
+        scale = app.primaryScreen().devicePixelRatio()
+        rectangle = QPolygonF([QPointF(*point) for point in polygon]).boundingRect()
+        return (abs(rectangle.center().y() * scale - (region[1] + region[3] / 2)) < .01
+                and rectangle.right() * scale <= region[0]
+                and window.highlight_overlay.isVisible())
+
+    try:
+        capture_module.mss.mss = Screen
+        worker = OcrWorker(Oracle())
+        capture = capture_module.SharedCaptureWorker(capture=capture_module.capture_shared)
+        controller = SharedSearchController(worker, capture_worker=capture)
+        window = SharedSearchWindow(controller)  # Exercise the actual default rows mode.
+        def before():
+            accepted = window.before_capture()
+            if accepted and not window.highlight_overlay.isVisible():
+                hidden.set()
+            return accepted
+        def after():
+            window.after_capture()
+            hidden.clear()
+        controller.before_capture, controller.after_capture = before, after
+        controller.updated.connect(snapshots.append)
+        worker.ocr_done.connect(lambda *values: history.append(values))
+        assert controller.source_mode == window._source_mode.currentData() == 'rows'
+        assert window.set_region('B', invoice_region)
+        assert window.set_region('SOURCE', source_region)
+        controller.set_interval(1)
+        initial = ready(window._start_button.click)
+        checks['source_region_rows_extracted'] = (
+            initial['source_mode'] == 'rows' and initial['current_row_index'] == 0
+            and [row['value_count'] for row in initial['source_rows']] == [3, 2]
+            and [row['region'] for row in initial['source_rows']] == [(35, 50, 250, 12, 1), (35, 120, 150, 12, 1)]
+            and [field['result']['text'] for field in initial['fields']] == ['12345', '12345', '67890']
+            and calls == [200, 31] and not window.isVisible())
+        selections = [chosen(field) for field in initial['fields']]
+        selected_boxes = [tuple(tuple(tuple(point) for point in box) for box in candidate['boxes'])
+                          for candidate in selections if candidate is not None]
+        checks['row_values_exclusive_invoice_positions'] = (
+            len(selections) == 3 and len(selected_boxes) == len(set(selected_boxes)) == 2
+            and sum(initial['fields'][index]['result']['status'] == 'matched' for index in (0, 1)) == 1
+            and sum(selections[index] is None for index in (0, 1)) == 1
+            and any(initial['fields'][index]['result']['status'] == 'uncertain'
+                    and selections[index] is None for index in (0, 1)))
+        near = initial['fields'][2]['result']
+        near_cards = [card for card in window.highlight_overlay.callouts if card['a_text'] == '67890']
+        checks['near_candidates_visible_for_review'] = (
+            near['status'] == 'uncertain' and near['score'] == .8
+            and selections[2] is not None and selections[2]['match_type'] == 'similar'
+            and selections[2]['needs_review'] is True and len(near_cards) == 1
+            and near_cards[0]['status'] == 'similar'
+            and '80%' in near_cards[0]['display_lines'][0] and '100%' not in near_cards[0]['display_lines'][0])
+        first_arrow = window.highlight_overlay.source_row_arrow
+        navigation_ok = arrow_matches(initial) and window._next.isEnabled() and not window._previous.isEnabled()
+        second = ready(window._next.click)
+        navigation_ok &= (second['current_row_index'] == 1 and arrow_matches(second)
+                          and window.highlight_overlay.source_row_arrow != first_arrow
+                          and [field['result']['text'] for field in second['fields']] == ['54321', '13579']
+                          and window._previous.isEnabled() and not window._next.isEnabled()
+                          and controller.source_region == source_region and controller.b_region == invoice_region
+                          and calls == [200, 31, 31])
+        back = ready(window._previous.click)
+        navigation_ok &= (back['current_row_index'] == 0 and arrow_matches(back)
+                          and window.highlight_overlay.source_row_arrow == first_arrow
+                          and controller.source_region == source_region and controller.b_region == invoice_region
+                          and calls == [200, 31, 31, 31])
+        checks['source_row_arrow_navigation'] = bool(navigation_ok)
+        old_selected = {field['id']: chosen(field)['boxes'] for field in back['fields'] if chosen(field) is not None}
+        pixels['invoice'] = 201
+        changed = ready(lambda: None)  # The real poll must notice pixels changing inside the same ROI.
+        new_selected = {field['id']: chosen(field) for field in changed['fields'] if chosen(field) is not None}
+        changed_ok = (controller.b_region == invoice_region and controller.source_region == source_region
+                      and changed['current_row_index'] == 0 and calls.count(201) == 1
+                      and calls.count(31) == 4 and arrow_matches(changed)
+                      and set(new_selected) == set(old_selected)
+                      and all(new_selected[key]['boxes'] != old
+                              and new_selected[key]['boxes'][0][0][1] == old[0][0][1] + 20
+                              for key, old in old_selected.items()))
+        before_manual = (calls.count(201), calls.count(31))
+        manual = ready(window.manual_button.click)
+        checks['changed_invoice_refreshes_matches'] = bool(
+            changed_ok and calls.count(201) == before_manual[0] + 1
+            and calls.count(31) == before_manual[1] + 1 and manual['current_row_index'] == 0
+            and {field['id']: chosen(field)['boxes'] for field in manual['fields'] if chosen(field) is not None}
+                == {key: candidate['boxes'] for key, candidate in new_selected.items()})
+        checks['clipboard_history_untouched'] = app.clipboard().text() == clipboard and not history and bool(captures)
+    finally:
+        checks['workers_stopped'] = _close_resources(window, controller, worker)
+        capture_module.mss.mss = factory
     return checks
 
 
@@ -365,6 +550,7 @@ def _tracking_checks(app):
         worker = OcrWorker(Oracle())
         controller = SharedSearchController(worker, capture_worker=capture_module.SharedCaptureWorker(capture=capture))
         window = SharedSearchWindow(controller)
+        window._source_mode.setCurrentIndex(window._source_mode.findData('fields'))
         controller.updated.connect(lambda value: snapshots.append(value))
         controller.state_changed.connect(states.append)
         first = controller.fields[0]['id']
