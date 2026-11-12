@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget,
     QWidget, QLabel, QCheckBox, QSpinBox, QDoubleSpinBox,
     QLineEdit, QPushButton, QFormLayout,
-    QDialogButtonBox, QComboBox, QGroupBox, QScrollArea, QFrame
+    QDialogButtonBox, QComboBox, QGroupBox, QScrollArea, QFrame, QToolButton, QToolTip, QMessageBox
 )
 
 from .theme import (
@@ -52,6 +52,13 @@ _DIALOG_QSS = f"""
         color: {_TEXT_PRI};
         background: transparent;
     }}
+    QGroupBox {{
+        border: 1px solid {_BORDER}; border-radius: 7px;
+        margin-top: 10px; padding: 14px 10px 10px;
+    }}
+    QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}
+    QToolButton {{ border: 1px solid {_BORDER}; border-radius: 10px; color: {_TEXT_SEC}; background: {_BG_RAISE}; }}
+    QToolButton:hover, QToolButton:focus {{ color: {_ACCENT}; border-color: {_ACCENT}; }}
     QCheckBox {{
         color: {_TEXT_PRI};
         background: transparent;
@@ -119,14 +126,16 @@ _DIALOG_QSS = f"""
         color: {_ACCENT};
     }}
     QDialogButtonBox QPushButton[text="OK"],
-    QDialogButtonBox QPushButton[text="確定"] {{
+    QDialogButtonBox QPushButton[text="確定"],
+    QDialogButtonBox QPushButton[text="儲存"] {{
         background: {_ACCENT};
         color: {_ACCENT_T};
         border: none;
         font-weight: 600;
     }}
     QDialogButtonBox QPushButton[text="OK"]:hover,
-    QDialogButtonBox QPushButton[text="確定"]:hover {{
+    QDialogButtonBox QPushButton[text="確定"]:hover,
+    QDialogButtonBox QPushButton[text="儲存"]:hover {{
         background: {_ACCENT_H};
         color: {_ACCENT_T};
     }}
@@ -143,6 +152,7 @@ class SettingsDialog(QDialog):
         self._closed = False
         self.setWindowTitle("設定")
         self.setMinimumSize(520, 420)
+        self.resize(760, 620)
         self._setup_ui()
         self.setStyleSheet(_DIALOG_QSS)
         for combo in self.findChildren(QComboBox):
@@ -151,10 +161,13 @@ class SettingsDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
+        self._tabs = tabs
+        tabs.setUsesScrollButtons(True)
 
         # ---- 一般 ----
         gen = QWidget()
-        gf = QFormLayout(gen)
+        gv = QVBoxLayout(gen)
+        gf = self._section(gv, "啟動與系統匣")
         gf.setSpacing(10)
         self._cb_autostart = QCheckBox("開機自動啟動")
         self._cb_autostart.setChecked(
@@ -162,11 +175,13 @@ class SettingsDialog(QDialog):
         )
         gf.addRow("系統啟動：", self._cb_autostart)
 
+        self._initial_autostart = self._cb_autostart.isChecked()
         self._cb_start_min = QCheckBox("啟動時最小化到系統匣")
         self._cb_start_min.setChecked(
             self._cfg.get('general', 'start_minimized', default=True)
         )
         gf.addRow("", self._cb_start_min)
+        gf = self._section(gv, "歷史整理")
         self._sp_archive_days = QSpinBox()
         self._sp_archive_days.setRange(0, 36500)
         self._sp_archive_days.setSpecialValueText('停用')
@@ -174,26 +189,27 @@ class SettingsDialog(QDialog):
         archive_days = self._cfg.get('history', 'auto_archive_days', default=90)
         self._sp_archive_days.setValue(archive_days if type(archive_days) is int and 0 <= archive_days <= 36500 else 90)
         gf.addRow('自動封存：', self._sp_archive_days)
-        archive_note = QLabel('最後修改已滿設定天數的紀錄會自動封存；釘選及辨識中的紀錄保留。\n'
-                              '封存可還原，文字與附件仍在；設為 0 可停用。')
-        archive_note.setWordWrap(True)
-        gf.addRow('', archive_note)
-        tabs.addTab(gen, "一般")
+        self._sp_archive_days.setToolTip('最後修改滿設定天數後封存；釘選、辨識中紀錄保留。封存可還原，文字與附件仍在；0 為停用。')
+        gv.addStretch()
+        tabs.addTab(self._scroll_page(gen), "一般")
 
         # ---- 擷取 ----
         cap = QWidget()
-        cf = QFormLayout(cap)
+        cv = QVBoxLayout(cap)
+        cf = self._section(cv, "截圖與辨識")
         cf.setSpacing(10)
         self._cb_auto_ocr = QCheckBox("截圖後自動執行 OCR")
         self._cb_auto_ocr.setChecked(
             self._cfg.get('capture', 'auto_ocr_on_capture', default=True)
         )
         cf.addRow("OCR：", self._cb_auto_ocr)
-        tabs.addTab(cap, "擷取")
+        cv.addStretch()
+        tabs.addTab(self._scroll_page(cap), "擷取")
 
         # ---- OCR ----
         ocr_tab = QWidget()
-        of = QFormLayout(ocr_tab)
+        ov = QVBoxLayout(ocr_tab)
+        of = self._section(ov, "辨識重試")
         of.setSpacing(10)
 
         self._cb_second_pass = QCheckBox("空結果或低信心時自動重試")
@@ -208,12 +224,9 @@ class SettingsDialog(QDialog):
         self._sp_max_passes.setEnabled(self._cb_second_pass.isChecked())
         self._cb_second_pass.toggled.connect(self._sp_max_passes.setEnabled)
         of.addRow("每區辨識上限：", self._sp_max_passes)
-        retry_note = QLabel('預設最多 2 次；第 3 次僅用於仍低信心、空白或候選衝突。\n'
-                            '重試採不同影像處理；分數不是正確率，仍須人工確認。')
-        retry_note.setWordWrap(True)
-        of.addRow('', retry_note)
-
-        self._cb_handwriting = QCheckBox("手寫友善模式（積極前處理）")
+        self._sp_max_passes.setToolTip('預設最多 2 次，含首次；第 3 次僅用於低信心、空白或候選衝突。重試採不同影像處理，分數仍需人工確認。')
+        of = self._section(ov, '影像處理')
+        self._cb_handwriting = QCheckBox("手寫友善模式")
         self._cb_handwriting.setChecked(
             self._cfg.get('ocr', 'enable_handwriting_mode', default=False)
         )
@@ -228,10 +241,7 @@ class SettingsDialog(QDialog):
         )
         of.addRow("小圖放大門檻：", self._sp_short_side)
 
-        _ocr_note = QLabel("設定儲存後，重新啟動程式生效。")
-        _ocr_note.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
-        of.addRow("", _ocr_note)
-
+        of = self._section(ov, '離線模型')
         self._model_profile = QComboBox()
         self._model_profile.addItem('PP-OCRv6 Small（較輕量）', 'v6-small')
         self._model_profile.addItem('PP-OCRv6 Medium 辨字（較大模型）', 'v6-medium')
@@ -241,16 +251,16 @@ class SettingsDialog(QDialog):
             selected = self._model_profile.count() - 1
         self._model_profile.setCurrentIndex(selected)
         of.addRow('辨識模型：', self._model_profile)
-        engine_note = QLabel('兩種模式都用 v6 Small 找字，辨字模型可選 Small／Medium。\n'
-                             '模型已內含，不需下載；儲存後重啟生效。Medium 較耗記憶體，不保證每字更準。\n'
-                             '使用 RapidOCR／ONNX Runtime；失敗不退回舊模型。')
-        engine_note.setWordWrap(True)
-        of.addRow('辨識引擎：', engine_note)
-        tabs.addTab(ocr_tab, "OCR")
+        self._model_profile.setToolTip('兩種模式都用 Small 找字，再選 Small／Medium 辨字。模型已內含；Medium 較耗記憶體，不保證每字更準。OCR 設定儲存後重啟生效。')
+        self._cb_handwriting.setToolTip('對手寫影像採用較積極的前處理；儲存後重啟生效。')
+        self._sp_short_side.setToolTip('短邊小於門檻時放大影像；儲存後重啟生效。')
+        ov.addStretch()
+        tabs.addTab(self._scroll_page(ocr_tab), "OCR")
 
         # ---- 剪貼簿 ----
         clip = QWidget()
-        clf = QFormLayout(clip)
+        clv = QVBoxLayout(clip)
+        clf = self._section(clv, "辨識後複製")
         clf.setSpacing(10)
         self._ocr_copy_mode = QComboBox()
         self._ocr_copy_mode.addItem('自動複製全部文字', 'all')
@@ -258,16 +268,20 @@ class SettingsDialog(QDialog):
         copy_mode = self._cfg.get('clipboard', 'ocr_copy_mode', default='all')
         self._ocr_copy_mode.setCurrentIndex(1 if copy_mode == 'select' else 0)
         clf.addRow('辨識完成後：', self._ocr_copy_mode)
-        copy_mode_note = QLabel('選字模式會在辨識後開啟選取視窗；儲存後立即生效。')
-        copy_mode_note.setWordWrap(True)
-        copy_mode_note.setStyleSheet(f'color: {_TEXT_SEC}; font-size: 11px;')
-        clf.addRow('', copy_mode_note)
-
+        self._ocr_copy_mode.setToolTip('選字模式會在辨識後開啟選取視窗；複製設定儲存後立即生效。')
+        clf = self._section(clv, '剪貼簿收錄')
         self._cb_monitor = QCheckBox("啟用剪貼簿監聽")
         self._cb_monitor.setChecked(
             self._cfg.get('clipboard', 'monitor_clipboard', default=False)
         )
-        clf.addRow("監聽：", self._cb_monitor)
+        monitor_note = '啟用後，複製的密碼、Token 或個資也可能以明文存入歷史。沒有自動到期刪除，請在主控台刪除並清空回收桶。'
+        monitor_row = QWidget()
+        monitor_layout = QHBoxLayout(monitor_row)
+        monitor_layout.setContentsMargins(0, 0, 0, 0)
+        monitor_layout.addWidget(self._cb_monitor)
+        monitor_layout.addWidget(self._info_button(monitor_note))
+        monitor_layout.addStretch()
+        clf.addRow("監聽：", monitor_row)
 
         self._cb_auto_text = QCheckBox("自動收錄複製的文字")
         self._cb_auto_text.setChecked(
@@ -275,24 +289,70 @@ class SettingsDialog(QDialog):
         )
         clf.addRow("文字：", self._cb_auto_text)
 
-        from ..clipboard.text_cleanup import COPY_CLEANUP_OPTIONS
+        from ..clipboard.text_cleanup import COPY_CLEANUP_OPTIONS, MAX_REPLACEMENT_LENGTH
         self._copy_cleanup_checks = {}
-        for key, label, _ in COPY_CLEANUP_OPTIONS:
-            check = QCheckBox(label)
+        self._copy_cleanup_modes = {}
+        self._copy_cleanup_replacements = {}
+        self._original_cleanup_replacements = {}
+        self._cleanup_replacement_edited = set()
+        cleanup = QGroupBox('複製清理')
+        cleanup.setToolTip('套用於一般 OCR、歷史與編輯器的文字複製，以及「貼上最後一筆」；文件套版及手寫候選保留原樣。原始文字不變。個別規則優先於「所有標點與空白」；替代文字不會再次被清理。')
+        cleanup_rows = QVBoxLayout(cleanup)
+        cleanup_rows.setSpacing(10)
+        titles = {'copy_remove_commas': '逗號', 'copy_remove_apostrophes': '撇號',
+                  'copy_remove_newlines': '換行', 'copy_remove_punctuation': '所有標點與空白'}
+        notes = {'copy_remove_commas': '處理半形／全形逗號（,，）。',
+                 'copy_remove_apostrophes': "處理撇號（'‘’＇），不改動其他引號。",
+                 'copy_remove_newlines': '處理換行；Windows CRLF 算一次。其他空白保留。',
+                 'copy_remove_punctuation': '處理 Unicode 標點及所有空白，包含小數點、負號、半形／全形空格、Tab 與換行；數值格式也會改變。'}
+        for key, _, _ in COPY_CLEANUP_OPTIONS:
+            suffix = key.removeprefix('copy_remove_')
+            row = QHBoxLayout()
+            check = QCheckBox(titles[key])
             check.setChecked(self._cfg.get('clipboard', key, default=False) is True)
-            if key == 'copy_remove_punctuation':
-                check.setToolTip('移除 Unicode 標點及所有空白，包含半形／全形空格、Tab 與換行；原始文字不變。')
+            check.setFixedWidth(130)
+            mode = QComboBox()
+            mode.addItem('移除', 'remove')
+            mode.addItem('替換', 'replace')
+            chosen = self._cfg.get('clipboard', 'copy_cleanup_mode_' + suffix, default='remove')
+            if chosen not in ('remove', 'replace'):
+                mode.addItem('請選擇處理方式', None)
+                mode.setCurrentIndex(2)
+            else:
+                mode.setCurrentIndex(1 if chosen == 'replace' else 0)
+            mode.setFixedWidth(90)
+            edit = QLineEdit()
+            value = self._cfg.get('clipboard', 'copy_replace_' + suffix, default='')
+            self._original_cleanup_replacements[key] = value
+            value = value if isinstance(value, str) else ''
+            edit.setMaxLength(max(MAX_REPLACEMENT_LENGTH * 2, len(value.encode('utf-16-le', errors='surrogatepass')) // 2))
+            edit.setText(value)
+            edit.setMinimumWidth(0)
+            edit.textChanged.connect(lambda text, rule=key: self._cleanup_replacement_edited.add(rule))
+            edit.setPlaceholderText('自訂替代文字')
+            edit.setAccessibleName(titles[key] + '替代文字')
+            mode.setAccessibleName(titles[key] + '處理方式')
+            note = notes[key] + ' 原始文字不變。' + '\n移除會刪除指定字元；替換可輸入自己的字串，留空也可。最多 64 字，儲存後立即生效。'
+            for control in (check, mode, edit):
+                control.setToolTip(note)
+            info = self._info_button(note)
+            def refresh(*_, checkbox=check, action=mode, replacement=edit):
+                action.setEnabled(checkbox.isChecked())
+                replacement.setVisible(action.currentData() == 'replace')
+                replacement.setEnabled(checkbox.isChecked())
+            check.toggled.connect(refresh)
+            mode.currentIndexChanged.connect(refresh)
+            refresh()
+            row.addWidget(check)
+            row.addWidget(mode)
+            row.addWidget(edit, 1)
+            row.addStretch()
+            row.addWidget(info)
+            cleanup_rows.addLayout(row)
             self._copy_cleanup_checks[key] = check
-            clf.addRow('複製清理：', check)
-        cleanup_note = QLabel(
-            '只改複製內容，原始文字不變；預設皆關閉。\n'
-            '所有標點包含小數點、百分號與連字號：-1.23 → 123。\n'
-            '「所有標點與空白」也移除空格、全形空白、Tab 與換行。\n'
-            '開啟時多筆紀錄也直接接合；其他清理仍以空行分隔紀錄。\n'
-            '只選「移除換行」仍保留其他空白。儲存後立即生效。')
-        cleanup_note.setWordWrap(True)
-        clf.addRow('', cleanup_note)
-
+            self._copy_cleanup_modes[key] = mode
+            self._copy_cleanup_replacements[key] = edit
+        clv.addWidget(cleanup)
         self._cb_auto_image = QCheckBox("自動收錄剪貼簿圖片")
         self._cb_auto_image.setChecked(
             self._cfg.get('clipboard', 'auto_save_image', default=False)
@@ -300,14 +360,9 @@ class SettingsDialog(QDialog):
         self._cb_auto_image.setEnabled(False)
         self._cb_auto_image.setToolTip('剪貼簿圖片收錄尚未完成，此版本停用')
         clf.addRow("圖片（未支援）：", self._cb_auto_image)
-        privacy = QLabel('啟用後，複製的密碼、Token 或個資也可能以明文存入歷史。\n'
-                         '目前沒有自動到期刪除；請使用主控台刪除並清空回收桶。')
-        privacy.setWordWrap(True)
-        clf.addRow('', privacy)
-
-        dedup_lbl = QLabel("連續相同內容（60 秒內）自動去重")
-        dedup_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
-        clf.addRow("去重：", dedup_lbl)
+        self._cb_monitor.setToolTip('啟用後，複製的密碼、Token 或個資也可能以明文存入歷史。沒有自動到期刪除，請在主控台刪除並清空回收桶。')
+        self._cb_auto_text.setToolTip('收錄複製的文字到歷史；連續相同內容於 60 秒內自動去重。')
+        clv.addStretch()
         clip_scroll = QScrollArea()
         clip_scroll.setWidgetResizable(True)
         clip_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -332,7 +387,8 @@ class SettingsDialog(QDialog):
             edit.setReadOnly(True)
             self._hk_edits[key] = edit
             hkf.addRow(f"{lbl_text}：", edit)
-        tabs.addTab(hk_tab, "快捷鍵")
+        hk_tab.setToolTip("快捷鍵目前唯讀，沿用現有操作。")
+        tabs.addTab(self._scroll_page(hk_tab), "快捷鍵")
 
         # ---- 介面 ----
         ui_tab = QWidget()
@@ -352,13 +408,14 @@ class SettingsDialog(QDialog):
         uf.addRow("字型大小：", self._sp_font_size)
         self._cb_theme.setEnabled(False)
         self._sp_font_size.setEnabled(False)
-        uf.addRow(QLabel('佈景與字級尚未接入完整介面，本版停用調整。'))
-        tabs.addTab(ui_tab, "介面")
+        self._cb_theme.setToolTip('佈景尚未接入完整介面，本版停用調整。')
+        self._sp_font_size.setToolTip('字級尚未接入完整介面，本版停用調整。')
+        tabs.addTab(self._scroll_page(ui_tab), "介面")
 
         # ---- 標籤管理 ----
         if self._tag_repo is not None:
             tag_tab = self._create_tag_management_tab()
-            tabs.addTab(tag_tab, "標籤管理")
+            tabs.addTab(self._scroll_page(tag_tab), "標籤管理")
 
         layout.addWidget(tabs)
 
@@ -366,13 +423,65 @@ class SettingsDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
         )
+        btn_box.button(QDialogButtonBox.StandardButton.Ok).setText("儲存")
+        btn_box.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         btn_box.accepted.connect(self._save)
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
 
+    @staticmethod
+    def _scroll_page(widget):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(widget)
+        return scroll
+
+    @staticmethod
+    def _section(layout, title):
+        group = QGroupBox(title)
+        form = QFormLayout(group)
+        form.setSpacing(10)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        layout.addWidget(group)
+        return form
+
+    def _info_button(self, note):
+        button = QToolButton()
+        button.setText('?')
+        button.setToolTip(note)
+        button.setAccessibleName('說明')
+        button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        button.setFixedSize(24, 24)
+        def show_note():
+            if not self._closed and button.isVisible():
+                QToolTip.showText(button.mapToGlobal(button.rect().bottomLeft()), note, button)
+        button.clicked.connect(show_note)
+        return button
+
     def _save(self):
         if self._closed:
             return
+        from ..clipboard.text_cleanup import validate_copy_replacement
+        for key in self._copy_cleanup_checks:
+            active = self._copy_cleanup_checks[key].isChecked()
+            mode = self._copy_cleanup_modes[key].currentData()
+            if active and mode not in ('remove', 'replace'):
+                QMessageBox.warning(self, '請確認複製清理', '請為每個規則選擇移除或替換。')
+                if not self._closed:
+                    self._tabs.setCurrentIndex(3)
+                    self._copy_cleanup_modes[key].setFocus()
+                return
+            original = self._original_cleanup_replacements[key]
+            replacement = (self._copy_cleanup_replacements[key].text() if key in self._cleanup_replacement_edited
+                           else original)
+            if ((active and mode == 'replace') or key in self._cleanup_replacement_edited) and not validate_copy_replacement(replacement):
+                QMessageBox.warning(self, '請確認替代文字', '替代文字最多 64 字，不可包含換行或控制字元。請調整後再儲存。')
+                if self._closed:
+                    return
+                self._tabs.setCurrentIndex(3)
+                self._copy_cleanup_replacements[key].setFocus()
+                return
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
         self._cfg.set('history', 'auto_archive_days', self._sp_archive_days.value())
@@ -388,9 +497,15 @@ class SettingsDialog(QDialog):
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
         for key, check in self._copy_cleanup_checks.items():
             self._cfg.set('clipboard', key, check.isChecked())
+            suffix = key.removeprefix('copy_remove_')
+            if self._copy_cleanup_modes[key].currentData() is not None:
+                self._cfg.set('clipboard', 'copy_cleanup_mode_' + suffix, self._copy_cleanup_modes[key].currentData())
+            if key in self._cleanup_replacement_edited:
+                self._cfg.set('clipboard', 'copy_replace_' + suffix, self._copy_cleanup_replacements[key].text())
 
         from ..core.autostart import set_autostart
-        set_autostart(self._cb_autostart.isChecked())
+        if self._cb_autostart.isChecked() != self._initial_autostart:
+            set_autostart(self._cb_autostart.isChecked())
 
         logger.info('設定已儲存；複製選項立即生效，辨識引擎設定需重新啟動')
         # 最後才關閉 dialog
@@ -402,6 +517,7 @@ class SettingsDialog(QDialog):
         # A nested tag/color/message dialog may still have an accepted callback
         # queued when its owner closes. Mark the owner terminal before unwinding.
         self._closed = True
+        QToolTip.hideText()
         for child in reversed(self.findChildren(QDialog)):
             if child.isVisible():
                 child.setEnabled(False)
@@ -426,7 +542,9 @@ class SettingsDialog(QDialog):
 
         # 上方：標籤列表
         top_layout = QVBoxLayout()
+        tag_tab.setToolTip("標籤新增、修改與刪除會立即儲存；設定視窗的取消不會還原標籤操作。")
         top_label = QLabel("現有標籤：")
+        top_label.setToolTip(tag_tab.toolTip())
         top_layout.addWidget(top_label)
 
         self._tag_list = QListWidget()

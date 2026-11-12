@@ -4,7 +4,7 @@ import logging
 from PySide6.QtCore import QMimeData, QByteArray
 from PySide6.QtWidgets import QApplication
 from ..core.constants import CUSTOM_MIME_TYPE
-from .text_cleanup import prepare_copy_text
+from .text_cleanup import prepare_copy_text, copy_batch_separator
 
 logger = logging.getLogger(__name__)
 _last_write_id: str = ''
@@ -29,8 +29,7 @@ def copy_text_batch(texts, cfg=None) -> str:
     """Retain record boundaries unless all punctuation/whitespace is removed."""
     prepared = [prepare_copy_text(text, cfg) for text in texts]
     prepared = [text for text in prepared if text and text.strip()]
-    separator = ('' if cfg is not None
-                 and cfg.get('clipboard', 'copy_remove_punctuation', default=False) is True else '\n\n')
+    separator = copy_batch_separator(cfg)
     return write_text_to_clipboard(separator.join(prepared)) if prepared else ''
 
 

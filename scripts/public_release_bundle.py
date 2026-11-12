@@ -35,6 +35,7 @@ PUBLIC_DOCUMENTATION = {
     'docs/SHARED_SEARCH.md': 'docs/SHARED_SEARCH.md',
     'docs/VALIDATION_COVERAGE.md': 'docs/VALIDATION_COVERAGE.md',
     'docs/FLOATING_STATE_AUDIT.md': 'docs/FLOATING_STATE_AUDIT.md',
+    'docs/CONFIG_WIRING_MATRIX.md': 'docs/CONFIG_WIRING_MATRIX.md',
     'docs/ui/shared-search-window.png': 'docs/ui/shared-search-window.png',
     'docs/ui/b-inline-callouts.png': 'docs/ui/b-inline-callouts.png',
     'docs/ui/a-inline-annotations.png': 'docs/ui/a-inline-annotations.png',

@@ -387,7 +387,7 @@ def test_settings_all_cleanup_label_and_tooltip_disclose_spaces_and_newlines(qtb
     dialog = SettingsDialog(Config())
     qtbot.addWidget(dialog)
     checkbox = dialog._copy_cleanup_checks['copy_remove_punctuation']
-    assert checkbox.text() == '複製時移除所有標點與空白'
+    assert checkbox.text() == '所有標點與空白'
     assert all(text in checkbox.toolTip() for text in ('全形', 'Tab', '換行', '原始文字不變'))
     assert not checkbox.isChecked()
 
@@ -533,5 +533,5 @@ def test_copy_settings_small_window_scrolls_without_truncating_help(qtbot):
     labels = scroll.widget().findChildren(QLabel)
     assert all(label.height() >= label.heightForWidth(label.width()) for label in labels)
     assert dialog._ocr_copy_mode.currentData() == 'all'
-    scroll.ensureWidgetVisible(labels[-1])
+    scroll.ensureWidgetVisible(dialog._copy_cleanup_checks['copy_remove_punctuation'])
     assert scroll.verticalScrollBar().value() > 0

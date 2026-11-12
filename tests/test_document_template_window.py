@@ -125,6 +125,22 @@ def test_results_editing_builds_exact_template_and_preserves_ocr_braces(window):
     assert '文字手動更正𠮷\n第二行文字測試' in window._output.toPlainText()
 
 
+def test_template_copy_remains_literal_when_general_cleanup_replaces_newlines(window, qapp, tmp_path):
+    ready(window, 1)
+    window._template.setPlainText('{辨識1}\n結束')
+    window.set_recognition_results([{'辨識1': '甲，乙'}])
+    original = window._output.toPlainText()
+    window._cfg.set('clipboard', 'copy_remove_newlines', True)
+    window._cfg.set('clipboard', 'copy_cleanup_mode_newlines', 'replace')
+    window._cfg.set('clipboard', 'copy_replace_newlines', ' / ')
+    window._copy_results()
+    assert qapp.clipboard().text() == original
+    assert window._output.toPlainText() == original
+    output = tmp_path / 'result.txt'
+    window.export_to_path(str(output))
+    assert output.read_text(encoding='utf-8-sig') == original
+
+
 def test_failed_fields_block_output_until_explicit_correction(window, qapp):
     ready(window)
     copy_text('先前內容')

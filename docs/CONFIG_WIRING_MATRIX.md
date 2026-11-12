@@ -1,6 +1,6 @@
 # 設定接線與節點稽核
 
-更新版本：1.8.0-rc.12（2026-11-05）。本表描述目前核心程式的接線與限制；[v1.6.1 的 61 項基準矩陣](audit-baseline/CONFIG_WIRING_MATRIX.md) 是當時快照，不再用它的 dead／partial 結論判定現行版本。
+更新版本：1.8.0-rc.17（2026-11-12）。本表描述目前核心程式的接線與限制；[v1.6.1 的 61 項基準矩陣](audit-baseline/CONFIG_WIRING_MATRIX.md) 是當時快照，不再用它的 dead／partial 結論判定現行版本。
 
 設定被保存、UI 有欄位或測試出現鍵名，都不等於功能已接通。下表列出實際消費點與套用時機；原生 Windows 互動及封裝結果，以同一來源版本的 validation metadata 為準，不把原始碼檢查當成乾淨實機驗收。
 
@@ -8,7 +8,7 @@
 
 | 設定鍵 | 入口／套用時機 | 實際消費點與限制 |
 | --- | --- | --- |
-| `general.start_with_windows` | 一般設定；儲存時及啟動 | `set_autostart`／`app.main`；限支援的 Windows 可執行檔環境 |
+| `general.start_with_windows` | 一般設定；值改變後儲存，或啟動時檢查 | `set_autostart`／`app.main`；限支援的 Windows 可執行檔環境 |
 | `general.start_minimized` | 一般設定；下次啟動 | `app.main` 決定浮窗是否顯示；沒有可用系統匣時仍顯示 |
 | `general.single_instance` | JSON；下次啟動 | `app.main` 在取得 mutex 前讀取，關閉時允許多程序，因此不能假設其他程序的 pending 工作已失效 |
 | `general.data_directory` | JSON；下次啟動 | `ConfigManager.get_data_directory` → Database／FileManager；相對路徑以 EXE 或 `DESKTOP_OCR_HOME` 為根目錄 |
@@ -23,7 +23,9 @@
 | `clipboard.max_text_length` | JSON；每次收錄時讀 | 控制器在交付前檢查型別、長度及當下開關，超長不保存，內容不寫入診斷訊息 |
 | `clipboard.deduplicate` | JSON；下次啟動 | `app.main` → `DbWorker` → Repository 去重政策 |
 | `clipboard.ocr_copy_mode` | 「辨識完成後」選單；立即 | `Pipeline` OCR 完成時選擇全部複製或開啟選字視窗；晚到或過期結果不能覆蓋較新的手動複製 |
-| `clipboard.copy_remove_commas`、`clipboard.copy_remove_apostrophes`、`clipboard.copy_remove_newlines`、`clipboard.copy_remove_punctuation` | 四個獨立勾選；立即 | 複製／批量複製／貼上最近結果的輸出邊界；不改歷史原文或匯出。`clipboard.copy_remove_punctuation` 自 rc.9 移除 Unicode 標點及全部 Unicode 空白，包含批量新增的分隔；只開舊換行選項時仍保留紀錄分隔 |
+| `clipboard.copy_remove_commas`、`clipboard.copy_remove_apostrophes`、`clipboard.copy_remove_newlines`、`clipboard.copy_remove_punctuation` | 四列的啟用勾選；儲存後立即 | 名稱沿用舊鍵，現在代表該規則是否啟用；一般 OCR／歷史／編輯器經 `writer.copy_text`／`copy_text_batch` 清理輸出，`FloatingWidget.paste_last_item` 在貼上前也準備清理文字，不改原文。文件套版複製、手寫候選與貼上／還原低階路徑保持原樣 |
+| `clipboard.copy_cleanup_mode_*`（commas／apostrophes／newlines／punctuation） | 各列移除／替換選單；立即 | `text_cleanup.prepare_copy_text` 讀取 remove／replace，舊設定缺鍵預設 remove；個別類別優先於所有標點，未知動作保留該類原字元 |
+| `clipboard.copy_replace_*`（同上四個尾碼） | 各列自訂文字；立即 | 最多 64 個 Unicode 字元的字面字串；只在 replace 使用，不解讀表達式，插入後不再清理。`copy_batch_separator` 區分舊換行移除與明確替換的紀錄分隔；無效設定不退化成額外移除 |
 | `documents.max_file_size_mb` | 文件視窗大小上限；匯入時讀 | 文件套版匯入控制器限制單檔大小，預設 100MB；另有頁數、解碼及像素資源限制 |
 | `history.auto_archive_days` | 一般設定的「自動封存」；立即 | `HistoryMaintenanceController` → `DbWorker.archive_inactive` → `ItemRepository.archive_inactive_batch`；預設 90、0 停用，啟動／每日檢查最後修改時間，每批最多 200 筆 |
 | `hotkeys.capture_region_ocr`、`hotkeys.capture_region_image`、`hotkeys.capture_fullscreen`、`hotkeys.toggle_widget`、`hotkeys.paste_last`、`hotkeys.open_console`、`hotkeys.quick_search` | JSON；下次啟動，設定頁唯讀顯示 | `app.main` 註冊至 `HotkeyListener` → Pipeline 的 GUI slot → 對應 action；快速搜尋開啟主控台搜尋，不在浮窗新增搜尋框 |
@@ -37,22 +39,20 @@
 
 `config/default_settings.json` 與 Python `DEFAULT_SETTINGS` 以一致性測試核對。Python 預設值是缺檔與 merge 的來源；保存舊 JSON 額外鍵只是相容，不代表新增支援。辨識引擎參數、快捷鍵與啟動設定仍需重啟；剪貼簿監看、文字收錄、複製清理及自動封存有明確的即時套用路徑。
 
-## 整列搜尋的會話設定（rc.12 標示更新）
+## 整列搜尋的會話設定
 
-整列搜尋的欄位、座標、校正與結果是本次執行的狀態，不是新增 JSON 預設鍵；不把 UI 記憶體值誤列成已保存設定。原有固定位置 A／B 流程保留。
-
-實際入口為 `FloatingWidget.open_shared_search`／系統匣 action → `SharedSearchWindow` → `SharedSearchController`；擷取由 `SharedCaptureWorker` 處理，辨識共用 `OcrWorker`，候選由 `search_matching.match_field` 產生，選取列由 `RowTracker` 校正及追蹤。這些消費點分別位於 `src/ui/shared_search_window.py`、`src/comparison/shared_controller.py`、`shared_capture.py`、`search_matching.py` 與 `row_tracking.py`。
+整列搜尋的模式、範圍、校正與結果只存在本次執行記憶體，不是新增 JSON 預設鍵；不把 UI 暫存狀態列成已保存設定。實際入口為 `FloatingWidget.open_shared_search`／系統匣 action → `SharedSearchWindow` → `SharedSearchController`。擷取由 `SharedCaptureWorker` 處理、OCR 共用 `OcrWorker`；`row_values` 分列取值及分配 B 位置，`search_matching` 處理文字／數字／日期候選，`RowTracker` 追蹤選取底色。
 
 | 入口 | 實際作用 | 邊界 |
 | --- | --- | --- |
-| 新增／框選 A、框選 B | 最多 20 個同列 A 共用一個 B；同張快照依序 OCR 及搜尋候選 | 每個 A 最多採用一處，重複候選要人工選；不套用複製清理 |
-| 比對方式／固定文字相似門檻 | 全部 A 共用規則；數字片段保留正負號及格式，文字相似門檻固定 95%；逐字模式停用近似 | OCR 信心另行判斷，近似或 needs_review 不因手選而變成確定命中；行級框不冒充逐字定位 |
-| 列高／上一列／下一列 | 1–500 像素列距，同時移動所有 A，再開始新一輪 | 手動換列暫停自動跟隨，不替外部軟體送鍵、點列或捲頁 |
-| 表格範圍／校正目前選取列／自動跟隨 | 在圈定範圍校正選取底色與 A 相對偏移；兩次穩定檢查才接受新列 | 不明／多列／越界不猜測；同 Y 新內容須重辨，不以座標命中快取 |
-| 標示置頂／填色濃度／穿透標示 | 只控制 B 框線與 A／B 文字卡片的置頂；控制窗維持一般視窗，預設不畫 A 框 | 三行卡片放在 B 內，長文省略、空間不足明示其餘筆數；點擊穿透，擷取前隱藏可能閃動，仍限主螢幕 |
-| 開始／暫停／清除／關閉 | 明確開始才檢查；停止撤銷後續佇列、影像與過期標示 | 原生單次呼叫先返回；不寫歷史／剪貼簿／內容 Log／搜尋檔案，不在關窗後繼續跟隨 |
+| 整區 A／逐欄 A、發票 B | 整區最多 100 列、每列 20 值；逐欄最多 20 個 A，共用一個 B | 同一或高度重疊 B 文字位置只分配一次；多個確切候選需選擇，近似始終需確認；不套用複製清理 |
+| 比對方式／日期換算 | 整區數字近似至少 60% 同位數，逐欄保留只差一位；文字 95%，支援的日期可換算 | 位數／格式規則仍檢查；逐字模式停用近似與日期換算，OCR 信心另判斷 |
+| 上一列／下一列／選取列跟隨 | 整區切換實際 OCR 列並移動箭頭；逐欄依列距移動 A | A 整區與 B 框保持；跟隨需校正，兩次穩定後採用，不替外部軟體送鍵或捲頁 |
+| 預覽／調整 | 明確點擊後暫停，取單張主螢幕快照於記憶體；接受才套用位置 | 取消／關閉清除影像，不寫檔；晚到或不同範圍的結果不能套用 |
+| 標示置頂／背景透明度 | A 值與百分比依實際 B OCR 框定位，近似可用安全側邊；目前 A 列有箭頭 | 文字穿透，控制窗不置頂；操作按鈕保持可點；擷取時隱藏，無安全空間回控制窗查看 |
+| 開始／手動辨識／暫停／關閉 | 明確開始才輪詢，手動強制重讀 B＋A；停止撤銷後續工作與標示 | 原生單次呼叫先返回；不寫歷史／剪貼簿／內容 Log，不在關窗後繼續跟隨 |
 
-B 只在像素與辨識設定相同時重用一份有界記憶體 OCR 結果；發佈前再驗證畫面，A／B／列內容已改便丟棄。沒有新增模型下載、表格結構模型或跨次啟動的配置恢復。實際入口及限制見 [操作說明](SHARED_SEARCH.md)，新模式驗證以同版摘要為準。
+B 只在像素與辨識設定相同時重用一份有界記憶體 OCR 結果；同座標換發票內容仍重讀。結果發表前再驗證畫面，過期結果丟棄。沒有新增模型下載、表格結構模型或跨次啟動的配置恢復。實際格式、限制與範例見 [操作說明](SHARED_SEARCH.md)，驗證以同版摘要為準。
 
 ## 自動封存與跨視窗更新
 

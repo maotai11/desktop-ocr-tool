@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.16. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.17. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -25,7 +25,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.16"
+TAG = "v1.8.0-rc.17"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -134,16 +134,14 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版整列搜尋預設整區 A 多列取值，用箭頭標示目前列並逐列對照發票 B；近似候選保持橘色顯示，同一 B 位置不重複分配。加入實際框選預覽／調整，發票內容改變時重讀 B，原有離線 OCR、文件套版、手寫與固定位置核對保留。
+本版整理設定視窗的分區、對齊與說明，複製清理可各自選擇移除或替換，直接輸入替代字串。原有整區核對發票、離線 OCR、文件套版、手寫、歷史及檔案位置功能保留。
 
 ### 這次調整
-- 「框選整區／逐列核對」一次圈 A，依 OCR 行整理最多 100 列、每列 20 個數字／日期／含數字識別碼；上一列／下一列更新目前列箭頭及全部值，整個 A／B 範圍保持。一般文字可改用逐欄框選。
-- 每個值最多選一個 B 位置，同一或高度重疊的 OCR 位置不重複分配。確切／合法日期等價優先；多個確切候選仍需人工選，近似可先顯示暫定位置，但永遠保持需確認。
-- 整區數字近似要求相同位數／格式且至少 60% 數字位置相同，例如 12345 對 12346 為 80%、對 12399 為 60%；分數不是 OCR 正確機率或金額差距。逐欄模式保留只差一位的原規則。
-- 相似文字下方擁擠時嘗試實際 OCR 框旁邊；沒有安全位置時回控制窗查看，不沿用舊發票或捏造定位。日期換算、透明底板、置頂及浮動手動辨識保留。
-- 「預覽／調整」明確取一張主螢幕影像放在記憶體，提供移動、拖角縮放、預覽倍率及方向微調；確認才套用，取消不改框，關閉清除影像，不留檔或上傳。
-- B 的座標可以保持；發票軟體換畫面後，像素變化會使 B 重新 OCR。相同 B 下換 A 列可重用有界快取；手動辨識強制重讀 B＋A。
-- 整列搜尋具名探針 27 項，GUI 16 項，新增整區取值、位置排他、近似可見、箭頭換列、B 畫面更新及預覽調整；仍由同版 Windows 成品／封網／隔離 profile 驗證。
+- 設定以操作分區，較長說明放在項目旁的問號／提示；按「儲存」才套用，取消不寫入草稿。
+- 逗號、撇號、換行、所有標點與空白各自提供啟用、移除／替換及自訂字串。新安裝預設停用；舊設定保留原有勾選及移除行為。
+- 替代字串最多 64 個 Unicode 字元，留空可移除；不接受控制字元或換行，不當成正規表示式或程式執行。個別規則優先於所有標點規則，插入內容不再次處理，CRLF 算一次。
+- 清理套用一般 OCR／歷史複製及「貼上最後一筆」準備的文字。文件套版複製、手寫候選、原始結果與匯出維持原樣，A／B 比較規則獨立。
+- 既有 GUI 16 項探針擴充四列規則的取消、持久化、重新開啟、實際剪貼簿結果，並確認文件套版複製不受清理影響；失去替代文字、略過清理等反向案例會使報告失敗。仍需同版來源／EXE／封網／隔離 profile 各自通過。
 
 ### 本版沿用的發布檢查
 - GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫、兩種核對與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
@@ -159,10 +157,10 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 
 原有多組 A／B 固定核對、一般 OCR、手寫、文件套版、複製清理與 90 天封存沿用既有操作。操作、日期格式與例子見 ZIP 的 `docs/SHARED_SEARCH.md` 及同版離線說明；示意圖為合成資料，沒有使用者發票。
 
-### 複製時移除所有標點與空白
-- 在「設定 → 剪貼簿」啟用「複製時移除所有標點與空白」，預設關閉。`「您好， 世界！」` 會變成 `您好世界`；支援 Unicode 全形標點。
-- 同時移除半形／全形空格、Tab、換行及 Unicode 空白，多筆複製也直接接合、不再加入空行。保留文字、數字及數學／貨幣符號。小數點與連字號會移除，例如 `1.23` 變為 `123`，請按用途選擇。
-- 原有單獨移除逗號、撇號與換行的設定仍保留，只影響一般 OCR／歷史的複製輸出，不修改原始資料、手寫候選或文件套版模板。A／B 核對使用自己視窗的比較規則。
+### 複製清理設定
+- 到「設定 → 剪貼簿 → 複製清理」，勾選項目，再選移除／替換；替換可輸入自己的字串，留空等同移除。例：逗號替換成「・」，甲,乙變成甲・乙；換行替換成「 / 」，兩行文字變成同一行。
+- 個別逗號／撇號／換行優先；替代字串原樣插入，不再次清理。單獨換行移除保留多筆紀錄間空行，明確換行替換會處理兩個分隔換行。
+- 一般 OCR／歷史複製及「貼上最後一筆」先套用清理。文件套版複製、手寫候選與匯出保持原樣，A／B 比較獨立。所有標點移除會讓 -1.23 變成 123，請按用途選擇。
 
 螢幕 OCR 仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。PDF／圖片套版、手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 

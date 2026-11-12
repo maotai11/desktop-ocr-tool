@@ -163,3 +163,43 @@ def test_preview_probe_rejects_ineffective_controls_and_retained_screen(qapp, tm
     assert report['checks']['region_preview_adjustment'] is False
     assert report['checks']['windows_and_workers_closed'] is True
     assert report['checks']['temporary_files_cleaned'] is True
+
+
+@pytest.mark.parametrize('defect', ['replacement_not_saved', 'cleanup_bypassed'])
+def test_settings_probe_rejects_lost_rules_and_unformatted_copy(qapp, tmp_path, monkeypatch, defect):
+    if defect == 'replacement_not_saved':
+        from src.core.config import ConfigManager
+        original = ConfigManager.set
+
+        def lose_replacement(cfg, *keys_and_value):
+            if keys_and_value[:2] == ('clipboard', 'copy_replace_commas'):
+                keys_and_value = (*keys_and_value[:-1], '')
+            return original(cfg, *keys_and_value)
+
+        monkeypatch.setattr(ConfigManager, 'set', lose_replacement)
+    else:
+        from src.clipboard import writer
+        monkeypatch.setattr(writer, 'prepare_copy_text', lambda text, cfg=None: text)
+    destination = tmp_path / 'settings-failure.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
+    assert checks['settings_cancel_and_apply'] is False
+    assert checks['windows_and_workers_closed'] is True
+    assert checks['temporary_files_cleaned'] is True
+
+
+def test_document_gui_probe_rejects_unwanted_cleanup_of_template_copy(qapp, tmp_path, monkeypatch):
+    from src.clipboard.writer import copy_text
+    from src.ui.document_template_window import DocumentTemplateWindow
+    # Template copy deliberately preserves the same literal text as its preview.
+    def unwanted_cleanup(window):
+        if window._copy_button.isEnabled():
+            copy_text(window._output.toPlainText(), window._cfg)
+    monkeypatch.setattr(DocumentTemplateWindow, '_copy_results', unwanted_cleanup)
+    destination = tmp_path / 'document-copy-failure.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
+    assert checks['settings_cancel_and_apply'] is True
+    assert checks['document_import_template_zoom_clear'] is False
+    assert checks['windows_and_workers_closed'] is True
+    assert checks['temporary_files_cleaned'] is True
