@@ -294,9 +294,9 @@ Ctrl+Shift+V      貼上最近一筆紀錄的文字
 - data\annotations：圖片編輯與標註附件。
 - data\thumbnails：歷史清單的圖片縮圖。
 - data\exports：歷史匯出與文件套版 TXT 預設另存位置。
-- data\app.db：歷史文字、OCR 結果與筆記；旁邊可能有執行中的 WAL／SHM 暫存。
+- data\app.db：歷史文字、OCR 結果與筆記；交易期間可能有 rollback journal；升級前可能留有 WAL／SHM。
 - config\settings.json：設定，另可能有備份或儲存中的暫存檔。
-- logs\app.log：執行記錄，每日輪替，最多保留 30 份舊 Log。
+- logs\app.log：執行記錄，每份上限 512 KiB，最多保留 3 份輪替備份。
 - 程式暫存：這次 EXE 在 %TEMP% 解開的 _MEI… 資源資料夾，
   包含程式、PDF 引擎與模型，正常退出後由執行器清理；執行中不要刪除。
 - 程式資料夾：目前使用的程式主資料夾。

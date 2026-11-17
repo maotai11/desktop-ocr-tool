@@ -136,3 +136,9 @@ python scripts/audit_runtime_network.py --report artifacts/runtime-network-audit
 CI 會自動設定來源版本並執行相同指令；離線使用者不需執行或安裝掃描工具。這些 GUI／原生／Defender 探針只在建置與驗證時執行，應用程式一般使用流程不會在背景啟動它們。
 
 GUI 操作使用 `python src/main.py --self-test-gui source-gui.json`，報告 15 個具名控制流程，包含已移除功能不存在的檢查；舊核對 CLI 參數不再接受。Windows 建置後由 `scripts/validate_native_payload.ps1` 對同版 EXE 執行原生清冊、來源／匯入／簽章及 Defender，再由發佈器重新核對檔案與範圍雜湊。只跑 `audit_native_payload.py` 的靜態階段，不能代替 Windows 簽章與防毒完成。具體欄位、15 項 GUI 操作與人工剩餘在 [驗證矩陣](VALIDATION_COVERAGE.md)。
+
+## rc.19 新增證據與資料邊界
+
+上述 rc.18 移除紀錄保留為當時結果。rc.19 的 GUI 契約是16項，新增手動發票核對及Windows原生200%焦點證據；公開metadata是34份，額外納入嚴格型別、同EXE／來源／run綁定的 resource-budget.json。這份報告記錄真模型、程序總量與管理磁碟峰值，不以模型檔大小或配置上限冒充實際用量；raw samples不公開。原本安全、原生來源、防毒、封網與500次模型推論門檻保留。
+
+手動核對不寫入歷史、截圖或剪貼簿。一般OCR候選仍屬本機歷史OCR detail；配額拒絕不刪舊資料，儲存失敗僅回收可證明為本次新建、且未被資料庫引用的檔案。日誌改為512KiB／三份備份，SQLite採有界rollback journal交易。以上為目前實作與驗證契約，不預先宣告本版尚未完成的Windows結果。

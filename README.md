@@ -167,9 +167,9 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 | 標註附件 | `data\annotations`；圖片編輯與標註產物 |
 | 縮圖 | `data\thumbnails`；歷史清單的圖片預覽 |
 | 匯出檔案 | `data\exports`；從歷史匯出的檔案 |
-| 歷史資料 | `data`；`app.db` 與執行中的 SQLite WAL／SHM 暫存 |
+| 歷史資料 | `data`；`app.db` 與交易期間的 rollback journal；升級前可能留有 WAL／SHM |
 | 設定檔案 | EXE 同層 `config`；`settings.json`、備份及儲存中的暫存檔 |
-| 執行記錄 (Log) | EXE 同層 `logs`；`app.log` 及按日期輪替的舊檔，最多保留 30 份舊 Log |
+| 執行記錄 (Log) | EXE 同層 `logs`；`app.log` 每份上限 512 KiB，最多保留 3 份輪替備份 |
 | 程式暫存 | 這次執行的 `%TEMP%\_MEI…`；EXE 解開的程式、模型與引擎資源，正常退出後自動清理 |
 | 程式資料夾 | 目前使用的程式主資料夾 |
 

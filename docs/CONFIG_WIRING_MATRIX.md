@@ -1,6 +1,6 @@
 # 設定接線與節點稽核
 
-更新版本：1.8.0-rc.18（2026-11-17）。本表描述目前核心程式的接線與限制；[v1.6.1 的 61 項基準矩陣](audit-baseline/CONFIG_WIRING_MATRIX.md) 是當時快照，不再用它的 dead／partial 結論判定現行版本。
+更新版本：1.8.0-rc.19（2026-11-17）。本表描述目前核心程式的接線與限制；[v1.6.1 的 61 項基準矩陣](audit-baseline/CONFIG_WIRING_MATRIX.md) 是當時快照，不再用它的 dead／partial 結論判定現行版本。
 
 設定被保存、UI 有欄位或測試出現鍵名，都不等於功能已接通。下表列出實際消費點與套用時機；原生 Windows 互動及封裝結果，以同一來源版本的 validation metadata 為準，不把原始碼檢查當成乾淨實機驗收。
 
@@ -27,6 +27,7 @@
 | `clipboard.copy_cleanup_mode_*`（commas／apostrophes／newlines／punctuation） | 浮窗清理面板／完整設定的移除／替換選單；保存後立即 | `text_cleanup.prepare_copy_text` 讀取 remove／replace，舊設定缺鍵預設 remove；個別類別優先於所有標點，未知動作保留該類原字元 |
 | `clipboard.copy_replace_*`（同上四個尾碼） | 浮窗清理面板／完整設定的自訂文字；保存後立即 | 最多 64 個 Unicode 字元的字面字串；只在 replace 使用，不解讀表達式，插入後不再清理。`copy_batch_separator` 區分舊換行移除與明確替換的紀錄分隔；無效設定不退化成額外移除 |
 | `documents.max_file_size_mb` | 文件視窗大小上限；匯入時讀 | 文件套版匯入控制器限制單檔大小，預設 100MB；另有頁數、解碼及像素資源限制 |
+| `invoice_check.overlay_on_top`、`invoice_check.overlay_transparency` | 發票核對面板；保存後立即 | 只控制核對標示／小工具的置頂與底板透明度；框選、校正、金額／統編種類與本輪影像不寫入設定。保存失敗維持原設定，不觸發辨識 |
 | `history.auto_archive_days` | 一般設定的「自動封存」；立即 | `HistoryMaintenanceController` → `DbWorker.archive_inactive` → `ItemRepository.archive_inactive_batch`；預設 90、0 停用，啟動／每日檢查最後修改時間，每批最多 200 筆 |
 | `hotkeys.capture_region_ocr`、`hotkeys.capture_region_image`、`hotkeys.capture_fullscreen`、`hotkeys.toggle_widget`、`hotkeys.paste_last`、`hotkeys.open_console`、`hotkeys.quick_search` | JSON；下次啟動，設定頁唯讀顯示 | `app.main` 註冊至 `HotkeyListener` → Pipeline 的 GUI slot → 對應 action；快速搜尋開啟主控台搜尋，不在浮窗新增搜尋框 |
 | `ui.widget_opacity` | JSON；建立浮窗時 | `FloatingWidget.setWindowOpacity`；實際透明度仍取決於作業系統 compositor |
@@ -92,3 +93,9 @@ GUI 契約的 `removed_comparison_tools_absent` 檢查真實入口、模組、CL
 | 舊 pending OCR 工作 | 保留並排除自動封存，不自動標失敗／重跑 | 缺少可驗證工作擁有者，特別是允許多程序時，不能證明它是死工作 |
 
 本表是針對已列設定、訊號、生命週期、入口與 Git 快照的有限稽核，不是所有動態路徑都無孤兒的形式證明。套件漏洞、網路觀察、原生呼叫取消邊界與本機未加密資料的限制見 [資安與背景工作檢查](SECURITY_REVIEW.md)。
+
+## rc.19 資源寫入與新增手動入口
+
+發票核對由主浮窗／系統匣明確開啟，每次按核對才擷取；沒有定時掃描設定。影像與核對結果只在記憶體。一般 OCR 的原整圖重試保留，人工候選只是原有重試讀字的展示。
+
+設定、圖檔、SQLite journal、管理目錄匯出及 log 共用寫入配額；上限不是可由 JSON 關閉的選項。SQLite 新交易採 DELETE rollback journal；升級前可能存在 WAL／SHM。Log 每份512KiB、最多三份備份。實際 EXE 及輔助程序／解壓資源是否小於十進位1GB，以同版 resource-budget.json 為準。
