@@ -121,6 +121,10 @@ INSPECTION_ENUMS = {
 INSPECTION_NUMBERS = {'inspection_native_error': 0xFFFFFFFF,
     'inspection_context_winerror': 0xFFFFFFFF, 'inspection_context_errno': 0x7FFFFFFF,
     'inspection_attempts': 50, 'inspection_elapsed_ms': 1_000_000_000}
+GUI_FAILURE_REASONS = frozenset(('INVARIANT_FALSE', 'WAIT_UNSATISFIED', 'UNEXPECTED_EXCEPTION'))
+GUI_FAILURE_FUNCTIONS = frozenset(('OTHER _require _removed_tools_absent _require_owned_fixture '
+    '_until _replace _button _modal _escape _pointer _stroke _dispatch_for _context_action '
+    '_exercise_manual_invoice_check _invoice_native_overlay_check _exercise_gui run_gui_probe').split())
 
 
 def strict_json(data):
@@ -143,6 +147,22 @@ def safe_fields(value, depth=0, context=None):
     if not isinstance(value, dict) or depth > 8: raise ValueError('shape')
     result = {}; invalid = []
     for key, item in value.items():
+        if key == 'failure_location':
+            # A fixed failed GUI location is not a general traceback container.
+            # Success or unrelated reports carrying it must remain invalid.
+            if (depth == 0 and type(value.get('probe')) is str
+                    and value.get('probe') == 'gui_feature_lifecycle'
+                    and value.get('passed') is False and type(item) is dict
+                    and set(item) == {'reason', 'function', 'line'}
+                    and type(item['reason']) is str and item['reason'] in GUI_FAILURE_REASONS
+                    and type(item['function']) is str and item['function'] in GUI_FAILURE_FUNCTIONS
+                    and type(item['line']) is int
+                    and ((item['function'] == 'OTHER' and item['line'] == 0)
+                         or (item['function'] != 'OTHER' and 1 <= item['line'] <= 1_000_000))):
+                result[key] = dict(item)
+            else:
+                invalid.append(key)
+            continue
         if key in INSPECTION_ENUMS or key in INSPECTION_NUMBERS:
             # These are fixed failure facts, never general diagnostic strings.
             # A success report carrying them remains invalid instead of being

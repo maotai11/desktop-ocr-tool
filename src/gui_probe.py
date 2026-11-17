@@ -6,7 +6,9 @@ import re
 import sys
 import tempfile
 from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from sys import _getframe as _gui_failure_frame
 
 GUI_CHECK_NAMES = (
     'launcher_actions_and_capture_cancel', 'settings_cancel_and_apply', 'launcher_copy_controls',
@@ -18,10 +20,77 @@ GUI_CHECK_NAMES = (
     'shutdown_rejects_late_tool_entries',
     'windows_and_workers_closed', 'temporary_files_cleaned',
 )
+GUI_FAILURE_FUNCTIONS = frozenset((
+    '_require', '_removed_tools_absent', '_require_owned_fixture', '_until', '_replace',
+    '_button', '_modal', '_escape', '_pointer', '_stroke', '_dispatch_for', '_context_action',
+    '_exercise_manual_invoice_check', '_invoice_native_overlay_check', '_exercise_gui',
+    'run_gui_probe', 'OTHER',
+))
+GUI_FAILURE_REASONS = frozenset(('INVARIANT_FALSE', 'WAIT_UNSATISFIED', 'UNEXPECTED_EXCEPTION'))
+_GUI_FAILURE_RECORDER = ContextVar('gui_probe_failure_location', default=None)
+
+
+@contextmanager
+def _gui_failure_scope():
+    token = _GUI_FAILURE_RECORDER.set({})
+    try:
+        yield
+    finally:
+        _GUI_FAILURE_RECORDER.reset(token)
+
+
+def _gui_failure_location(frame, line=None):
+    if frame is not None and frame.f_globals is globals():
+        function = frame.f_code.co_name
+        line = frame.f_lineno if line is None else line
+        if (function in GUI_FAILURE_FUNCTIONS and function != 'OTHER'
+                and type(line) is int and 1 <= line <= 1_000_000):
+            return {'function': function, 'line': line}
+    return {'function': 'OTHER', 'line': 0}
+
+
+def _remember_failed_requirement():
+    recorder = _GUI_FAILURE_RECORDER.get()
+    if recorder is None or recorder:
+        return
+    location = {'reason': 'INVARIANT_FALSE', 'function': 'OTHER', 'line': 0}
+    frame = None
+    try:
+        frame = _gui_failure_frame(2)
+        if frame.f_globals is globals() and frame.f_code.co_name == '_until':
+            location['reason'] = 'WAIT_UNSATISFIED'
+            frame = frame.f_back
+        location.update(_gui_failure_location(frame))
+    except BaseException:  # noqa: BLE001, S110 - diagnostics cannot replace the original invariant exception
+        pass
+    finally:
+        del frame
+    recorder.update(location)
+
+
+def _remember_unexpected_gui_failure(error):
+    recorder = _GUI_FAILURE_RECORDER.get()
+    if recorder is None or recorder:
+        return
+    location = {'reason': 'UNEXPECTED_EXCEPTION', 'function': 'OTHER', 'line': 0}
+    tb = None
+    try:
+        tb = error.__traceback__
+        while tb is not None:
+            owned = _gui_failure_location(tb.tb_frame, tb.tb_lineno)
+            if owned['function'] != 'OTHER':
+                location.update(owned)
+            tb = tb.tb_next
+    except BaseException:  # noqa: BLE001, S110 - failure reporting must preserve the original failed result
+        pass
+    finally:
+        del tb
+    recorder.update(location)
 
 
 def _require(condition):
     if not condition:
+        _remember_failed_requirement()
         raise ValueError('GUI control evidence did not satisfy its invariant')
 
 
@@ -939,6 +1008,7 @@ def _exercise_gui(app, directory, checks):
             app.processEvents()
 
 
+@_gui_failure_scope()
 def run_gui_probe(report_path):
     """Report a finite action matrix, not universal GUI or OCR accuracy proof."""
     from PySide6.QtCore import QMimeData
@@ -988,8 +1058,9 @@ def run_gui_probe(report_path):
                 report['checks']['manual_invoice_check'] &= report['invoice_focus_native_verified']
         report['checks']['temporary_files_cleaned'] = not temporary.exists()
         report['passed'] = all(value is True for value in report['checks'].values())
-    except Exception:  # noqa: BLE001 - reports must never disclose text, paths, pixels or tracebacks
+    except Exception as exc:  # noqa: BLE001 - reports must never disclose text, paths, pixels or tracebacks
         report['passed'] = False
+        _remember_unexpected_gui_failure(exc)
     finally:
         if previous_home is None:
             os.environ.pop('DESKTOP_OCR_HOME', None)
@@ -1005,6 +1076,12 @@ def run_gui_probe(report_path):
         app.setQuitOnLastWindowClosed(quit_on_close)
         if temporary is not None:
             report['checks']['temporary_files_cleaned'] = not temporary.exists()
+    failure = _GUI_FAILURE_RECORDER.get()
+    if failure:
+        # Qt may swallow a Python callback's exception. A recorded failed
+        # invariant remains failed even when later controls complete.
+        report['passed'] = False
+        report['failure_location'] = dict(failure)
     if not report['passed']:
         report['error_code'] = 'GUI_PROBE_CHECK_FAILED'
     try:
