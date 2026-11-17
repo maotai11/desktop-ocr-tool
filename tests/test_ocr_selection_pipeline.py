@@ -3,6 +3,7 @@ import json
 from dataclasses import replace
 
 import pytest
+import shiboken6
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from test_data_integrity_regressions import make_pipeline, reserve
 
@@ -11,13 +12,24 @@ from src.clipboard.writer import copy_text, get_clipboard_epoch
 
 @pytest.fixture
 def selection_pipeline(qtbot, tmp_db, item_repo, file_mgr):
-    pipeline, worker, _thread, _ocr, _capture, _widget = make_pipeline(
+    pipeline, worker, thread, ocr, capture, _widget = make_pipeline(
         tmp_db, item_repo, file_mgr, copy_mode='select')
     pipeline.selection_requested.connect(pipeline.select_ocr_text)
-    yield pipeline, worker
-    for dialog in list(pipeline._ocr_selections.values()):
-        dialog.reject()
-    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    try:
+        yield pipeline, worker
+    finally:
+        # These boundary tests intentionally never start worker threads. Retire
+        # their mock owner on the GUI thread, including a shutdown timer that
+        # cannot finish through the deliberately stubbed capture barrier.
+        assert not thread.isRunning() and not ocr.isRunning()
+        assert not ocr._started_once and not capture._started_once
+        timers = (pipeline._tools_poll, pipeline._shutdown_timer)
+        for dialog in list(pipeline._ocr_selections.values()):
+            dialog.reject()
+        pipeline.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert not shiboken6.isValid(pipeline)
+        assert all(not shiboken6.isValid(timer) for timer in timers)
 
 
 def deliver(pipeline, worker, item_repo, make_image_dto, *, status='done'):
