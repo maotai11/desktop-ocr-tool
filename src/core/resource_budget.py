@@ -126,7 +126,9 @@ def managed_disk_usage(roots) -> DiskUsage:
             if _confirmed_missing(path):
                 continue
             raise ResourceInspectionError() from None
-        except OSError:
+        except OSError as exc:
+            if type(getattr(exc, 'winerror', None)) is int and exc.winerror == 5 and _confirmed_missing(path):
+                continue
             raise ResourceInspectionError() from None
         identity = (info.st_dev, info.st_ino) if info.st_ino else str(path)
         if identity in seen_nodes:
@@ -137,16 +139,21 @@ def managed_disk_usage(roots) -> DiskUsage:
             allocated, children = _measure_storage_node(path, info)
         except ResourceInspectionError as exc:
             # A bootloader can remove an unpacked file after lstat. Only a
-            # native not-found result AND a fresh absence check may retire it.
+            # native not-found or delete-pending access-denied result AND a
+            # fresh absence check may retire it. Code 5 alone is insufficient.
             # Recreated/live/inaccessible entries remain a failed inspection.
-            if exc.native_error in (2, 3) and _confirmed_missing(path):
+            if type(exc.native_error) is int and exc.native_error in (2, 3, 5) and _confirmed_missing(path):
                 continue
             raise
         except FileNotFoundError:
             if _confirmed_missing(path):
                 continue
             raise ResourceInspectionError() from None
-        except OSError:
+        except OSError as exc:
+            # Windows can also report delete-pending code 5 from directory
+            # enumeration. Retire the whole entry only after proven absence.
+            if type(getattr(exc, 'winerror', None)) is int and exc.winerror == 5 and _confirmed_missing(path):
+                continue
             raise ResourceInspectionError() from None
         seen_nodes.add(identity)
         total += allocated

@@ -102,6 +102,25 @@ CONTAINERS = {'resource_budget', 'stages', 'cold_application', 'manual_invoice_a
     'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-gui.json', 'probes', 'candidate_probes',
     'threads_stopped', 'dependency_inventory', 'native_payload_audit', 'job_before_cleanup', 'job_after_cleanup'}
 STATUSES = {'PASSED', 'FAILED', 'NOT_RUN'}
+INSPECTION_OPERATIONS = frozenset(('OTHER NODE_TYPE_REJECTED WINDOWS_FILE_ALLOCATION '
+    'DIRECTORY_LIST VERIFY_LSTAT NODE_CHANGED ROOT_RESOLVE INITIAL_LSTAT '
+    'INITIAL_MISSING_UNCONFIRMED LINK_REJECTED MEASURE_STORAGE '
+    'POST_MEASURE_MISSING_UNCONFIRMED MEASURE_OS_ERROR').split())
+INSPECTION_ENUMS = {
+    'inspection_failure_site': frozenset(('OTHER SCAN_DEADLINE NODE_CHANGED NODE_INSPECTION '
+        'STORAGE_WALK WINDOWS_FILE_ALLOCATION WINDOWS_PROCESS_MEMORY').split()),
+    'inspection_operation': INSPECTION_OPERATIONS,
+    'inspection_context_operation': INSPECTION_OPERATIONS,
+    'inspection_context_type': frozenset(('OTHER OSError BlockingIOError BrokenPipeError '
+        'ChildProcessError ConnectionError ConnectionAbortedError ConnectionRefusedError '
+        'ConnectionResetError FileExistsError FileNotFoundError InterruptedError IsADirectoryError '
+        'NotADirectoryError PermissionError ProcessLookupError TimeoutError').split()),
+    'inspection_filename_category': {'ACTIVE_MEI', 'PROFILE', 'OTHER'},
+    'inspection_filename_status': {'ABSENT', 'PRESENT_FILE', 'PRESENT_DIR', 'ACCESS_DENIED', 'OTHER'},
+}
+INSPECTION_NUMBERS = {'inspection_native_error': 0xFFFFFFFF,
+    'inspection_context_winerror': 0xFFFFFFFF, 'inspection_context_errno': 0x7FFFFFFF,
+    'inspection_attempts': 50, 'inspection_elapsed_ms': 1_000_000_000}
 
 
 def strict_json(data):
@@ -124,6 +143,18 @@ def safe_fields(value, depth=0, context=None):
     if not isinstance(value, dict) or depth > 8: raise ValueError('shape')
     result = {}; invalid = []
     for key, item in value.items():
+        if key in INSPECTION_ENUMS or key in INSPECTION_NUMBERS:
+            # These are fixed failure facts, never general diagnostic strings.
+            # A success report carrying them remains invalid instead of being
+            # silently sanitized into a qualifying resource receipt.
+            if context != 'failed_resource_stage':
+                invalid.append(key)
+            elif key in INSPECTION_ENUMS:
+                if type(item) is str and item in INSPECTION_ENUMS[key]: result[key] = item
+                else: invalid.append(key)
+            elif type(item) is int and 0 <= item <= INSPECTION_NUMBERS[key]: result[key] = item
+            else: invalid.append(key)
+            continue
         if context == 'handwriting_probes' and key in ('source','frozen','outer_and_helper_outbound_blocked'):
             if type(item) is str and item in STATUSES: result[key] = item
             else: invalid.append(key)
@@ -207,7 +238,14 @@ def safe_fields(value, depth=0, context=None):
             elif key not in ('elapsed_seconds','wall_seconds','scan_duration_seconds','mean_ms') and type(item) is int and safe_number(item) and (item >= 0 or key == 'exit_code'): result[key] = item
             else: invalid.append(key)
         elif key in CONTAINERS:
-            if isinstance(item, dict): result[key] = safe_fields(item, depth + 1, key)
+            if isinstance(item, dict):
+                child_context = key
+                if depth == 0 and value.get('probe') == 'resource_budget' and key == 'stages':
+                    child_context = 'resource_stages'
+                elif context == 'resource_stages' and key in ('cold_application', 'manual_invoice_and_helpers'):
+                    child_context = ('failed_resource_stage' if item.get('passed') is False
+                                     else 'resource_stage')
+                result[key] = safe_fields(item, depth + 1, child_context)
             elif type(item) is str and item in STATUSES: result[key] = item
             else: invalid.append(key)
     # These flags disclose only presence/count, never error/trace/paths/labels.

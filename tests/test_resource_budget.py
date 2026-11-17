@@ -11,7 +11,7 @@ import pytest
 from src.core import resource_budget as budget
 
 
-@pytest.mark.parametrize('native_error', [2, 3])
+@pytest.mark.parametrize('native_error', [2, 3, 5])
 def test_disappearing_owned_file_is_removed_as_a_whole_measurement(tmp_path, monkeypatch, native_error):
     removed = tmp_path / 'unpacking.tmp'
     removed.write_bytes(b'x' * 200_000)
@@ -32,7 +32,7 @@ def test_disappearing_owned_file_is_removed_as_a_whole_measurement(tmp_path, mon
 
 
 @pytest.mark.parametrize('native_error,remove', [(2, False), (3, False), (5, False), (32, False),
-                                               (33, False), (5, True), (32, True)])
+                                               (33, False), (32, True), (33, True)])
 def test_unconfirmed_or_unrelated_inspection_failure_is_never_skipped(tmp_path, monkeypatch, native_error, remove):
     target = tmp_path / 'owned.bin'
     target.write_bytes(b'keep original data')
@@ -50,7 +50,8 @@ def test_unconfirmed_or_unrelated_inspection_failure_is_never_skipped(tmp_path, 
         assert target.read_bytes() == b'keep original data'
 
 
-def test_recreated_path_after_native_not_found_still_blocks_admission(tmp_path, monkeypatch):
+@pytest.mark.parametrize('native_error', [2, 3, 5])
+def test_recreated_path_after_native_not_found_still_blocks_admission(tmp_path, monkeypatch, native_error):
     target = tmp_path / 'recreated.bin'
     target.write_bytes(b'old')
     monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
@@ -58,7 +59,7 @@ def test_recreated_path_after_native_not_found_still_blocks_admission(tmp_path, 
     def allocation(path):
         path.unlink()
         path.write_bytes(b'recreated live allocation')
-        raise budget.ResourceInspectionError(native_error=2)
+        raise budget.ResourceInspectionError(native_error=native_error)
 
     monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
     with pytest.raises(budget.ResourceInspectionError):
@@ -383,3 +384,169 @@ def test_log_actual_bytes_do_not_expand_newlines_after_admission(tmp_path):
     handler.close()
     assert target.read_bytes() == (text + '\n').encode('utf-8')
     assert target.stat().st_size < 8192
+
+
+@pytest.mark.parametrize('route', ['native', 'directory', 'initial'])
+def test_windows_denied_but_gone_retires_whole_node_without_hiding_live_alias(tmp_path, monkeypatch, route):
+    survivor = tmp_path / 'survivor.bin'
+    survivor.write_bytes(b'x' * 200_000)
+    retired = tmp_path / 'retired'
+    if route == 'directory':
+        retired.mkdir()
+        (retired / 'child.bin').write_bytes(b'y' * 90_000)
+    else:
+        os.link(survivor, retired)
+    original_lstat, original_iterdir = Path.lstat, Path.iterdir
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    def denied():
+        error = PermissionError(13, 'access denied')
+        error.winerror = 5
+        return error
+    def remove():
+        if route == 'directory':
+            (retired / 'child.bin').unlink()
+            retired.rmdir()
+        else:
+            retired.unlink()
+    def allocation(path):
+        if path == retired and route == 'native':
+            remove()
+            raise budget.ResourceInspectionError(native_error=5)
+        return original_lstat(path).st_size
+    def listing(path):
+        if path == retired:
+            remove()
+            raise denied()
+        return original_iterdir(path)
+    initial_seen = False
+    def lstat(path, *args, **kwargs):
+        nonlocal initial_seen
+        if path == retired and route == 'initial' and not initial_seen:
+            initial_seen = True
+            remove()
+            raise denied()
+        return original_lstat(path, *args, **kwargs)
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    if route == 'directory':
+        monkeypatch.setattr(Path, 'iterdir', listing)
+    if route == 'initial':
+        monkeypatch.setattr(Path, 'lstat', lstat)
+    # LIFO makes the retired alias fail first: it must never enter seen_nodes.
+    usage = budget.managed_disk_usage([survivor, retired])
+    assert usage.files == 1 and usage.directories == 0
+    assert usage.bytes >= 200_000 and survivor.read_bytes() == b'x' * 200_000
+
+
+@pytest.mark.parametrize('route', ['native', 'directory', 'initial'])
+@pytest.mark.parametrize('state', ['live', 'recreated', 'symlink', 'denied', 'unknown'])
+def test_windows_access_denied_requires_fresh_proven_absence(tmp_path, monkeypatch, route, state):
+    target = tmp_path / 'owned'
+    target.mkdir() if route == 'directory' else target.write_bytes(b'original')
+    survivor = tmp_path / 'keep.bin'; survivor.write_bytes(b'keep')
+    original_lstat, original_iterdir = Path.lstat, Path.iterdir
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    failed = False
+    def trigger():
+        nonlocal failed
+        failed = True
+        if state in ('recreated', 'symlink'):
+            target.rmdir() if route == 'directory' else target.unlink()
+            if state == 'symlink':
+                target.symlink_to(survivor)
+            elif route == 'directory':
+                target.mkdir()
+            else:
+                target.write_bytes(b'replacement')
+        error = PermissionError(13, 'access denied'); error.winerror = 5
+        raise error
+    def lstat(path, *args, **kwargs):
+        if path == target:
+            if route == 'initial' and not failed:
+                trigger()
+            if failed and state == 'denied':
+                raise PermissionError(13, 'fresh stat denied')
+            if failed and state == 'unknown':
+                raise OSError('fresh stat unknown')
+        return original_lstat(path, *args, **kwargs)
+    def allocation(path):
+        nonlocal failed
+        if path == target and route == 'native':
+            try:
+                trigger()
+            except PermissionError:
+                raise budget.ResourceInspectionError(native_error=5) from None
+        return original_lstat(path).st_size
+    def listing(path):
+        if path == target:
+            trigger()
+        return original_iterdir(path)
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    if route == 'directory':
+        monkeypatch.setattr(Path, 'iterdir', listing)
+    with pytest.raises(budget.ResourceInspectionError):
+        budget.managed_disk_usage([target])
+    assert survivor.read_bytes() == b'keep'
+
+
+@pytest.mark.parametrize('route', ['native', 'directory', 'initial'])
+@pytest.mark.parametrize('code', [32, 33, None, True, 5.0, '5'])
+def test_only_exact_windows_delete_denied_code_can_retire_absent_node(tmp_path, monkeypatch, route, code):
+    target = tmp_path / 'owned'
+    target.mkdir() if route == 'directory' else target.write_bytes(b'original')
+    original_lstat, original_iterdir = Path.lstat, Path.iterdir
+    failed = False
+    def fail():
+        nonlocal failed
+        failed = True
+        target.rmdir() if route == 'directory' else target.unlink()
+        if route == 'native':
+            raise budget.ResourceInspectionError(native_error=code)
+        error = PermissionError(13, 'denied')
+        if code is not None:
+            error.winerror = code
+        raise error
+    def allocation(path):
+        if path == target and route == 'native':
+            fail()
+        return original_lstat(path).st_size
+    def listing(path):
+        if path == target:
+            fail()
+        return original_iterdir(path)
+    def lstat(path, *args, **kwargs):
+        if path == target and route == 'initial' and not failed:
+            fail()
+        return original_lstat(path, *args, **kwargs)
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    if route == 'directory':
+        monkeypatch.setattr(Path, 'iterdir', listing)
+    with pytest.raises(budget.ResourceInspectionError):
+        budget.managed_disk_usage([target])
+
+
+def test_retired_alias_cannot_bypass_quota_and_live_denial_never_admits_writer(tmp_path, monkeypatch):
+    survivor = tmp_path / 'survivor.bin'; survivor.write_bytes(b'keep')
+    retired = tmp_path / 'retired.bin'; os.link(survivor, retired)
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(budget, 'managed_storage_roots', lambda *args, **kwargs: (survivor, retired))
+    def allocation(path):
+        if path == retired:
+            retired.unlink()
+            raise budget.ResourceInspectionError(native_error=5)
+        return budget.RESOURCE_LIMIT_BYTES - 1
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    before = budget._reserved_bytes
+    with pytest.raises(budget.ResourceBudgetExceeded):
+        with budget.disk_quota_guard(reserve_bytes=1):
+            pytest.fail('The live alias still occupies the quota')
+    assert budget._reserved_bytes == before and survivor.read_bytes() == b'keep'
+    def live_denial(path):
+        raise budget.ResourceInspectionError(native_error=5)
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', live_denial)
+    with pytest.raises(budget.ResourceInspectionError):
+        with budget.disk_quota_guard(reserve_bytes=1):
+            pytest.fail('A live access-denied node must prevent writing')
+    assert budget._reserved_bytes == before and survivor.read_bytes() == b'keep'

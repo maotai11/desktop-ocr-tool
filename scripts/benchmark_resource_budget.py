@@ -7,24 +7,30 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-from hashlib import sha256
 import json
 import math
 import os
-from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+from hashlib import sha256
+from pathlib import Path
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.core.resource_budget import (RESOURCE_LIMIT_BYTES, ResourceInspectionError, ResourceMetadataChanged,
-                                      _windows_memory, managed_disk_usage)
+from src.core.resource_budget import (
+    RESOURCE_LIMIT_BYTES,
+    ResourceInspectionError,
+    ResourceMetadataChanged,
+    _windows_memory,
+    managed_disk_usage,
+)
 from src.core.validation_report import write_validation_report
 from src.core.version import APP_VERSION
 
@@ -71,6 +77,88 @@ def sample_managed_disk_usage(roots):
     raise ResourceMetadataChanged()
 
 
+_OS_CONTEXT_TYPES = {kind: kind.__name__ for kind in (
+    OSError, BlockingIOError, BrokenPipeError, ChildProcessError, ConnectionError,
+    ConnectionAbortedError, ConnectionRefusedError, ConnectionResetError,
+    FileExistsError, FileNotFoundError, InterruptedError, IsADirectoryError,
+    NotADirectoryError, PermissionError, ProcessLookupError, TimeoutError)}
+
+
+def _owned_inspection_operation(error):
+    """Only known source operations; do not export filenames or traceback data."""
+    operation = 'OTHER'
+    tb = error.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        if code.co_filename == _windows_memory.__code__.co_filename:
+            known = {
+                '_measure_storage_node': {83: 'NODE_TYPE_REJECTED', 84: 'WINDOWS_FILE_ALLOCATION',
+                    86: 'DIRECTORY_LIST', 87: 'VERIFY_LSTAT', 90: 'NODE_CHANGED', 97: 'NODE_CHANGED'},
+                'managed_disk_usage': {114: 'ROOT_RESOLVE', 116: 'ROOT_RESOLVE',
+                    124: 'INITIAL_LSTAT', 128: 'INITIAL_MISSING_UNCONFIRMED', 132: 'INITIAL_LSTAT',
+                    137: 'LINK_REJECTED', 139: 'MEASURE_STORAGE',
+                    151: 'POST_MEASURE_MISSING_UNCONFIRMED', 157: 'MEASURE_OS_ERROR'},
+            }.get(code.co_name, {}).get(tb.tb_lineno)
+            if known is not None:
+                operation = known
+        tb = tb.tb_next
+    return operation
+
+
+def _inspection_context_details(error):
+    """Bounded failure-only projection; at most one fresh stat, no source text."""
+    result = {'inspection_operation': 'OTHER', 'inspection_context_type': 'OTHER',
+              'inspection_context_operation': 'OTHER', 'inspection_filename_category': 'OTHER',
+              'inspection_filename_status': 'OTHER'}
+    try:
+        result['inspection_operation'] = _owned_inspection_operation(error)
+        pending, seen, chain = [error], set(), []
+        while pending and len(chain) < 8:
+            node = pending.pop(0)
+            if id(node) in seen:
+                continue
+            seen.add(id(node)); chain.append(node)
+            pending.extend(value for value in (node.__cause__, node.__context__) if value is not None)
+        selected = next((node for node in chain[1:] if type(node) in _OS_CONTEXT_TYPES),
+                        chain[1] if len(chain) > 1 else None)
+        if selected is None:
+            return result
+        result['inspection_context_type'] = _OS_CONTEXT_TYPES.get(type(selected), 'OTHER')
+        result['inspection_context_operation'] = _owned_inspection_operation(selected)
+        if not isinstance(selected, OSError):
+            return result
+        for name, maximum in (('winerror', 0xFFFFFFFF), ('errno', 0x7FFFFFFF)):
+            value = getattr(selected, name, None)
+            if type(value) is int and 0 <= value <= maximum:
+                result['inspection_context_' + name] = value
+        filename = selected.filename
+        if type(filename) is not str or not 0 < len(filename) <= 32768:
+            return result
+        parts = tuple(part.casefold() for part in Path(filename).parts)
+        for index, part in enumerate(parts):
+            if part.startswith('inkpick-resource-'):
+                owned = parts[index + 1:]
+                if owned[:1] == ('profile',):
+                    result['inspection_filename_category'] = 'PROFILE'
+                elif owned[:1] == ('temp',) and any(value.startswith('_mei') for value in owned[1:]):
+                    result['inspection_filename_category'] = 'ACTIVE_MEI'
+                break
+        try:
+            mode = os.lstat(filename).st_mode
+            result['inspection_filename_status'] = ('PRESENT_FILE' if stat.S_ISREG(mode)
+                else 'PRESENT_DIR' if stat.S_ISDIR(mode) else 'OTHER')
+        except FileNotFoundError:
+            result['inspection_filename_status'] = 'ABSENT'
+        except PermissionError:
+            result['inspection_filename_status'] = 'ACCESS_DENIED'
+        except (OSError, ValueError):
+            pass
+    except BaseException:  # noqa: BLE001, S110 - preserve the original failed stage, including diagnostic faults
+        # Even a malformed diagnostic exception must preserve the failed stage.
+        pass
+    return result
+
+
 def _inspection_failure_details(error):
     """Failure-only, fixed origin and bounded scalar counters; never traceback text."""
     site = 'OTHER'
@@ -97,6 +185,7 @@ def _inspection_failure_details(error):
         value = getattr(error, source, None)
         if type(value) is int and 0 <= value <= maximum:
             result[target] = value
+    result.update(_inspection_context_details(error))
     return result
 
 
