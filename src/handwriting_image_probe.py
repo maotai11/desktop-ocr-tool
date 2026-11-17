@@ -1,18 +1,38 @@
 """Source/frozen manual-raster lifecycle gate, not an accuracy benchmark."""
 import hashlib
 import json
-from pathlib import Path
 import sys
 from src.core.branding import resource_root
 from src.core.validation_report import executable_sha256, write_validation_report
 from src.core.version import APP_VERSION
 
 
+_CONTROLLED_FAILURE_REASONS = {
+    '手寫辨識逾時，請重試': 'TIMEOUT',
+    '手寫引擎或模型缺漏／版本不符，請使用完整免安裝資料夾': 'ASSETS_UNAVAILABLE',
+    '無法安全啟動手寫引擎': 'JOB_ASSIGNMENT_FAILED',
+    '手寫引擎通訊失敗': 'IPC_WRITE_FAILED',
+    '手寫引擎版本或回傳格式不符，請更新完整免安裝資料夾': 'PROTOCOL_INVALID',
+    '手寫引擎輸出超出限制': 'OUTPUT_LIMIT',
+    '手寫引擎無法啟動': 'PROCESS_START_FAILED',
+    '手寫引擎已停止，請重試': 'PROCESS_EXITED',
+    '手寫辨識失敗，請重試': 'RECOGNITION_FAILED',
+}
+IMAGE_FAILURE_REASONS = frozenset((*_CONTROLLED_FAILURE_REASONS.values(), 'PROBE_DEADLINE', 'OTHER'))
+
+
+def _image_failure_reason(args):
+    if not args:
+        return 'PROBE_DEADLINE'
+    if len(args) != 1 or type(args[0]) is not str:
+        return 'OTHER'
+    return _CONTROLLED_FAILURE_REASONS.get(args[0], 'OTHER')
+
+
 def run_image_probe(report_path):
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
     from src.handwriting.image_controller import ImageHandwritingController
-    from src.handwriting.assets import MODEL_SHA256
     from src.handwriting.protocol import VERSION
     from src.ocr.model_validator import verified_model_manifest
     app = QApplication.instance() or QApplication([])
@@ -42,7 +62,9 @@ def run_image_probe(report_path):
     deadline=QTimer();deadline.setSingleShot(True)
     def abort(*args):
         nonlocal failed
-        failed=True;report['error']='IMAGE_PROBE_RUNTIME_FAILURE';controller.stop()
+        failed=True;report['error']='IMAGE_PROBE_RUNTIME_FAILURE'
+        report['failure_reason']=_image_failure_reason(args)
+        controller.stop()
     def result(generation,values):
         report['inference_completed']=True
         report['candidates']=[value.label for value in values]

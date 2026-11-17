@@ -325,6 +325,87 @@ def test_manual_fallback_refuses_blue_outside_band_when_grid_is_ambiguous(owner,
     assert ocr.requests == [] and controller.state == 'error'
 
 
+def manual_gray_table(width=400):
+    image = np.full((125, width, 3), 255, np.uint8)
+    image[[0, 30, 60, 90, 120]] = 0
+    image[32:59, 5:75] = (190, 190, 190)
+    # Native ClearType can produce blue glyph edges away from a gray row.
+    for x in (40, 80, 120, 160, 200):
+        image[10:22, x] = (240, 60, 0)
+        image[10:22, x+1:x+4] = 0
+    return image
+
+
+@pytest.mark.parametrize('scale', [1, 2])
+def test_manual_gray_row_uses_shared_absent_selection_analysis_with_cleartype(scale):
+    image = np.repeat(np.repeat(manual_gray_table(), scale, axis=0), scale, axis=1)
+    selected = InvoiceCheckController._selected_row(image, (31*scale, 60*scale))
+    assert selected['source'] == 'manual'
+    assert selected['row'] == [31*scale, 60*scale]
+
+
+@pytest.mark.parametrize('scale', [1, 2])
+@pytest.mark.parametrize('evidence', ['outside_missing_grid', 'multiple', 'gradient', 'thin_unknown'])
+def test_manual_row_cannot_override_true_or_ambiguous_blue_evidence(scale, evidence):
+    image = manual_gray_table()
+    if evidence == 'outside_missing_grid':
+        image[62:89, 5:75] = (240, 60, 0)
+        image[60] = 255
+    elif evidence == 'multiple':
+        image[32:59, 5:75] = (240, 60, 0)
+        image[62:89, 5:75] = (240, 60, 0)
+    elif evidence == 'gradient':
+        for y in range(63, 88):
+            image[y, 250:254] = (215+y-63, 60, 0)
+        image[63:88, 254:256] = (0, 60, 220)
+    else:
+        image[10:22, 250:254] = (240, 60, 0)
+        image[10:22, 254:256] = 0
+    image = np.repeat(np.repeat(image, scale, axis=0), scale, axis=1)
+    with pytest.raises(ValueError):
+        InvoiceCheckController._selected_row(image, (31*scale, 60*scale))
+
+
+@pytest.mark.parametrize('scale', [1, 2])
+def test_old_manual_row_refuses_singleton_gradient_selection_elsewhere(scale):
+    image = np.full((140, 400, 3), 255, np.uint8)
+    image[[0, 30, 60, 90, 120, 139]] = 0
+    # The only blue evidence is a different row's narrow gradient selection.
+    # Its adjacent red ink must not turn positive selection into typed absence.
+    for y in range(63, 88):
+        image[y, 200:204] = (215+y-63, 60, 0)
+    image[63:88, 204:206] = (0, 60, 220)
+    image = np.repeat(np.repeat(image, scale, axis=0), scale, axis=1)
+    with pytest.raises(ValueError):
+        InvoiceCheckController._selected_row(image, (31*scale, 60*scale))
+
+
+@pytest.mark.parametrize('changed', [False, True])
+def test_manual_gray_row_checks_snapshot_and_rejects_later_selected_row(owner, qtbot, changed):
+    controller, capture, ocr = owner
+    controller.set_manual_row((31, 60))
+    controller.set_header_row((1, 30))
+    original = pair()
+    original['images']['table'] = manual_gray_table(width=500)
+    begin(owner, qtbot, original)
+    read_all(owner, qtbot)
+    assert [request[2] for request in ocr.requests] == ['invoice', 'header', 'row']
+    assert ocr.requests[-1][3].shape == (29, 500, 3)
+    verification = deepcopy(original)
+    if changed:
+        verification['images']['table'][62:89, 5:75] = (240, 60, 0)
+    capture.finish(verification)
+    if changed:
+        assert controller.state == 'error' and controller.last_result is None
+    else:
+        assert controller.state == 'ready'
+        assert controller.last_result['active_row'] == [0, 31, 500, 29]
+        assert controller.last_result['status'] == 'matched'
+    assert not controller.busy
+    qtbot.wait(20)
+    assert len(capture.requests) == 2 and len(ocr.requests) == 3
+
+
 def test_memory_exhaustion_does_not_submit_ocr_or_leave_a_busy_lease(owner, qtbot, monkeypatch):
     controller, capture, ocr = owner
     def exhausted(**_):
@@ -333,6 +414,149 @@ def test_memory_exhaustion_does_not_submit_ocr_or_leave_a_busy_lease(owner, qtbo
     begin(owner, qtbot)
     assert controller.state == 'error' and not controller.busy
     assert len(capture.requests) == 1 and ocr.requests == []
+
+
+def initial_calibration_read(owner, qtbot, *, invoice=None, row=None):
+    begin(owner, qtbot)
+    ocr = owner[2]
+    ocr.finish(invoice or stage_result('invoice'))
+    ocr.finish(stage_result('header'))
+    ocr.finish(row or stage_result('row'))
+
+
+def missing_amount_result():
+    result = stage_result('invoice')
+    result['detail'] = [observation for observation in result['detail']
+                        if observation['raw_text'] != '1,000']
+    result['detail'].append(item('AMOUNT1000', 0, 75, 220))
+    return result
+
+
+def amount_crop_result(value='1000', status='done'):
+    return {'status': status, 'detail': [{'text': value, 'raw_text': value,
+             'box': [2, 2, 80, 12], 'confidence': .99}]}
+
+
+@pytest.mark.parametrize('value,status,expected', [('1000', 'done', 'matched'),
+                                                 ('2000', 'done', 'different'),
+                                                 ('1000', 'needs_review', 'review')])
+def test_explicit_roi_recovers_joined_field_without_guessing_or_forcing_green(owner, qtbot, value, status, expected):
+    controller, capture, ocr = owner
+    controller.set_overrides('invoice', {'net_amount': (100/320, 70/200, 120/320, 16/200)})
+    initial_calibration_read(owner, qtbot, invoice=missing_amount_result())
+    assert ocr.requests[-1][2] == 'calibration_invoice_net_amount'
+    assert ocr.requests[-1][3].shape == (16, 120, 3)
+    ocr.finish(amount_crop_result(value, status))
+    qtbot.waitUntil(lambda: len(capture.requests) == 2)
+    capture.finish(pair())
+    result = controller.last_result
+    assert result['status'] == expected
+    assert result['invoice_fields']['net_amount']['box'] == [102., 72., 80., 12.]
+    assert len(ocr.requests) == 4 and not controller.busy
+
+
+def test_existing_uncertain_value_is_retained_on_calibrated_crop_conflict(owner, qtbot):
+    controller, capture, ocr = owner
+    controller.set_overrides('invoice', {'net_amount': (100/320, 70/200, 120/320, 25/200)})
+    initial_calibration_read(owner, qtbot, invoice=stage_result('invoice', needs_review=True))
+    ocr.finish(amount_crop_result('9000'))
+    qtbot.waitUntil(lambda: len(capture.requests) == 2)
+    capture.finish(pair())
+    field = controller.last_result['invoice_fields']['net_amount']
+    assert field['value'] == '1000' and field['ambiguous']
+    assert {candidate['value'] for candidate in field['candidates']} == {'1000', '9000'}
+    assert controller.last_result['status'] == 'review'
+
+
+def test_calibration_is_once_bounded_to_compared_five_fields_and_keeps_only_descriptors(owner, qtbot):
+    from src.invoice_check.fields import FIELD_KEYS
+    controller, capture, ocr = owner
+    mapping = dict.fromkeys(FIELD_KEYS, (0., 0., 1., 1.))
+    controller.set_overrides('invoice', mapping)
+    controller.set_overrides('table', mapping)
+    initial_calibration_read(owner, qtbot, invoice=stage_result('invoice', needs_review=True),
+                             row=stage_result('row', needs_review=True))
+    tasks = controller._operation['calibration_tasks']
+    assert len(tasks) == 10 and len(ocr.requests) == 4
+    assert all(set(task) == {'side', 'key', 'rect', 'region'} for task in tasks.values())
+    assert all(task['key'] not in ('total_amount', 'buyer_tax_id') for task in tasks.values())
+    for _ in range(10):
+        ocr.finish({'status': 'done', 'detail': []})
+    qtbot.waitUntil(lambda: len(capture.requests) == 2)
+    capture.finish(pair())
+    assert len(ocr.requests) == 13
+    assert len({request[2] for request in ocr.requests[3:]}) == 10
+    assert controller.last_result['status'] == 'review' and not controller.busy
+
+
+@pytest.mark.parametrize('stop', ['cancel', 'shutdown'])
+def test_calibrated_crop_late_ack_cannot_publish_or_queue_after_stop(owner, qtbot, stop):
+    controller, capture, ocr = owner
+    controller.set_overrides('invoice', {'net_amount': (100/320, 70/200, 120/320, 16/200)})
+    initial_calibration_read(owner, qtbot, invoice=missing_amount_result())
+    getattr(controller, stop)()
+    assert ocr.requests[-1][4].is_set() and controller.busy
+    ocr.finish(amount_crop_result())
+    qtbot.wait(20)
+    assert controller.last_result is None and len(ocr.requests) == 4 and len(capture.requests) == 1
+    assert not controller.busy
+
+
+@pytest.mark.parametrize('reject', ['budget', 'cancel', 'cancel_then_budget'])
+def test_crop_budget_boundary_never_submits_after_denial_or_reentrant_cancel(owner, qtbot, monkeypatch, reject):
+    controller, capture, ocr = owner
+    controller.set_overrides('invoice', {'net_amount': (100/320, 70/200, 120/320, 16/200)})
+    begin(owner, qtbot)
+    ocr.finish(missing_amount_result())
+    ocr.finish(stage_result('header'))
+    def boundary(**_):
+        if reject == 'budget':
+            raise ResourceBudgetExceeded('memory')
+        controller.cancel()
+        if reject == 'cancel_then_budget':
+            raise ResourceBudgetExceeded('memory')
+    monkeypatch.setattr('src.invoice_check.controller.memory_preflight', boundary)
+    ocr.finish(stage_result('row'))
+    assert len(ocr.requests) == 3 and len(capture.requests) == 1
+    assert not controller.busy and controller.last_result is None
+    assert controller.state == ('error' if reject == 'budget' else 'idle')
+
+
+def test_calibrated_read_keeps_final_same_row_verification(owner, qtbot):
+    controller, capture, ocr = owner
+    controller.set_overrides('invoice', {'net_amount': (100/320, 70/200, 120/320, 16/200)})
+    initial_calibration_read(owner, qtbot, invoice=missing_amount_result())
+    ocr.finish(amount_crop_result())
+    qtbot.waitUntil(lambda: len(capture.requests) == 2)
+    changed = pair()
+    changed['images']['table'][45, 450] = 0
+    capture.finish(changed)
+    assert controller.state == 'error' and controller.last_result is None
+
+
+def test_table_calibration_rereads_only_active_row_and_keeps_row_local_coordinates(owner, qtbot):
+    controller, capture, ocr = owner
+    controller.set_overrides('table', {'net_amount': (.02, .8, .16, .1)})
+    row = stage_result('row')
+    row['detail'].pop(0)
+    initial_calibration_read(owner, qtbot, row=row)
+    assert ocr.requests[-1][2] == 'calibration_row_net_amount'
+    assert ocr.requests[-1][3].shape == (29, 80, 3)
+    ocr.finish({'status': 'done', 'detail': [item('1000', 2, 3, 60)]})
+    qtbot.waitUntil(lambda: len(capture.requests) == 2)
+    capture.finish(pair())
+    assert controller.last_result['row_fields']['net_amount']['box'] == [12., 3., 60., 16.]
+    assert controller.last_result['active_row'] == [0, 31, 500, 29]
+
+
+def test_calibrated_quad_and_alternative_boxes_translate_without_mutating_raw_result():
+    detail = [{'box': [[1, 2], [9, 2], [9, 8], [1, 8]], 'raw_text': '1000',
+               'alternatives': [{'box': [2, 3, 6, 4], 'raw_text': '1001'}]}]
+    original = deepcopy(detail)
+    translated = InvoiceCheckController._translated_detail(detail, 100, 70)
+    assert translated[0]['box'] == [[101, 72], [109, 72], [109, 78], [101, 78]]
+    assert translated[0]['alternatives'][0]['box'] == [102, 73, 6, 4]
+    assert detail == original
 
 
 class VisualEngine:
@@ -358,6 +582,9 @@ class VisualEngine:
         stage = ('invoice' if image.shape[0] == 200 else
                  'row' if np.any(image[:, :, 0] > image[:, :, 2]) else 'header')
         return stage_result(stage)
+
+    def run_invoice_ocr(self, image, mode='screen', *, cancel_event=None):
+        return self.run_cancellable_ocr(image, mode, cancel_event)
 
 
 def test_real_shared_ocr_worker_serializes_all_three_crops(qtbot):

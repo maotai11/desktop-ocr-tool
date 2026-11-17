@@ -2,6 +2,7 @@
 import logging
 import hashlib
 import time
+import math
 from ..runtime_policy import configure_runtime
 configure_runtime()
 import cv2
@@ -105,7 +106,8 @@ class OcrEngine:
                                 intra_op_num_threads=2, inter_op_num_threads=1,
                                 rec_batch_num=1, rec_img_shape=[3, 48, 320])
         identity = verify_recognizer_identity(engine.text_rec, manifest['rec'])
-        engine.text_rec = BoundedRecognizer(engine.text_rec)
+        self._recognizer_model_context = (self.model_profile, manifest['rec']['sha256'], identity['decoder_sha256'])
+        engine.text_rec = BoundedRecognizer(engine.text_rec, model_context=self._recognizer_model_context)
         self.model_identity = {'profile': self.model_profile, 'runtime': 'rapidocr_onnxruntime',
                                'runtime_version': version('rapidocr-onnxruntime'),
                                'recognition': identity, 'recognition_batch': 1,
@@ -182,7 +184,14 @@ class OcrEngine:
     def run_cancellable_ocr(self, image, mode, cancel_event):
         return self.run_ocr(image, mode, cancel_event=cancel_event)
 
+    def run_invoice_ocr(self, image: np.ndarray, mode: str = 'screen', *, cancel_event=None) -> dict:
+        """Explicit transient invoice region: one bounded canvas, genuine review policy."""
+        return self._run_ocr(image, mode, cancel_event=cancel_event, invoice_region=True)
+
     def run_ocr(self, image: np.ndarray, mode: str = 'screen', *, cancel_event=None) -> dict:
+        return self._run_ocr(image, mode, cancel_event=cancel_event)
+
+    def _run_ocr(self, image, mode, *, cancel_event=None, invoice_region=False):
         started = time.monotonic()
         recognizer = getattr(self._engine, 'text_rec', None)
         if hasattr(recognizer, 'reset_budget'):
@@ -196,88 +205,164 @@ class OcrEngine:
                 raise ValueError('OCR input must be uint8 BGR with three channels')
             if not self._ready:
                 raise ValueError('OCR 引擎未就緒')
+            if invoice_region:
+                return self._run_invoice_region(image, mode, cancel_event=cancel_event)
             tiles = plan_ocr_tiles(image.shape, self._max_short_side)
             cancel_args = {'cancel_event': cancel_event} if cancel_event is not None else {}
             if not tiles:
                 result = self._run_single_ocr(image, mode, **cancel_args)
                 result['preprocessing'] = {'strategy': 'whole_image', 'source_hw': list(image.shape[:2])}
                 return result
-            merged, tile_evidence, warnings, tile_hypotheses = [], [], [], []
-            tile_candidates = []
-            for index, tile in enumerate(tiles):
-                _check_cancelled(cancel_event)
-                if self._progress_callback:
-                    self._progress_callback(10 + int(75 * index / len(tiles)),
-                                            f'切片辨識 {index + 1}/{len(tiles)}')
-                # A perfectly uniform crop contains no image information. This
-                # exact test does not discard faint/low-contrast text.
-                x, y, w, h = tile['source_xywh']
-                crop = image[y:y + h, x:x + w]
-                uniform = bool(np.all(crop == crop[0, 0]))
-                if uniform:
-                    result = {'text': '', 'detail': [], 'status': 'done',
-                              'engine': 'rapidocr_onnxruntime', 'model_version': self._model_version,
-                              'hypotheses': {'skipped': 'exactly_uniform_source_tile'}}
-                else:
-                    # At most one inference tile and its enhancement are alive.
-                    prepared = prepare_ocr_tile(image, tile)
-                    result = self._run_single_ocr(prepared, mode, preprocessed=True, **cancel_args)
-                    del prepared
-                _check_cancelled(cancel_event)
-                if result['status'] == 'failed':
-                    raise RuntimeError(f'切片 {index + 1}/{len(tiles)} 失敗: {result.get("error", "unknown")}')
-                if result['text'] and not result.get('detail'):
-                    raise ValueError('切片結果沒有座標，無法安全合併；原圖保留供重試')
-                tile_hypotheses.append({'tile_index': index, 'hypotheses': result.get('hypotheses', {}),
-                                        'detail': result['detail']})
-                raw = [[r['box'], r['text'], r['confidence']] for r in result['detail']]
-                mapped = restore_tile_results(raw, tile)
-                for row in result.get('detail', []):
-                    try:
-                        items = validated_alternatives(row.get('alternatives'))
-                        if not items:
-                            continue
-                        parent = restore_tile_results([[row['box'], row['text'], row['confidence']]], tile)
-                        alternatives = []
-                        for item in items:
-                            candidate = restore_tile_results([[item['box'], item['raw_text'], item['confidence']]], tile)
-                            if candidate:
-                                alternatives.append(dict(item, box=candidate[0][0]))
-                        if parent and alternatives:
-                            tile_candidates.append({'box': parent[0][0], 'original_text': row['text'],
-                                                    'alternatives': alternatives})
-                    except Exception as candidate_error:
-                        logger.warning('切片候選座標整理未完成 (%s)', type(candidate_error).__name__)
-                merged, conflicts = fuse_tiles(merged, mapped)
-                if conflicts:
-                    warnings.append(f'tile {index + 1}: overlapping seam hypotheses disagree')
-                warnings.extend(result.get('warnings', []))
-                tile_evidence.append(dict(tile, inference_skipped=uniform, engine=result.get('engine', 'unknown'),
-                                          model_version=result.get('model_version', 'unknown')))
-            final = self._process_results(merged, int((time.monotonic() - started) * 1000))
-            self._attach_retry_candidates(final, tile_candidates)
-            # Tiling is a bounded recovery path, not a completeness certificate.
-            final['status'] = 'needs_review'
-            for row in final['detail']:
-                row.pop('raw_text', None)  # Raw model text lives in per-tile hypotheses.
-                row['text_source'] = 'tile_fusion'
-            engines = sorted({r['engine'] for r in tile_evidence})
-            versions = sorted({r['model_version'] for r in tile_evidence})
-            small_region = len(tiles) == 1 and tiles[0].get('strategy') == 'bounded_small_region'
-            final.update(engine=engines[0] if len(engines) == 1 else 'mixed:' + ','.join(engines),
-                         model_version='|'.join(versions),
-                         warnings=[('Small-region OCR: review characters touching the selection boundary'
-                                    if small_region else 'Tiled OCR: review text at tile boundaries')] + warnings,
-                         hypotheses={'tiles': tile_hypotheses},
-                         preprocessing={'strategy': 'bounded_small_region' if small_region else 'overlapping_tiles',
-                                        'source_hw': list(image.shape[:2]), 'tiles': tile_evidence})
-            return final
+            operation = getattr(recognizer, 'exact_raster_operation', None)
+            context = getattr(self, '_recognizer_model_context', None)
+            if (len(tiles) > 1 and callable(operation)
+                    and self.model_identity.get('profile') == self.model_profile):
+                with operation(context):
+                    return self._run_tiles(image, mode, tiles, started, cancel_event)
+            return self._run_tiles(image, mode, tiles, started, cancel_event)
         except _OcrCancelled:
             return _cancelled_result()
         except Exception as exc:
             logger.error('OCR input/tiling failed: %s', exc, exc_info=True)
             return dict(text='', confidence=0., status='failed', detail=[],
                         elapsed_ms=int((time.monotonic() - started) * 1000), error=str(exc))
+
+    def _run_tiles(self, image, mode, tiles, started, cancel_event):
+        cancel_args = {'cancel_event': cancel_event} if cancel_event is not None else {}
+        merged, tile_evidence, warnings, tile_hypotheses = [], [], [], []
+        tile_candidates = []
+        for index, tile in enumerate(tiles):
+            _check_cancelled(cancel_event)
+            if self._progress_callback:
+                self._progress_callback(10 + int(75 * index / len(tiles)),
+                                        f'切片辨識 {index + 1}/{len(tiles)}')
+            # A perfectly uniform crop contains no image information. This
+            # exact test does not discard faint/low-contrast text.
+            x, y, w, h = tile['source_xywh']
+            crop = image[y:y + h, x:x + w]
+            uniform = bool(np.all(crop == crop[0, 0]))
+            if uniform:
+                result = {'text': '', 'detail': [], 'status': 'done',
+                          'engine': 'rapidocr_onnxruntime', 'model_version': self._model_version,
+                          'hypotheses': {'skipped': 'exactly_uniform_source_tile'}}
+            else:
+                # At most one inference tile and its enhancement are alive.
+                prepared = prepare_ocr_tile(image, tile)
+                result = self._run_single_ocr(prepared, mode, preprocessed=True, **cancel_args)
+                del prepared
+            _check_cancelled(cancel_event)
+            if result['status'] == 'failed':
+                raise RuntimeError(f'切片 {index + 1}/{len(tiles)} 失敗: {result.get("error", "unknown")}')
+            if result['text'] and not result.get('detail'):
+                raise ValueError('切片結果沒有座標，無法安全合併；原圖保留供重試')
+            tile_hypotheses.append({'tile_index': index, 'hypotheses': result.get('hypotheses', {}),
+                                    'detail': result['detail']})
+            raw = [[r['box'], r['text'], r['confidence']] for r in result['detail']]
+            mapped = restore_tile_results(raw, tile)
+            for row in result.get('detail', []):
+                try:
+                    items = validated_alternatives(row.get('alternatives'))
+                    if not items:
+                        continue
+                    parent = restore_tile_results([[row['box'], row['text'], row['confidence']]], tile)
+                    alternatives = []
+                    for item in items:
+                        candidate = restore_tile_results([[item['box'], item['raw_text'], item['confidence']]], tile)
+                        if candidate:
+                            alternatives.append(dict(item, box=candidate[0][0]))
+                    if parent and alternatives:
+                        tile_candidates.append({'box': parent[0][0], 'original_text': row['text'],
+                                                'alternatives': alternatives})
+                except Exception as candidate_error:
+                    logger.warning('切片候選座標整理未完成 (%s)', type(candidate_error).__name__)
+            merged, conflicts = fuse_tiles(merged, mapped)
+            if conflicts:
+                warnings.append(f'tile {index + 1}: overlapping seam hypotheses disagree')
+            warnings.extend(result.get('warnings', []))
+            tile_evidence.append(dict(tile, inference_skipped=uniform, engine=result.get('engine', 'unknown'),
+                                      model_version=result.get('model_version', 'unknown')))
+        final = self._process_results(merged, int((time.monotonic() - started) * 1000))
+        self._attach_retry_candidates(final, tile_candidates)
+        # Tiling is a bounded recovery path, not a completeness certificate.
+        final['status'] = 'needs_review'
+        for row in final['detail']:
+            row.pop('raw_text', None)  # Raw model text lives in per-tile hypotheses.
+            row['text_source'] = 'tile_fusion'
+        engines = sorted({r['engine'] for r in tile_evidence})
+        versions = sorted({r['model_version'] for r in tile_evidence})
+        small_region = len(tiles) == 1 and tiles[0].get('strategy') == 'bounded_small_region'
+        final.update(engine=engines[0] if len(engines) == 1 else 'mixed:' + ','.join(engines),
+                     model_version='|'.join(versions),
+                     warnings=[('Small-region OCR: review characters touching the selection boundary'
+                                if small_region else 'Tiled OCR: review text at tile boundaries')] + warnings,
+                     hypotheses={'tiles': tile_hypotheses},
+                     preprocessing={'strategy': 'bounded_small_region' if small_region else 'overlapping_tiles',
+                                    'source_hw': list(image.shape[:2]), 'tiles': tile_evidence})
+        return final
+
+    def _run_invoice_region(self, image, mode, *, cancel_event=None):
+        from ..core.resource_budget import memory_preflight
+        if image.shape[0] * image.shape[1] > 16_000_000:
+            raise ValueError('Invoice region exceeds the bounded raster input')
+        if not 32 <= self._max_short_side <= 1920:
+            raise ValueError('max_image_short_side must be between 32 and 1920')
+        h, w = image.shape[:2]
+        scale = min(3., max(1., self._max_short_side / min(h, w)),
+                    2000 / max(h, w), math.sqrt(4_000_000 / (h*w)))
+        rw, rh = max(1, int(w*scale)), max(1, int(h*scale))
+        pw, ph = max(736, rw), max(736, rh)
+        if pw*ph > 4_000_000:
+            raise ValueError('Invoice inference canvas exceeds its pixel budget')
+        tile = dict(source_xywh=[0,0,w,h], resized_hw=[rh,rw], inference_hw=[ph,pw],
+                    scale_xy=[rw/w,rh/h], padding_xy=[(pw-rw)//2,(ph-rh)//2],
+                    padding_mode='border_median')
+        _check_cancelled(cancel_event)
+        memory_preflight(additional_bytes=128_000_000 + image.nbytes + pw*ph*12)
+        prepared = prepare_ocr_tile(image, tile)
+        try:
+            _check_cancelled(cancel_event)
+            result = self._run_single_ocr(prepared, mode, preprocessed=True, cancel_event=cancel_event)
+        finally:
+            del prepared
+        _check_cancelled(cancel_event)
+        warnings = list(result.get('warnings', []))
+        original_detail_count = len(result.get('detail', []))
+        mapped_detail = []
+        px, py = tile['padding_xy']
+        for row in result.get('detail', []):
+            mapped = restore_tile_results([[row['box'], row['text'], row['confidence']]], tile)
+            if not mapped:
+                warnings.append('OCR detected text outside the selected invoice region')
+                continue
+            points = np.asarray(row['box'], dtype=float)
+            if (np.any(points[:,0] < px) or np.any(points[:,0] > px+rw)
+                    or np.any(points[:,1] < py) or np.any(points[:,1] > py+rh)):
+                warnings.append('OCR text crosses the selected invoice boundary')
+            row['box'] = mapped[0][0]
+            alternatives = []
+            for candidate in validated_alternatives(row.get('alternatives')):
+                candidate_map = restore_tile_results([[candidate['box'],candidate['raw_text'],candidate['confidence']]],tile)
+                if candidate_map:
+                    alternatives.append(dict(candidate,box=candidate_map[0][0]))
+            if alternatives:
+                row['alternatives'] = alternatives
+            else:
+                row.pop('alternatives',None)
+            mapped_detail.append(row)
+        result['detail'] = mapped_detail
+        if len(mapped_detail) != original_detail_count:
+            result['text'] = sort_boxes_and_merge(mapped_detail)
+        if scale < 1:
+            warnings.append('Invoice region reduced to the bounded OCR canvas; verify small text')
+        if warnings:
+            result['warnings'] = warnings
+            if result.get('status') not in ('failed','cancelled'):
+                result['status'] = 'needs_review'
+        result['preprocessing'] = dict(tile, strategy='invoice_whole_region', source_hw=[h,w])
+        result['coordinate_transform'] = dict(source_hw=[h,w],processed_hw=[ph,pw],
+            scale_to_source_xy=[w/rw,h/rh],padding_xy=tile['padding_xy'],
+            hypotheses_coordinate_space='padded_inference_image')
+        return result
 
     def _run_single_ocr(self, image: np.ndarray, mode: str = 'screen',
                         preprocessed: bool = False, *, cancel_event=None) -> dict:

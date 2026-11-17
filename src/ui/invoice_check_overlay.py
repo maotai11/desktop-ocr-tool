@@ -38,6 +38,61 @@ def pin_without_activation(widget, enabled=True, *, click_through=False):
         return False
 
 
+
+def set_native_noactivate(widget, enabled):
+    """Change only this HWND's activation bit; do not focus or move a window."""
+    if sys.platform != 'win32':
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user = ctypes.WinDLL('user32', use_last_error=True)
+        user.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+        user.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        user.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+        handle = int(widget.winId())
+        style = user.GetWindowLongPtrW(handle, -20)
+        updated = style | 0x08000000 if enabled else style & ~0x08000000
+        if updated == style:
+            return True
+        ctypes.set_last_error(0)
+        previous = user.SetWindowLongPtrW(handle, -20, updated)
+        return bool(previous or not ctypes.get_last_error())
+    except (OSError, AttributeError, ValueError):
+        return False
+
+
+
+def is_native_mouse_activation(message):
+    if sys.platform != 'win32':
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class Message(ctypes.Structure):
+            _fields_ = [('hwnd', wintypes.HWND), ('message', wintypes.UINT),
+                        ('wParam', wintypes.WPARAM), ('lParam', wintypes.LPARAM),
+                        ('time', wintypes.DWORD), ('pt', wintypes.POINT)]
+        return Message.from_address(int(message)).message == 0x0021
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def activate_native_editor(widget):
+    """Explicit non-check user input may activate the otherwise passive HWND."""
+    if sys.platform != 'win32':
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user = ctypes.WinDLL('user32', use_last_error=True)
+        user.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user.SetForegroundWindow.restype = wintypes.BOOL
+        return bool(user.SetForegroundWindow(int(widget.winId())))
+    except (OSError, AttributeError, ValueError):
+        return False
+
 def prevent_button_activation(message, buttons):
     """MA_NOACTIVATE applies only over explicit check buttons, not editors."""
     if sys.platform != 'win32':
@@ -79,7 +134,8 @@ class InvoiceCheckOverlay(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
-                            | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowTransparentForInput)
+                            | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowTransparentForInput
+                            | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -203,6 +259,9 @@ class InvoiceCheckOverlay(QWidget):
         screen = QApplication.primaryScreen()
         if self._wanted and screen is not None:
             self.setGeometry(screen.geometry())
+            if not pin_without_activation(self, self._pinned, click_through=True):
+                self.hide()
+                return False
             self.show()
             return pin_without_activation(self, self._pinned, click_through=True)
         self.hide()

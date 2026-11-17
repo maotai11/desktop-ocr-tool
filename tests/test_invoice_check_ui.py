@@ -241,3 +241,109 @@ def test_control_window_stays_compact_with_readable_manual_actions(setup, size):
     assert (window.width(), window.height()) == size
     for button in (window._check_button, window._stop_button, window._clear_button):
         assert button.isVisible() and button.width() >= button.fontMetrics().horizontalAdvance(button.text())
+
+
+def test_short_desktop_keeps_manual_actions_visible_and_content_scrollable(setup, monkeypatch, qtbot):
+    from PySide6.QtCore import QRect
+    window, controller, _ = setup
+    monkeypatch.setattr(window, '_available_geometry', lambda: QRect(0, 0, 512, 360))
+    window.open()
+    qtbot.wait(1)
+    assert window.frameGeometry().top() >= 0
+    assert window.frameGeometry().bottom() < 360
+    assert window.height() < 480
+    for button in (window._check_button, window._stop_button, window._clear_button):
+        bounds = QRect(button.mapTo(window, QPoint()), button.size())
+        assert button.isVisible() and window.rect().contains(bounds)
+    scroll = window._content_scroll
+    assert scroll.verticalScrollBar().maximum() > 0
+    last_value = window._result_rows[-1][2]
+    scroll.ensureWidgetVisible(last_value)
+    qtbot.wait(1)
+    assert scroll.verticalScrollBar().value() > 0
+    bounds = QRect(last_value.mapTo(scroll.viewport(), QPoint()), last_value.size())
+    assert scroll.viewport().rect().intersects(bounds)
+    scroll.ensureWidgetVisible(window._select_buttons['invoice'])
+    qtbot.wait(1)
+    bounds = QRect(window._select_buttons['invoice'].mapTo(scroll.viewport(), QPoint()),
+                   window._select_buttons['invoice'].size())
+    assert scroll.viewport().rect().contains(bounds)
+    assert controller.checks == 0
+
+
+def test_compact_tool_prepares_nonactivation_before_first_and_recreated_show(setup, monkeypatch):
+    from src.ui import invoice_check_window as module
+    window, _, _ = setup
+    calls = []
+    monkeypatch.setattr(module, 'pin_without_activation',
+                        lambda widget, enabled: calls.append((widget.isVisible(), enabled)) or True)
+    bar = window.action_bar
+    assert bar.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+    assert not window.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+    assert bar.reveal(True)
+    assert calls == [(False, True), (True, True)]
+    calls.clear()
+    assert bar.reveal(False)
+    assert calls == [(False, False), (True, False)]
+    assert bar.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+    assert bar.check.isEnabled()
+
+
+def test_compact_tool_does_not_show_when_native_nonactivation_setup_fails(setup, monkeypatch):
+    from src.ui import invoice_check_window as module
+    monkeypatch.setattr(module, 'pin_without_activation', lambda *a: False)
+    assert not setup[0].action_bar.reveal(True)
+    assert not setup[0].action_bar.isVisible()
+
+
+def test_only_check_buttons_guard_native_child_activation(setup, monkeypatch):
+    from src.ui import invoice_check_window as module
+    window, _, _ = setup
+    guarded = []
+    original_guard = module.prevent_button_activation
+    def synthetic_guard(message, buttons):
+        if message == 1:
+            guarded.append(buttons)
+            return True
+        return original_guard(message, buttons)
+    # PytestQt dispatches native events before fixture teardown. Restore the
+    # scoped mock before returning so real WM_PAINT/CLOSE keep their handlers.
+    with monkeypatch.context() as patch:
+        patch.setattr(module, 'prevent_button_activation', synthetic_guard)
+        for button in (window._check_button, window.action_bar.check):
+            assert isinstance(button, module._CheckButton)
+            assert button.nativeEvent(b'windows_generic_MSG', 1) == (True, 3)
+            assert guarded[-1] == [button]
+        assert guarded == [[window._check_button], [window.action_bar.check]]
+    assert not isinstance(window._select_buttons['invoice'], module._CheckButton)
+    assert not isinstance(window._compact_button, module._CheckButton)
+
+
+
+def test_passive_main_is_prepared_before_show_and_noncheck_input_activates_editing(setup, monkeypatch):
+    from src.ui import invoice_check_window as module
+    window, _, _ = setup
+    prepared, activated, qt_activations = [], [], []
+    original_guard = module.prevent_button_activation
+    native_classifier = module.is_native_mouse_activation
+    with monkeypatch.context() as patch:
+        patch.setattr(module, 'set_native_noactivate',
+                      lambda owner, enabled: prepared.append((owner.isVisible(), enabled)) or True)
+        patch.setattr(module, 'activate_native_editor', lambda owner: activated.append(owner) or True)
+        window.hide()
+        window.show()
+        assert prepared and prepared[0] == (False, True)
+        assert not window.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+        # Only pointer1 is synthetic; preserve every real Windows classification
+        # and restore these mocks before PytestQt dispatches teardown events.
+        patch.setattr(window, 'activateWindow', lambda: qt_activations.append(True))
+        patch.setattr(module, 'prevent_button_activation',
+                      lambda message, buttons: False if message == 1 else original_guard(message, buttons))
+        patch.setattr(module, 'is_native_mouse_activation',
+                      lambda message: True if message == 1 else native_classifier(message))
+        assert window.nativeEvent(b'windows_generic_MSG', 1) == (True, 1)
+        assert activated == [window] and qt_activations == [True]
+        patch.setattr(module, 'prevent_button_activation',
+                      lambda message, buttons: True if message == 1 else original_guard(message, buttons))
+        assert window.nativeEvent(b'windows_generic_MSG', 1) == (True, 3)
+        assert activated == [window] and qt_activations == [True]

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from uuid import uuid4
@@ -26,6 +27,49 @@ def _require(condition, code):
         raise WorkloadFailure(code)
 
 
+def _require_manual_snapshot(controller, captured, report):
+    try:
+        _require(controller.state == 'ready' and controller.last_result is not None,
+                 'MANUAL_SNAPSHOT_FAILED')
+    except WorkloadFailure:
+        state = controller.state
+        report['failure_diagnostics'] = {
+            'kind': 'MANUAL_SNAPSHOT_FAILED',
+            'controller_state': state if state in {'idle', 'capturing', 'reading', 'verifying',
+                'ready', 'error', 'closed', 'cancelling'} else 'unknown',
+            'has_result': controller.last_result is not None,
+            'capture_count': len(captured),
+        }
+        raise
+
+
+def _require_synthetic_values(checks, report):
+    try:
+        _require(len(checks) == 5 and all(check['invoice']['value'] is not None
+                 and check['invoice']['value'] == check['row']['value'] for check in checks),
+                 'SYNTHETIC_VALUES_DIFFER')
+    except WorkloadFailure:
+        fields = {}
+        for key in ('net_amount', 'tax_amount', 'issue_date', 'invoice_number', 'seller_tax_id'):
+            check = next((item for item in checks if type(item) is dict and item.get('key') == key), {})
+            invoice, row = check.get('invoice'), check.get('row')
+            invoice = invoice if type(invoice) is dict else {}
+            row = row if type(row) is dict else {}
+            a, b, status = invoice.get('value'), row.get('value'), check.get('status')
+            fields[key] = {
+                'status': status if type(status) is str and status in {
+                    'matched', 'different', 'review', 'missing'} else 'unknown',
+                'invoice_value_present': a is not None, 'row_value_present': b is not None,
+                'normalized_equal': type(a) is str and type(b) is str and a == b,
+                'invoice_ambiguous': invoice.get('ambiguous') is True,
+                'row_ambiguous': row.get('ambiguous') is True,
+            }
+        # Only scalar facts about the generated fixture leave this failure
+        # boundary; recognized strings, images and positions remain transient.
+        report['failure_diagnostics'] = {'kind': 'SYNTHETIC_VALUES_DIFFER', 'fields': fields}
+        raise
+
+
 def _until(app, predicate, seconds=60):
     from PySide6.QtCore import QEventLoop
     deadline = time.monotonic() + seconds
@@ -34,6 +78,134 @@ def _until(app, predicate, seconds=60):
             raise WorkloadFailure('WORKLOAD_TIMEOUT')
         app.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 10)
         time.sleep(.005)
+
+
+def _helper_failure_diagnostics(path, return_code):
+    """Read only the owned helper receipt, retaining fixed failure facts."""
+    import json
+    from .handwriting_image_probe import IMAGE_FAILURE_REASONS
+    checks = ('passed', 'inference_completed', 'worker_pid_verified', 'job_assigned',
+              'cancelled_and_reaped', 'children_reaped')
+    diagnostic = {'kind': 'REAL_IMAGE_HELPER_FAILED', 'helper_report_status': 'ABSENT',
+                  'helper_error': 'OTHER', 'helper_failure_reason': 'NONE', 'helper_return_code': return_code
+                  if type(return_code) is int and -255 <= return_code <= 255 else None,
+                  'helper_checks': dict.fromkeys(checks), 'expected_candidate_present': None}
+    try:
+        with Path(path).open('rb') as stream:
+            data = stream.read(1_048_577)
+    except FileNotFoundError:
+        return diagnostic
+    except OSError:
+        diagnostic['helper_report_status'] = 'READ_FAILED'
+        return diagnostic
+    if len(data) > 1_048_576:
+        diagnostic['helper_report_status'] = 'TOO_LARGE'
+        return diagnostic
+    try:
+        value = json.loads(data)
+    except (ValueError, UnicodeError):
+        diagnostic['helper_report_status'] = 'INVALID_JSON'
+        return diagnostic
+    if type(value) is not dict or value.get('probe') != 'handwriting_image_lifecycle':
+        diagnostic['helper_report_status'] = 'INVALID_SHAPE'
+        return diagnostic
+    diagnostic['helper_report_status'] = 'COMPLETE'
+    error = value.get('error')
+    diagnostic['helper_error'] = ('NONE' if 'error' not in value else error
+        if type(error) is str and error in {'IMAGE_PROBE_ASSET_FAILURE', 'IMAGE_PROBE_RUNTIME_FAILURE'}
+        else 'OTHER')
+    reason = value.get('failure_reason')
+    diagnostic['helper_failure_reason'] = ('NONE' if 'failure_reason' not in value else reason
+        if type(reason) is str and reason in IMAGE_FAILURE_REASONS else 'OTHER')
+    diagnostic['helper_checks'] = {key: value[key] if type(value.get(key)) is bool else None for key in checks}
+    candidates = value.get('candidates')
+    if isinstance(candidates, list):
+        diagnostic['expected_candidate_present'] = any(type(candidate) is str and candidate == '一'
+                                                       for candidate in candidates)
+    return diagnostic
+
+
+def _run_checked_image_helper(run_probe, path, report):
+    result = None
+    try:
+        result = run_probe(str(path))
+        _require(result == 0, 'REAL_IMAGE_HELPER_FAILED')
+    except Exception:
+        report['failure_diagnostics'] = _helper_failure_diagnostics(path, result)
+        raise
+
+
+def _raster_error_reason(result, exception=None):
+    from .core.resource_budget import ResourceBudgetExceeded, ResourceInspectionError
+    if isinstance(exception, ResourceInspectionError):
+        return 'RESOURCE_INSPECTION'
+    if isinstance(exception, ResourceBudgetExceeded) and exception.kind == 'memory':
+        return 'MEMORY_BUDGET'
+    error = result.get('error') if isinstance(result, dict) else None
+    if error is None:
+        return 'NONE'
+    if type(error) is not str or len(error) > 8192:
+        return 'OTHER'
+    prefix = re.fullmatch(r'切片 ([1-9][0-9]?)/([1-9][0-9]?) 失敗: (.*)', error, re.DOTALL)
+    if prefix and 1 <= int(prefix[1]) <= int(prefix[2]) <= 64:
+        error = prefix[3]
+    return {
+        '文字辨識工作量超限，請分段框選；原圖保留供重試': 'RECOGNITION_WORK_BUDGET',
+        '文字區塊過多，請縮小框選範圍後重試': 'CROP_COUNT_LIMIT',
+        '文字行過長或過細，請分段框選；原圖保留供重試': 'CROP_WIDTH_LIMIT',
+        '無效的文字區塊，原圖保留供重試': 'INVALID_CROP',
+        'OCR 切片數超過上限，請縮小範圍；原圖保留供重試': 'TILE_COUNT_LIMIT',
+        'OCR 切片工作量超過上限，請縮小範圍；原圖保留供重試': 'TILE_PIXEL_LIMIT',
+        str(ResourceBudgetExceeded('memory')): 'MEMORY_BUDGET',
+        str(ResourceInspectionError()): 'RESOURCE_INSPECTION',
+    }.get(error, 'OTHER')
+
+
+def _run_bounded_raster_checks(app, worker, image, failure_report=None):
+    """Exercise generic, wide invoice and maximum-canvas invoice sequentially."""
+    from .core.resource_budget import memory_preflight
+    token, completed, raster_case = '', [], 'generic'
+    def raster_done(observed_token, page, field, result):
+        if observed_token == token:
+            completed.append(result)
+    worker.document_ocr_done.connect(raster_done)
+    try:
+        for name, field in (('queue_document_ocr', 'bounded_raster'),
+                            ('queue_invoice_ocr', 'bounded_invoice_raster'),
+                            ('queue_invoice_ocr', 'bounded_square_invoice_raster')):
+            token = 'resource-raster-' + uuid4().hex
+            completed.clear()
+            raster_case = {'bounded_raster': 'generic', 'bounded_invoice_raster': 'wide_invoice',
+                           'bounded_square_invoice_raster': 'max_canvas'}[field]
+            source = image
+            if field == 'bounded_square_invoice_raster':
+                import cv2
+                # The previous worker acknowledgement released its input.
+                # Reuse the 18 MB allocation, then redraw a near-square source
+                # whose bounded invoice canvas reaches 2000 x 2000 pixels.
+                source = image.reshape(-1)[:2448*2448*3].reshape(2448, 2448, 3)
+                source.fill(255)
+                for y in range(80, 2448, 125):
+                    for x in range(30, 2400, 375):
+                        cv2.putText(source, '12345', (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 2)
+            memory_preflight(additional_bytes=128_000_000 + source.nbytes)
+            _require(getattr(worker, name)(token, 0, field, source), 'RASTER_QUEUE_REJECTED')
+            # The acknowledgement is emitted only after the worker releases
+            # its transferred input/global raster slot; the next path starts
+            # afterward and reuses the same caller-owned 18 MB source.
+            _until(app, lambda: bool(completed), 120)
+            _require(completed[0].get('status') in ('done', 'needs_review'), 'BOUNDED_RASTER_FAILED')
+        return True
+    except Exception as exc:
+        if failure_report is not None:
+            status = completed[0].get('status') if completed and isinstance(completed[0], dict) else None
+            failure_report['failure_diagnostics'] = {'kind': 'RASTER_FAILURE', 'raster_case': raster_case,
+                'completed_status': 'NONE' if status is None else status
+                if type(status) is str and status in {'done', 'needs_review', 'failed', 'cancelled'} else 'OTHER',
+                'raster_error_reason': _raster_error_reason(completed[0] if completed else None, exc)}
+        raise
+    finally:
+        worker.document_ocr_done.disconnect(raster_done)
 
 
 def fixture_image():
@@ -183,12 +355,9 @@ def run_resource_probe(report_path):
         for _ in range(3):
             window.action_bar.check.click()
             _until(app, lambda: controller.state in ('ready', 'error'), 90)
-            _require(controller.state == 'ready' and controller.last_result is not None,
-                     'MANUAL_SNAPSHOT_FAILED')
+            _require_manual_snapshot(controller, captured, report)
             checks = controller.last_result['checks']
-            _require(len(checks) == 5 and all(check['invoice']['value'] is not None
-                     and check['invoice']['value'] == check['row']['value'] for check in checks),
-                     'SYNTHETIC_VALUES_DIFFER')
+            _require_synthetic_values(checks, report)
             row = controller.last_result['active_row']
             _require(row[1] >= round(45*scale) and row[1]+row[3] <= round(95*scale),
                      'ADJACENT_ROW_ENTERED')
@@ -208,7 +377,7 @@ def run_resource_probe(report_path):
         phase('image_helper')
         from .handwriting_image_probe import run_image_probe
         helper_path = data_dir/'resource-helper.json'
-        _require(run_image_probe(str(helper_path)) == 0, 'REAL_IMAGE_HELPER_FAILED')
+        _run_checked_image_helper(run_image_probe, helper_path, report)
         import json
         helper = json.loads(helper_path.read_text(encoding='utf-8'))
         report['checks']['helper_inference_and_reap'] = (
@@ -223,18 +392,8 @@ def run_resource_probe(report_path):
         for y in range(80, 2000, 125):
             for x in range(30, 2900, 375):
                 cv2.putText(large, '12345', (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 2)
-        token = 'resource-raster-' + uuid4().hex
-        completed = []
-        def raster_done(observed_token, page, field, result):
-            if observed_token == token:
-                completed.append(result)
-        worker.document_ocr_done.connect(raster_done)
-        _require(worker.queue_document_ocr(token, 0, 'bounded_raster', large), 'RASTER_QUEUE_REJECTED')
+        report['checks']['bounded_raster_inference'] = _run_bounded_raster_checks(app, worker, large, report)
         del large
-        _until(app, lambda: bool(completed), 120)
-        worker.document_ocr_done.disconnect(raster_done)
-        report['checks']['bounded_raster_inference'] = completed[0].get('status') in ('done', 'needs_review')
-        _require(report['checks']['bounded_raster_inference'], 'BOUNDED_RASTER_FAILED')
         report['checks']['no_history_or_capture_files'] = (
             not repo.list_recent(limit=1) and not list(data_dir.glob('captures/**/*.png')))
         report['runtime_memory'] = runtime_memory_accounting()

@@ -22,6 +22,7 @@ class DocumentOcrTask:
     field_name: str
     image: np.ndarray | None
     cancel_event: Event
+    invoice_region: bool = False
 
 
 class OcrWorker(QueueWorker):
@@ -83,6 +84,13 @@ class OcrWorker(QueueWorker):
 
     def queue_document_ocr(self, token, page_index, field_name, image, cancel_event=None):
         """Transfer a single bounded BGR crop to the same serialized engine."""
+        return self._queue_raster(token, page_index, field_name, image, cancel_event)
+
+    def queue_invoice_ocr(self, token, page_index, field_name, image, cancel_event=None):
+        """Use the same single raster slot, with the explicit invoice canvas policy."""
+        return self._queue_raster(token, page_index, field_name, image, cancel_event, invoice_region=True)
+
+    def _queue_raster(self, token, page_index, field_name, image, cancel_event=None, *, invoice_region=False):
         try:
             if (not isinstance(token, str) or not token or
                     not isinstance(field_name, str) or not field_name or
@@ -103,7 +111,7 @@ class OcrWorker(QueueWorker):
                     return False
                 self._document_pending = True
             try:
-                self.submit(DocumentOcrTask(token, page_index, field_name, image, cancel_event))
+                self.submit(DocumentOcrTask(token, page_index, field_name, image, cancel_event, invoice_region))
             except Exception:
                 with self._document_lock:
                     self._document_pending = False
@@ -118,9 +126,12 @@ class OcrWorker(QueueWorker):
             if not task.cancel_event.is_set():
                 if not self._engine.is_ready():
                     raise RuntimeError('辨識引擎尚未就緒，請稍後重試。')
-                cancellable = getattr(self._engine, 'run_cancellable_ocr', None)
-                result = dict(cancellable(task.image, 'screen', task.cancel_event)
-                              if cancellable is not None else self._engine.run_ocr(task.image, 'screen'))
+                if task.invoice_region:
+                    result = dict(self._engine.run_invoice_ocr(task.image, 'screen', cancel_event=task.cancel_event))
+                else:
+                    cancellable = getattr(self._engine, 'run_cancellable_ocr', None)
+                    result = dict(cancellable(task.image, 'screen', task.cancel_event)
+                                  if cancellable is not None else self._engine.run_ocr(task.image, 'screen'))
                 if task.cancel_event.is_set():
                     result = {'text': '', 'status': 'cancelled'}
         except Exception as exc:  # noqa: BLE001 - native inference errors become controlled transient results

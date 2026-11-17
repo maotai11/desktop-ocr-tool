@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import lru_cache
 import math
 import os
 from pathlib import Path
@@ -31,9 +32,14 @@ class ResourceBudgetExceeded(OSError):
 
 
 class ResourceInspectionError(ResourceBudgetExceeded):
-    def __init__(self):
+    def __init__(self, *, native_error=None):
         super().__init__('inspection')
+        self.native_error = native_error
         self.args = ('無法完整確認資源用量，已停止新增資料；請檢查檔案位置及權限。',)
+
+
+class ResourceMetadataChanged(ResourceInspectionError):
+    """A live node changed during measurement; no partial total is usable."""
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,39 @@ def raster_preflight(width: int, height: int) -> tuple[int, int]:
     return max(1, int(width * scale)), max(1, int(height * scale))
 
 
+def _confirmed_missing(path):
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def _measure_storage_node(path, info):
+    """Requery a growing regular file once; never combine two file identities."""
+    for attempt in range(2):
+        if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            raise ResourceInspectionError()
+        allocated = (_windows_allocated_bytes(path) if sys.platform == 'win32'
+                     else max(info.st_size, getattr(info, 'st_blocks', 0) * 512))
+        children = list(path.iterdir()) if stat.S_ISDIR(info.st_mode) else None
+        current = path.lstat()
+        if (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) != (
+                info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode)):
+            raise ResourceMetadataChanged()
+        if children is None and (
+                current.st_size, current.st_mtime_ns, getattr(current, 'st_blocks', None)) != (
+                info.st_size, info.st_mtime_ns, getattr(info, 'st_blocks', None)):
+            if attempt == 0:
+                info = current
+                continue
+            raise ResourceMetadataChanged()
+        return max(allocated, current.st_size, getattr(current, 'st_blocks', 0) * 512), children
+    raise ResourceInspectionError()
+
+
 def managed_disk_usage(roots) -> DiskUsage:
     """Count owned bytes once, including hard links; never follow inner links.
 
@@ -84,29 +123,38 @@ def managed_disk_usage(roots) -> DiskUsage:
         try:
             info = path.lstat()
         except FileNotFoundError:
-            continue
+            if _confirmed_missing(path):
+                continue
+            raise ResourceInspectionError() from None
         except OSError:
             raise ResourceInspectionError() from None
         identity = (info.st_dev, info.st_ino) if info.st_ino else str(path)
         if identity in seen_nodes:
             continue
-        seen_nodes.add(identity)
         if stat.S_ISLNK(info.st_mode) or (hasattr(path, 'is_junction') and path.is_junction()):
             raise ResourceInspectionError()
-        if stat.S_ISDIR(info.st_mode):
+        try:
+            allocated, children = _measure_storage_node(path, info)
+        except ResourceInspectionError as exc:
+            # A bootloader can remove an unpacked file after lstat. Only a
+            # native not-found result AND a fresh absence check may retire it.
+            # Recreated/live/inaccessible entries remain a failed inspection.
+            if exc.native_error in (2, 3) and _confirmed_missing(path):
+                continue
+            raise
+        except FileNotFoundError:
+            if _confirmed_missing(path):
+                continue
+            raise ResourceInspectionError() from None
+        except OSError:
+            raise ResourceInspectionError() from None
+        seen_nodes.add(identity)
+        total += allocated
+        if children is not None:
             directories += 1
-            total += (_windows_allocated_bytes(path) if sys.platform == 'win32'
-                      else max(info.st_size, getattr(info, 'st_blocks', 0) * 512))
-            try:
-                pending.extend(path.iterdir())
-            except OSError:
-                raise ResourceInspectionError() from None
-        elif stat.S_ISREG(info.st_mode):
-            files += 1
-            total += (_windows_allocated_bytes(path) if sys.platform == 'win32'
-                      else max(info.st_size, getattr(info, 'st_blocks', 0) * 512))
+            pending.extend(children)
         else:
-            raise ResourceInspectionError()
+            files += 1
     return DiskUsage(total, files, directories)
 
 
@@ -649,7 +697,9 @@ def create_managed_directory(path, *, owner=None, cfg=None):
         target.mkdir(exist_ok=True)
 
 
-def _windows_allocated_bytes(path):
+@lru_cache(maxsize=1)
+def _windows_file_api():
+    """Cache API bindings only; every allocation measurement still opens its file."""
     import ctypes
     from ctypes import wintypes
     class Standard(ctypes.Structure):
@@ -661,13 +711,19 @@ def _windows_allocated_bytes(path):
     kernel.CreateFileW.restype = wintypes.HANDLE
     kernel.GetFileInformationByHandleEx.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    return kernel, Standard
+
+
+def _windows_allocated_bytes(path):
+    import ctypes
+    kernel, Standard = _windows_file_api()
     handle = kernel.CreateFileW(str(path), 0x80, 7, None, 3, 0x02000000, None)
     if handle == ctypes.c_void_p(-1).value:
-        raise ResourceInspectionError()
+        raise ResourceInspectionError(native_error=ctypes.get_last_error())
     try:
         value = Standard()
         if not kernel.GetFileInformationByHandleEx(handle, 1, ctypes.byref(value), ctypes.sizeof(value)):
-            raise ResourceInspectionError()
+            raise ResourceInspectionError(native_error=ctypes.get_last_error())
         return max(int(value.allocation), int(value.end))
     finally:
         kernel.CloseHandle(handle)
