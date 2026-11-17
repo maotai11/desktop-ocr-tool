@@ -8,7 +8,9 @@ def receipt(version, executable_sha256, source_commit, run_id="1234", run_attemp
             'peak_disk_bytes': 800_000_000, 'max_processes': 3, 'total_processes': 4,
             'maximum_active_mei_directories': 2, 'bootloader_owned_before_resume': True,
             'temporary_cleaned': True, 'exit_code': 0, 'active_processes': 0,
-            'job_limit_bytes': 999_997_440, 'inner_report_sha256': 'b'*64, 'inner_report_bytes': 1024}
+            'job_limit_bytes': 999_997_440, 'inner_report_sha256': 'b'*64, 'inner_report_bytes': 1024,
+            'observed_sample_gaps': {'count': 49, 'minimum_ms': 20, 'maximum_ms': 80,
+                                     'mean_ms': 30., 'median_ms': 25, 'p95_ms': 50}}
     manual = deepcopy(base)
     manual.update(workload_checks=dict.fromkeys(WORKLOAD_CHECKS, True), manual_rounds_completed=3,
                   fields_each=5, large_source_pixels=6_000_000, native_capture_used=True)

@@ -20,7 +20,7 @@
 
 ## 發布與公開成品
 
-一般 review 或 PR 事件不能發布。rc.3 只接受 `fix/ocr-selection-ui-20261102` 上精確的 `publish-prerelease: v1.8.0-rc.3` 標記，且 Windows／Linux 同次驗證全部成功。Publisher 只接收 Windows runner 產生且雜湊吻合的公開交接檔，不重新使用舊版資產。
+一般 review 或 PR 事件不能發布。現行 rc.19 只接受 `master` 上的 push，且該次提交的完整訊息須精確等於 `publish-prerelease: v1.8.0-rc.19`；Windows／Linux 同次驗證必須全部成功。Publisher 只接收該次 Windows runner 產生且雜湊吻合的公開交接檔；資源報告也須對應同一來源提交、run、attempt 與 EXE，不能沿用舊版報告或資產。
 
 公開下載包是另製的去識別衍生包，重新計算包與內容 hash；不能改寫原始 ZIP 報告卻沿用舊 hash。原始 BUILD／SOURCE manifest、JUnit 與診斷留在 runner，不加入公開下載。新增可攜隔離檢查的公開摘要只保留固定 probe 狀態、隔離旗標、版本與檔案雜湊，不複製環境或暫存路徑。
 

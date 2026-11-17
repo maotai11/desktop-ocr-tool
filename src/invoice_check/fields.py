@@ -221,7 +221,15 @@ def _extract(detail, image_size, overrides=None, headers=None, invoice=False):
             if key.endswith('tax_id') and not valid_ubn(best['value']):
                 field['ambiguous'] = True
         fields[key] = field
-    # Compare original component provenance, not only a joined bounding rectangle.
+    return mark_shared_provenance(fields)
+
+
+def mark_shared_provenance(fields, *, overlap=False):
+    """Preserve review flags and reject one observation reused across fields.
+
+    Calibrated crops must restore component boxes to one source coordinate
+    system before opting into conservative geometric overlap detection.
+    """
     def sources(field):
         if not field['candidates']:
             return set()
@@ -231,9 +239,26 @@ def _extract(detail, image_size, overrides=None, headers=None, invoice=False):
             return {(tuple(_box(part) or ()), str(part.get('raw_text', part.get('text', '')))) for part in parts}
         return {(tuple(candidate['box']), candidate['raw'])}
 
+    def components(field):
+        if not field['candidates']:
+            return []
+        candidate = field['candidates'][0]
+        boxes = [_box(part) for part in candidate['parts']] if candidate.get('parts') else [_box(candidate)]
+        return [box for box in boxes if box and all(math.isfinite(value) for value in box)
+                and box[2] > 0 and box[3] > 0]
+
+    def shared_geometry(left, right):
+        for ax, ay, aw, ah in components(left):
+            for bx, by, bw, bh in components(right):
+                intersection = max(0., min(ax+aw,bx+bw)-max(ax,bx)) * max(0., min(ay+ah,by+bh)-max(ay,by))
+                if intersection / min(aw*ah,bw*bh) >= .5:
+                    return True
+        return False
+
     for key, field in fields.items():
         provenance = sources(field)
-        if provenance and any(other != key and provenance & sources(f) for other, f in fields.items()):
+        if any(other != key and ((provenance and provenance & sources(candidate))
+                or (overlap and shared_geometry(field,candidate))) for other,candidate in fields.items()):
             field['ambiguous'] = True
     return fields
 

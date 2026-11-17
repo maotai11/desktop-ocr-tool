@@ -17,8 +17,9 @@ from .fields import (
     extract_invoice_fields,
     extract_row_fields,
     header_columns,
+    mark_shared_provenance,
 )
-from .rows import detect_active_row
+from .rows import NoSelectedBlue, detect_active_row
 
 
 class InvoiceCheckController(QObject):
@@ -336,6 +337,17 @@ class InvoiceCheckController(QObject):
         if operation is None or not self._current(operation['generation']):
             return
         index = operation['stage_index']
+        if index >= len(operation['stages']) and not operation.get('calibration_planned'):
+            try:
+                self._plan_calibrated_reads(operation)
+            except MemoryError:
+                self._fail(str(ResourceBudgetExceeded('memory')))
+                return
+            except (ValueError, KeyError, TypeError, IndexError):
+                self._fail('欄位位置無法確認，請重新調整校正範圍。')
+                return
+            if not self._current(operation['generation']):
+                return
         if index >= len(operation['stages']):
             self._state_change('verifying', '正在確認本次畫面未變更…')
             if self._current(operation['generation']):
@@ -343,7 +355,12 @@ class InvoiceCheckController(QObject):
             return
         stage = operation['stages'][index]
         images = operation['snapshot']['images']
-        if stage == 'invoice':
+        calibration = operation.get('calibration_tasks', {}).get(stage)
+        if calibration is not None:
+            source_image = self._calibration_source(operation, calibration['side'])
+            x, y, width, height = calibration['rect']
+            source_image = source_image[y:y+height, x:x+width]
+        elif stage == 'invoice':
             source_image = images['invoice']
         else:
             y0, y1 = operation['header'] if stage == 'header' else operation['band']['row']
@@ -351,19 +368,27 @@ class InvoiceCheckController(QObject):
         try:
             memory_preflight(additional_bytes=128_000_000 + source_image.nbytes)
         except ResourceBudgetExceeded as exc:
-            self._fail(str(exc))
+            if self._current(operation['generation']):
+                self._fail(str(exc))
+            return
+        if not self._current(operation['generation']):
             return
         try:
             image = source_image.copy()
         except MemoryError:
-            self._fail(str(ResourceBudgetExceeded('memory')))
+            if self._current(operation['generation']):
+                self._fail(str(ResourceBudgetExceeded('memory')))
+            return
+        if not self._current(operation['generation']):
             return
         token = 'invoice-ocr-' + operation['snapshot_id']
         pending = (token, index, stage, operation['generation'])
         self._ocr_pending = pending
         try:
-            accepted = self._ocr.queue_document_ocr(token, index, stage, image,
-                                                    cancel_event=self._cancel_event)
+            # The production worker has a bounded invoice entry. Injected
+            # workers can retain the existing document interface for tests.
+            queue = getattr(self._ocr, 'queue_invoice_ocr', self._ocr.queue_document_ocr)
+            accepted = queue(token, index, stage, image, cancel_event=self._cancel_event)
         except Exception:
             accepted = False
         if not accepted and self._ocr_pending == pending:
@@ -382,9 +407,113 @@ class InvoiceCheckController(QObject):
         if not isinstance(result, dict) or result.get('status') not in ('done', 'needs_review', 'confirmed'):
             self._fail('本次辨識未完成，請確認畫面後重新辨識。')
             return
-        self._operation['results'][stage] = result
-        self._operation['stage_index'] += 1
+        operation = self._operation
+        calibration = operation.get('calibration_tasks', {}).get(stage)
+        if calibration is not None:
+            try:
+                self._apply_calibrated_result(operation, calibration, result)
+            except MemoryError:
+                self._fail(str(ResourceBudgetExceeded('memory')))
+                return
+            except (ValueError, KeyError, TypeError, IndexError):
+                self._fail('校正欄位未能安全對準，請重新調整位置。')
+                return
+        else:
+            operation['results'][stage] = result
+        if not self._current(operation['generation']):
+            return
+        operation['stage_index'] += 1
         self._queue_next()
+
+    @staticmethod
+    def _calibration_source(operation, side):
+        images = operation['snapshot']['images']
+        if side == 'invoice':
+            return images['invoice']
+        y0, y1 = operation['band']['row']
+        return images['table'][y0:y1]
+
+    def _plan_calibrated_reads(self, operation):
+        operation['calibration_planned'] = True
+        invoice, row = self._extract_initial_fields(operation)
+        operation['field_results'] = {'invoice': invoice, 'row': row}
+        tasks = operation['calibration_tasks'] = {}
+        keys = (operation['amount_key'], 'tax_amount', 'issue_date',
+                'invoice_number', operation['tax_id_key'])
+        for side in ('invoice', 'row'):
+            overrides = operation['overrides']['invoice' if side == 'invoice' else 'table']
+            source = self._calibration_source(operation, side)
+            height, width = source.shape[:2]
+            for key in keys:
+                field = operation['field_results'][side][key]
+                if key not in overrides or (field['value'] is not None and not field['ambiguous']):
+                    continue
+                rx, ry, rw, rh = overrides[key]
+                if side == 'row':
+                    # Table calibration identifies a column on whichever row
+                    # is currently selected; it never pins an earlier row Y.
+                    ry, rh = 0., 1.
+                left, top = max(0, math.floor(rx*width)), max(0, math.floor(ry*height))
+                right = min(width, math.ceil((rx+rw)*width))
+                bottom = min(height, math.ceil((ry+rh)*height))
+                if right <= left or bottom <= top:
+                    raise ValueError('Empty calibrated field')
+                stage = f'calibration_{side}_{key}'
+                tasks[stage] = {'side': side, 'key': key,
+                                'rect': (left, top, right-left, bottom-top),
+                                'region': (rx, ry, rw, rh)}
+                operation['stages'].append(stage)
+        # Only the five compared fields on each side can be scheduled, once.
+        if len(tasks) > 10:
+            raise ValueError('Too many calibrated fields')
+
+    @staticmethod
+    def _translated_detail(detail, dx, dy):
+        if not isinstance(detail, list):
+            raise ValueError('Invalid calibrated OCR detail')
+        translated = deepcopy(detail)
+        def shift(item):
+            if not isinstance(item, dict):
+                return
+            box = item.get('box')
+            if isinstance(box, (list, tuple)) and len(box) == 4:
+                if all(isinstance(value, (int, float)) for value in box):
+                    item['box'] = [box[0]+dx, box[1]+dy, box[2], box[3]]
+                elif all(isinstance(point, (list, tuple)) and len(point) == 2 for point in box):
+                    item['box'] = [[point[0]+dx, point[1]+dy] for point in box]
+            alternatives = item.get('alternatives')
+            if isinstance(alternatives, list):
+                for candidate in alternatives:
+                    shift(candidate)
+        for item in translated:
+            shift(item)
+        return translated
+
+    def _apply_calibrated_result(self, operation, calibration, result):
+        side, key = calibration['side'], calibration['key']
+        source = self._calibration_source(operation, side)
+        height, width = source.shape[:2]
+        x, y, _, _ = calibration['rect']
+        detail = self._translated_detail(result.get('detail', []), x, y)
+        extract = extract_invoice_fields if side == 'invoice' else extract_row_fields
+        refined = extract(detail, (width, height), overrides={key: calibration['region']})[key]
+        original = operation['field_results'][side][key]
+        if refined['value'] is None:
+            return
+        # A crop adds evidence; it never silently overwrites a conflicting
+        # financial value or clears earlier weak/ambiguous observations.
+        if original['value'] is not None and original['value'] != refined['value']:
+            original['ambiguous'] = True
+            original['candidates'].extend(refined['candidates'])
+            mark_shared_provenance(operation['field_results'][side], overlap=True)
+            return
+        refined['ambiguous'] = bool(refined['ambiguous'] or original['ambiguous']
+                                    or result.get('status') == 'needs_review')
+        operation['field_results'][side][key] = refined
+        # Independently cropped observations must not let the same physical
+        # printed value satisfy two field meanings. Use restored source parts
+        # and geometry, including overlapping crops with detector edge jitter.
+        mark_shared_provenance(operation['field_results'][side], overlap=True)
 
     def _verify_and_publish(self, payload):
         operation = self._operation
@@ -403,11 +532,31 @@ class InvoiceCheckController(QObject):
         if not stable:
             self._fail('畫面已變更，本次結果已作廢；請停留在欲核對資料後再按辨識。')
             return
+        invoice = operation['field_results']['invoice']
+        row = operation['field_results']['row']
+        checks = compare_fields(invoice, row, operation['amount_key'], operation['tax_id_key'])
+        status = ('different' if any(check['status'] == 'different' for check in checks)
+                  else 'matched' if all(check['status'] == 'matched' for check in checks) else 'review')
+        snapshot = {'kind': 'manual_snapshot', 'snapshot_id': operation['snapshot_id'],
+                    'generation': generation, 'captured_at_ns': operation['snapshot']['captured_at_ns'],
+                    'regions': dict(operation['regions']), 'active_row': list(old_band['box']),
+                    'invoice_fields': invoice, 'row_fields': row, 'checks': checks, 'status': status,
+                    'message': '本次截圖核對結果；換列後請再按辨識。'}
+        self._operation = None
+        self.last_result = snapshot
+        self._state_change('ready', snapshot['message'])
+        if not self._closed and generation == self._generation:
+            self.results_ready.emit(snapshot)
+
+    @staticmethod
+    def _extract_initial_fields(operation):
         source_results = operation['results']
-        height, width = original['invoice'].shape[:2]
+        images = operation['snapshot']['images']
+        height, width = images['invoice'].shape[:2]
         invoice = extract_invoice_fields(source_results['invoice'].get('detail', []), (width, height),
                                          overrides=operation['overrides']['invoice'])
-        row_width = original['table'].shape[1]
+        row_width = images['table'].shape[1]
+        y0, y1 = operation['band']['row']
         columns = {}
         if operation['header'] is not None:
             h0, h1 = operation['header']
@@ -424,19 +573,7 @@ class InvoiceCheckController(QObject):
                 for field in fields.values():
                     if field.get('value') is not None:
                         field['ambiguous'] = True
-        checks = compare_fields(invoice, row, operation['amount_key'], operation['tax_id_key'])
-        status = ('different' if any(check['status'] == 'different' for check in checks)
-                  else 'matched' if all(check['status'] == 'matched' for check in checks) else 'review')
-        snapshot = {'kind': 'manual_snapshot', 'snapshot_id': operation['snapshot_id'],
-                    'generation': generation, 'captured_at_ns': operation['snapshot']['captured_at_ns'],
-                    'regions': dict(operation['regions']), 'active_row': list(old_band['box']),
-                    'invoice_fields': invoice, 'row_fields': row, 'checks': checks, 'status': status,
-                    'message': '本次截圖核對結果；換列後請再按辨識。'}
-        self._operation = None
-        self.last_result = snapshot
-        self._state_change('ready', snapshot['message'])
-        if not self._closed and generation == self._generation:
-            self.results_ready.emit(snapshot)
+        return invoice, row
 
     @staticmethod
     def _selected_row(image, manual_row):
@@ -446,15 +583,11 @@ class InvoiceCheckController(QObject):
             # Calibration is a fallback, never a lock to an old Y coordinate
             # once the application clearly selects another row.
             return detect_active_row(image)
-        except ValueError:
-            selected = detect_active_row(image, manual_row=manual_row)
-            b, g, r = (image[:, :, index].astype(np.int16) for index in range(3))
-            blue = (b > 110) & (b-r > 45) & (b-g > 15)
-            active = blue.sum(axis=1) >= max(3, image.shape[1]*.008)
-            y0, y1 = selected['row']
-            if np.any(active[:y0]) or np.any(active[y1:]):
-                raise ValueError('目前停留位置已離開指定資料列，請重新指定。')
-            return selected
+        except NoSelectedBlue:
+            # The shared detector distinguishes text fringes from supported
+            # or ambiguous selection evidence. A manual band is valid only
+            # when that analysis explicitly found no selected cell.
+            return detect_active_row(image, manual_row=manual_row)
 
     def _fail(self, message):
         if self._closed:

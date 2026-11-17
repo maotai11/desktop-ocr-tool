@@ -385,6 +385,19 @@ def test_resource_public_metadata_retains_strict_gate_and_drops_private_traces()
     clean = public.safe_fields(value)
     validate_resource_report(clean, version=public.VERSION, executable_sha256='c' * 64,
                              source_commit='a' * 40, run_id='1234', run_attempt='1')
+    for stage in ('cold_application', 'manual_invoice_and_helpers'):
+        original = value['stages'][stage]['observed_sample_gaps']
+        assert {key: clean['stages'][stage]['observed_sample_gaps'][key] for key in original} == original
     assert public.observed_result(clean) == 'PASS_AS_RECORDED_NOT_OVERALL_APPROVAL'
     clean['stages']['cold_application']['peak_rss_bytes'] = 1_000_000_000
     assert public.observed_result(clean) == 'INCONSISTENT_AS_RECORDED'
+
+
+@pytest.mark.parametrize('invalid_mean', [True, 'PRIVATE_TIMING', float('nan'), float('inf'), -1])
+def test_resource_sample_gap_public_mean_rejects_invalid_values(invalid_mean):
+    from resource_release_fixtures import receipt
+    value = receipt(public.VERSION, 'c' * 64, 'a' * 40)
+    value['stages']['cold_application']['observed_sample_gaps']['mean_ms'] = invalid_mean
+    clean = public.safe_fields(value)
+    assert 'PRIVATE_TIMING' not in json.dumps(clean)
+    assert public.observed_result(clean) == 'INVALID_FIELDS'

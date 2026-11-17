@@ -135,6 +135,73 @@ def _start_owned(command, job, **kwargs):
         child.wait(timeout=5)
         raise
 
+
+class _SourceProtocol:
+    """Retry transient Windows sharing failures without losing the arm ACK.
+
+    State transitions happen once, publication remains dirty until atomic replace
+    succeeds. A failed deactivation publication must likewise remain observable.
+    """
+    def __init__(self, path):
+        self.path = Path(path)
+        self.state = {'pid': os.getpid(), 'armed': False, 'deactivations': 0, 'selected': True}
+        self.dirty = True
+
+    def flush(self):
+        if self.dirty:
+            try:
+                _write(self.path, self.state)
+            except OSError:
+                return False
+            self.dirty = False
+        return True
+
+    def poll(self):
+        command = _read(str(self.path) + '.control').get('command')
+        if command == 'arm' and not self.state['armed']:
+            self.state['armed'] = True
+            self.dirty = True
+        self.flush()
+        return command == 'stop'
+
+    def deactivated(self):
+        if self.state['armed']:
+            self.state['deactivations'] += 1
+            self.state['selected'] = False
+            self.dirty = True
+            self.flush()
+
+
+def _fit_probe_button(window, button, user, ctypes, wintypes, available):
+    """Move only the proof fixture HWND; keep the real product button/layout.
+
+    A 768px hosted desktop has just 360 logical pixels at 200%; the product's
+    480px minimum cannot fit whole. Native positioning exposes its actual button
+    without reducing minimum size, substituting widgets or injecting Qt clicks.
+    """
+    target = wintypes.RECT()
+    owner = wintypes.RECT()
+    if not (user.GetWindowRect(int(button.winId()), ctypes.byref(target))
+            and user.GetWindowRect(int(window.winId()), ctypes.byref(owner))):
+        raise RuntimeError('Probe geometry unavailable')
+    left, top, width, height = available
+    right, bottom = left + width, top + height
+    if target.right - target.left > width or target.bottom - target.top > height:
+        raise RuntimeError('Probe action exceeds desktop')
+    dx = max(left + 8 - target.left, min(0, right - 8 - target.right))
+    dy = max(top + 8 - target.top, min(0, bottom - 16 - target.bottom))
+    user.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                  ctypes.c_int, ctypes.c_int, wintypes.UINT]
+    user.SetWindowPos.restype = wintypes.BOOL
+    if (dx or dy) and not user.SetWindowPos(int(window.winId()), 0, owner.left + dx,
+                                          owner.top + dy, 0, 0, 0x1 | 0x4 | 0x10):
+        raise RuntimeError('Probe action reposition unavailable')
+    if not user.GetWindowRect(int(button.winId()), ctypes.byref(target)):
+        raise RuntimeError('Probe action geometry unavailable')
+    if not (left <= target.left < target.right <= right
+            and top <= target.top < target.bottom <= bottom):
+        raise RuntimeError('Probe action outside desktop')
+
 def run_source(report_path):
     """Internal owned source fixture; activates no user application."""
     if sys.platform != 'win32':
@@ -144,14 +211,13 @@ def run_source(report_path):
     from PySide6.QtWidgets import QApplication, QWidget
     app = QApplication([])
     path = Path(report_path)
-    state = {'pid': os.getpid(), 'armed': False, 'deactivations': 0, 'selected': True}
+    protocol = _SourceProtocol(path)
+    state = protocol.state
     class Source(QWidget):
         def event(self, event):
             if event.type() == QEvent.Type.WindowDeactivate and state['armed']:
-                state['deactivations'] += 1
-                state['selected'] = False
+                protocol.deactivated()
                 self.update()
-                _write(path, state)
             return super().event(event)
 
         def paintEvent(self, event):
@@ -167,13 +233,9 @@ def run_source(report_path):
     source.move(10, 20)
     source.show()
     state['hwnd'] = int(source.winId())
-    _write(path, state)
+    protocol.flush()
     def control():
-        command = _read(str(path) + '.control').get('command')
-        if command == 'arm' and not state['armed']:
-            state['armed'] = True
-            _write(path, state)
-        elif command == 'stop':
+        if protocol.poll():
             app.quit()
     timer = QTimer(source)
     timer.timeout.connect(control)
@@ -181,6 +243,24 @@ def run_source(report_path):
     QTimer.singleShot(45_000, app.quit)
     return app.exec()
 
+
+
+def _retire_fixture(app, fixture, child, job):
+    """IPC is best effort; an unreadable command must never bypass owned reap."""
+    try:
+        if child is not None:
+            try:
+                _write(str(fixture) + '.control', {'command': 'stop'})
+            except OSError:
+                pass
+            _pump(app, lambda: child.poll() is not None, 2)
+    finally:
+        try:
+            job.close()
+        finally:
+            if child is not None:
+                child.wait(timeout=5)
+    return child is not None and child.poll() is not None
 
 def _exercise(app, path):
     from PySide6.QtCore import QObject, Signal, QTimer
@@ -223,14 +303,20 @@ def _exercise(app, path):
     window.open()
     window.set_ocr_ready(True)
     app.processEvents()
+    ratio = screen.devicePixelRatio()
+    available = (round(geometry.x() * ratio), round(geometry.y() * ratio),
+                 round(geometry.width() * ratio), round(geometry.height() * ratio))
     result = {'dpi200_verified': screen.devicePixelRatio() >= 1.9,
               'main_button_preserved_source': False, 'compact_button_preserved_source': False,
-              'fixture_reaped': False, 'deactivation_detector_verified': False}
+              'fixture_reaped': False, 'deactivation_detector_verified': False,
+              'noncheck_native_edit_verified': False}
     fixture = Path(path).with_suffix('.fixture.json')
     job, child = _ChildJob(), None
     old_cursor = wintypes.POINT()
     user.GetCursorPos(ctypes.byref(old_cursor))
     try:
+        _fit_probe_button(window, window._check_button, user, ctypes, wintypes, available)
+        app.processEvents()
         # Source waits for explicit arm; no focus fixture operation occurs before
         # the subprocess is assigned to our kill-on-close job.
         child = _start_owned(_command('--invoice-focus-source', fixture), job,
@@ -273,26 +359,43 @@ def _exercise(app, path):
                          and fixture_state.get('deactivations') == 0)
             result['main_button_preserved_source' if index == 1 else
                    'compact_button_preserved_source'] = preserved
-        # Negative control: a normal editable setup activation MUST clear the
-        # source's selected row. Otherwise a non-reporting fixture could create
-        # a false success for both nonactivating check buttons.
-        window.open()
-        window.activateWindow()
-        user.SetForegroundWindow(int(window.winId()))
+        # A real non-check editor click must still activate and accept a key.
+        # Do not use open()/activateWindow(): that would make this negative
+        # control pass before any user-input path was exercised.
+        window.show()
+        app.processEvents()
+        if user.GetForegroundWindow() != hwnd:
+            raise RuntimeError('Passive setup reveal changed foreground')
+        editor = window._transparency
+        _fit_probe_button(window, editor, user, ctypes, wintypes, available)
+        rect = wintypes.RECT()
+        if not user.GetWindowRect(int(editor.winId()), ctypes.byref(rect)):
+            raise RuntimeError('Editor physical geometry unavailable')
+        user.SetCursorPos(rect.left + min(20, (rect.right - rect.left) // 3),
+                          (rect.top + rect.bottom) // 2)
+        user.mouse_event(0x0002, 0, 0, 0, 0)
+        try:
+            user.mouse_event(0x0004, 0, 0, 0, 0)
+            editing = _pump(app, lambda: user.GetForegroundWindow() == int(window.winId())
+                            and editor.hasFocus())
+            previous_value = editor.value()
+            user.keybd_event(0x28, 0, 0, 0)  # Down: actual focused spin editor.
+            user.keybd_event(0x28, 0, 0x2, 0)
+            changed = _pump(app, lambda: editor.value() == previous_value - 1)
+        finally:
+            user.mouse_event(0x0004, 0, 0, 0, 0)
+            user.keybd_event(0x28, 0, 0x2, 0)
+        result['noncheck_native_edit_verified'] = bool(editing and changed)
         result['deactivation_detector_verified'] = _pump(
             app, lambda: _read(fixture).get('deactivations', 0) > 0
             and _read(fixture).get('selected') is False)
     finally:
-        window.shutdown()
-        window.deleteLater()
-        user.SetCursorPos(old_cursor.x, old_cursor.y)
-        if child is not None:
-            _write(str(fixture) + '.control', {'command': 'stop'})
-            _pump(app, lambda: child.poll() is not None, 2)
-        job.close()
-        if child is not None:
-            child.wait(timeout=5)
-            result['fixture_reaped'] = child.poll() is not None
+        try:
+            window.shutdown()
+            window.deleteLater()
+            user.SetCursorPos(old_cursor.x, old_cursor.y)
+        finally:
+            result['fixture_reaped'] = _retire_fixture(app, fixture, child, job)
     result['passed'] = all(result.values())
     return result
 
@@ -301,7 +404,7 @@ def run_focus_probe(report_path):
     report = {'schema': 1, 'probe': 'invoice_native_focus', 'passed': False,
               'dpi200_verified': False, 'main_button_preserved_source': False,
               'compact_button_preserved_source': False, 'fixture_reaped': False,
-              'deactivation_detector_verified': False}
+              'deactivation_detector_verified': False, 'noncheck_native_edit_verified': False}
     if sys.platform == 'win32':
         try:
             from PySide6.QtWidgets import QApplication
@@ -331,7 +434,8 @@ def verify_fresh_child(app, directory):
             return False
         payload = _read(report)
         keys = ('passed', 'dpi200_verified', 'main_button_preserved_source',
-                'compact_button_preserved_source', 'fixture_reaped', 'deactivation_detector_verified')
+                'compact_button_preserved_source', 'fixture_reaped', 'deactivation_detector_verified',
+                'noncheck_native_edit_verified')
         return (child.returncode == 0 and type(payload.get('schema')) is int
                 and payload.get('schema') == 1
                 and payload.get('probe') == 'invoice_native_focus'

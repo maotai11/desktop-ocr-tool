@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
-from .invoice_check_overlay import InvoiceCheckOverlay, pin_without_activation, prevent_button_activation
+from .invoice_check_overlay import InvoiceCheckOverlay, pin_without_activation, prevent_button_activation, set_native_noactivate, is_native_mouse_activation, activate_native_editor
 from .theme import (_BG, _BG_RAISE, _BG_HOVER, _BORDER_L, _TEXT_PRI, _TEXT_SEC,
                     _ACCENT, _ACCENT_T, _SUCCESS, _ERROR, _WARNING, apply_combo_box_theme)
 
@@ -70,6 +70,14 @@ def _image(value):
     return result, original
 
 
+class _CheckButton(QPushButton):
+    """Keep native child-HWND mouse activation local to the check action."""
+    def nativeEvent(self, event_type, message):
+        if prevent_button_activation(message, [self]):
+            return True, 3  # MA_NOACTIVATE, while still delivering the click.
+        return super().nativeEvent(event_type, message)
+
+
 class _ActionBar(QWidget):
     check_requested = Signal()
     stop_requested = Signal()
@@ -77,7 +85,8 @@ class _ActionBar(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setStyleSheet(_STYLE)
@@ -86,7 +95,7 @@ class _ActionBar(QWidget):
         layout.setSpacing(5)
         self.status = _label('發票核對', True)
         layout.addWidget(self.status)
-        self.check = QPushButton('辨識核對')
+        self.check = _CheckButton('辨識核對')
         self.check.setObjectName('checkInvoice')
         self.stop = QPushButton('停止')
         self.setup = QPushButton('設定')
@@ -105,6 +114,11 @@ class _ActionBar(QWidget):
             return False
         area = screen.availableGeometry()
         self.move(area.right() - self.width() - 8, area.bottom() - self.height() - 8)
+        # Set native NOACTIVATE while hidden, including a recreated HWND after
+        # the pin flag changes. Applying it after show is too late on Windows.
+        if not pin_without_activation(self, pinned):
+            self.hide()
+            return False
         self.show()
         return pin_without_activation(self, pinned)
 
@@ -207,6 +221,7 @@ class InvoiceCheckWindow(QWidget):
 
     def __init__(self, controller, cfg=None, parent=None):
         super().__init__(parent, Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.controller, self._cfg = controller, cfg
         self._closing = self._closed = self._selection_active = False
         self._wanted = self._temporary_hide = self._capturing = self._compact = False
@@ -250,7 +265,9 @@ class InvoiceCheckWindow(QWidget):
         self._status.setWordWrap(True)
         outer.addWidget(self._status)
         scroll = QScrollArea()
+        self._content_scroll = scroll
         scroll.setWidgetResizable(True)
+        scroll.setMinimumHeight(0)
         content = QWidget()
         body = QVBoxLayout(content)
         body.setContentsMargins(0, 0, 3, 0)
@@ -350,7 +367,7 @@ class InvoiceCheckWindow(QWidget):
         appearance.addWidget(self._compact_button)
         outer.addLayout(appearance)
         buttons = QHBoxLayout()
-        self._check_button = QPushButton('辨識核對')
+        self._check_button = _CheckButton('辨識核對')
         self._check_button.setObjectName('checkInvoice')
         self._check_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._check_button.setToolTip('只擷取並核對這一次。請先在來源軟體選定資料列。')
@@ -668,20 +685,57 @@ class InvoiceCheckWindow(QWidget):
         if self._closing or self._closed or not self._wanted: return
         self._selection_active = False
         self.overlay.finish_capture(False)
+        set_native_noactivate(self, True)
         self.showNormal()
+        self._fit_to_available_screen()
         self.raise_()
         self.activateWindow()
+        activate_native_editor(self)
         self.action_bar.hide()
         if self._snapshot is None:
             self._status.setText('按辨識核對取得本次畫面。' if len(self._regions) == 2 else '框選發票與目前資料列')
         self._refresh()
 
+    def _available_geometry(self):
+        screen = self.screen() or QApplication.primaryScreen()
+        return screen.availableGeometry() if screen is not None else None
+
+    def _fit_to_available_screen(self):
+        available = self._available_geometry()
+        if available is None or available.isEmpty():
+            return
+        frame = self.frameGeometry()
+        extra_width = max(0, frame.width() - self.width())
+        extra_height = max(0, frame.height() - self.height())
+        maximum_width = max(1, available.width() - extra_width)
+        maximum_height = max(1, available.height() - extra_height)
+        # Source previews/results already scroll; keep actions outside that
+        # viewport and allow a short desktop to resize below the normal minimum.
+        self.setMinimumSize(min(320, maximum_width), min(480, maximum_height))
+        self.resize(min(self.width(), maximum_width), min(self.height(), maximum_height))
+        frame = self.frameGeometry()
+        x = max(available.left(), min(frame.left(), available.right() - frame.width() + 1))
+        y = max(available.top(), min(frame.top(), available.bottom() - frame.height() + 1))
+        if frame.topLeft() != QPoint(x, y):
+            self.move(self.pos() + QPoint(x, y) - frame.topLeft())
+
+    def setVisible(self, visible):
+        if visible and hasattr(self, '_check_button'):
+            set_native_noactivate(self, True)
+        super().setVisible(visible)
+        if visible and hasattr(self, '_check_button'):
+            set_native_noactivate(self, True)
+
     def showEvent(self, event):
+        # A native passive HWND prevents Windows clearing the source foreground
+        # before WM_MOUSEACTIVATE. Explicit editing/opening activates below.
+        set_native_noactivate(self, True)
         if not self._closing and not self._temporary_hide:
             self._closed = False
             self._wanted = True
             self._refresh()
         super().showEvent(event)
+        self._fit_to_available_screen()
 
     def _retire_visibility(self):
         self._visibility_generation += 1
@@ -746,4 +800,8 @@ class InvoiceCheckWindow(QWidget):
     def nativeEvent(self, event_type, message):
         if prevent_button_activation(message, [self._check_button]):
             return True, 3
+        if is_native_mouse_activation(message):
+            self.activateWindow()
+            activate_native_editor(self)
+            return True, 1  # MA_ACTIVATE: intentional editing, click retained.
         return super().nativeEvent(event_type, message)

@@ -1,0 +1,258 @@
+"""Live unpack observation retries only complete, freshly measured disk trees."""
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from scripts import benchmark_resource_budget as sampler
+from src.core import resource_budget as budget
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    state = SimpleNamespace(now=0., sleeps=[])
+    def sleep(seconds):
+        state.sleeps.append(seconds)
+        state.now += seconds
+    monkeypatch.setattr(sampler.time, 'monotonic', lambda: state.now)
+    monkeypatch.setattr(sampler.time, 'sleep', sleep)
+    return state
+
+
+def test_changed_tree_is_remeasured_without_partial_totals(tmp_path, monkeypatch, clock):
+    stable = tmp_path / 'stable.bin'; stable.write_bytes(b'x' * 5000)
+    changing = tmp_path / 'changing.bin'; changing.write_bytes(b'x')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    attempts = []
+    def allocation(path):
+        if path == changing:
+            attempts.append(True)
+            if len(attempts) <= 2:
+                old = path.stat().st_size
+                path.write_bytes(b'x' * (old + 100))
+                return old
+        return path.stat().st_size
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    measured = sampler.sample_managed_disk_usage(iter([changing, stable]))
+    sizes = [path.stat() for path in (stable, changing)]
+    expected = sum(max(info.st_size, getattr(info, 'st_blocks', 0) * 512) for info in sizes)
+    assert measured.bytes == expected and measured.files == 2 and measured.directories == 0
+    assert len(attempts) == 3 and clock.sleeps == [.02]
+
+
+def test_external_retry_cannot_change_product_writer_admission(tmp_path, monkeypatch, clock):
+    target = tmp_path / 'growing.bin'; target.write_bytes(b'x')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(budget, 'managed_storage_roots', lambda *a, **k: (target,))
+    calls = []
+    def allocation(path):
+        size = path.stat().st_size
+        calls.append(size)
+        path.write_bytes(b'x' * (size + 1))
+        return size
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    with pytest.raises(budget.ResourceMetadataChanged):
+        with budget.disk_quota_guard(reserve_bytes=1):
+            pytest.fail('An unstable product write must remain blocked')
+    assert len(calls) == 2 and clock.sleeps == [] and budget._reserved_bytes == 0
+
+
+@pytest.mark.parametrize('failure', [budget.ResourceInspectionError(),
+    budget.ResourceInspectionError(native_error=2), budget.ResourceInspectionError(native_error=5),
+    budget.ResourceBudgetExceeded(), PermissionError(), FileNotFoundError(), RuntimeError()])
+def test_other_failures_are_never_retried(monkeypatch, clock, failure):
+    calls = []
+    def fail(roots):
+        calls.append(tuple(roots))
+        raise failure
+    monkeypatch.setattr(sampler, 'managed_disk_usage', fail)
+    with pytest.raises(type(failure)):
+        sampler.sample_managed_disk_usage(['owned'])
+    assert len(calls) == 1 and clock.sleeps == []
+
+
+def test_continuous_metadata_changes_stop_after_fifty_whole_scans(monkeypatch, clock):
+    calls = []
+    def fail(roots):
+        calls.append(tuple(roots))
+        raise budget.ResourceMetadataChanged()
+    monkeypatch.setattr(sampler, 'managed_disk_usage', fail)
+    with pytest.raises(budget.ResourceMetadataChanged):
+        sampler.sample_managed_disk_usage(iter(['one', 'two']))
+    assert calls == [('one', 'two')] * 50 and clock.sleeps == [.02] * 49
+
+
+@pytest.mark.parametrize('last_result', ['changed', 'stable'])
+def test_whole_rescan_deadline_can_reject_before_attempt_limit(monkeypatch, clock, last_result):
+    calls = []
+    def scan(roots):
+        calls.append(True)
+        clock.now += 2.6
+        if len(calls) == 1 or last_result == 'changed':
+            raise budget.ResourceMetadataChanged()
+        return budget.DiskUsage(10, 1, 0)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', scan)
+    with pytest.raises(budget.ResourceMetadataChanged):
+        sampler.sample_managed_disk_usage(['owned'])
+    assert len(calls) == 2 and clock.sleeps == [.02]
+
+
+def test_no_retry_starts_when_twenty_ms_wait_would_exhaust_deadline(monkeypatch, clock):
+    calls = []
+    def scan(roots):
+        calls.append(True)
+        clock.now = 4.99
+        raise budget.ResourceMetadataChanged()
+    monkeypatch.setattr(sampler, 'managed_disk_usage', scan)
+    with pytest.raises(budget.ResourceMetadataChanged):
+        sampler.sample_managed_disk_usage(['owned'])
+    assert len(calls) == 1 and not clock.sleeps
+
+
+def test_first_stable_scan_still_must_finish_within_deadline(monkeypatch, clock):
+    calls = []
+    def scan(roots):
+        calls.append(True)
+        clock.now += 5.2
+        return budget.DiskUsage(10, 1, 0)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', scan)
+    with pytest.raises(budget.ResourceMetadataChanged):
+        sampler.sample_managed_disk_usage(['owned'])
+    assert calls == [True] and not clock.sleeps
+
+
+def test_observed_gap_includes_whole_rescan_work_and_wait(monkeypatch, clock):
+    calls = []
+    def scan(roots):
+        calls.append(True)
+        clock.now += .1
+        if len(calls) == 1:
+            raise budget.ResourceMetadataChanged()
+        return budget.DiskUsage(7, 1, 0)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', scan)
+    before = round(clock.now * 1000)
+    assert sampler.sample_managed_disk_usage(['owned']).bytes == 7
+    after = round(clock.now * 1000)
+    gaps = sampler.observed_sample_gaps([{'elapsed_ms': before}, {'elapsed_ms': after}])
+    assert gaps['minimum_ms'] == gaps['maximum_ms'] == gaps['mean_ms'] == 220
+
+
+def test_unpack_stabilizes_after_fifth_scan_but_within_original_deadline(monkeypatch, clock):
+    calls = []
+    def scan(roots):
+        calls.append(True)
+        clock.now += .01
+        if len(calls) <= 10:
+            raise budget.ResourceMetadataChanged()
+        return budget.DiskUsage(7, 1, 0)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', scan)
+    assert sampler.sample_managed_disk_usage(['owned']).bytes == 7
+    assert len(calls) == 11 and clock.sleeps == [.02] * 10
+    assert clock.now < 1.
+
+
+def test_failure_origin_distinguishes_real_node_change_from_scan_deadline(tmp_path, monkeypatch, clock):
+    target = tmp_path / 'growing.bin'; target.write_bytes(b'x')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    def allocation(path):
+        size = path.stat().st_size
+        path.write_bytes(b'x' * (size + 1))
+        return size
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    with pytest.raises(budget.ResourceMetadataChanged) as caught:
+        sampler.sample_managed_disk_usage([target])
+    detail = sampler._inspection_failure_details(caught.value)
+    assert detail == {'inspection_failure_site': 'NODE_CHANGED',
+                      'inspection_attempts': 50, 'inspection_elapsed_ms': 980}
+    clock.now = 0
+    def slow_stable(roots):
+        clock.now += 5.2
+        return budget.DiskUsage(1, 1, 0)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', slow_stable)
+    with pytest.raises(budget.ResourceMetadataChanged) as caught:
+        sampler.sample_managed_disk_usage([target])
+    assert sampler._inspection_failure_details(caught.value) == {
+        'inspection_failure_site': 'SCAN_DEADLINE', 'inspection_attempts': 1,
+        'inspection_elapsed_ms': 5200}
+
+
+def test_unknown_rethrown_origin_is_not_reported_as_stable_scan_deadline(monkeypatch, clock):
+    def fail(roots):
+        raise budget.ResourceMetadataChanged()
+    monkeypatch.setattr(sampler, 'managed_disk_usage', fail)
+    with pytest.raises(budget.ResourceMetadataChanged) as caught:
+        sampler.sample_managed_disk_usage(['private-location'])
+    detail = sampler._inspection_failure_details(caught.value)
+    assert detail['inspection_failure_site'] == 'OTHER'
+    assert set(detail) == {'inspection_failure_site','inspection_attempts','inspection_elapsed_ms'}
+
+
+def test_stage_failure_retains_fixed_diagnostic_and_reaps_owner(tmp_path, monkeypatch, clock):
+    closed = []
+    class Process:
+        def __init__(self, *args): pass
+        def pids(self): return ()
+        def close(self): closed.append(True)
+    def slow_stable(roots):
+        clock.now += 5.2
+        return budget.DiskUsage(1, 1, 0)
+    monkeypatch.setattr(sampler, 'NativeJobProcess', Process)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', slow_stable)
+    report, samples = sampler.run_stage(tmp_path/'app.exe', 'cold_application', '--smoke-app', timeout=5)
+    assert not samples and report['passed'] is False
+    assert report['inspection_failure_site'] == 'SCAN_DEADLINE'
+    assert report['inspection_attempts'] == 1 and report['inspection_elapsed_ms'] == 5200
+    assert report['temporary_cleaned'] is True and closed == [True]
+    assert str(tmp_path) not in str(report)
+
+
+def test_stable_scan_can_use_measured_five_second_observation_budget(monkeypatch, clock):
+    def scan(roots):
+        clock.now += 1.047
+        return budget.DiskUsage(7, 1, 0)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', scan)
+    assert sampler.sample_managed_disk_usage(['owned']).bytes == 7
+    assert clock.now == 1.047 and clock.sleeps == []
+
+
+@pytest.mark.parametrize('native_error', [2, 3, 5, 32, 33])
+def test_canonical_inspection_failure_retains_native_code_and_cleans_up(tmp_path, monkeypatch, clock, native_error):
+    closed = []
+    class Process:
+        def __init__(self, *args): pass
+        def pids(self): return ()
+        def close(self): closed.append(True)
+    def unavailable(roots):
+        error = budget.ResourceInspectionError(native_error=native_error)
+        error.args = ('PRIVATE_RAW_PATH_AND_TEXT',)
+        raise error
+    monkeypatch.setattr(sampler, 'NativeJobProcess', Process)
+    monkeypatch.setattr(sampler, 'managed_disk_usage', unavailable)
+    record, samples = sampler.run_stage(tmp_path/'app.exe', 'cold_application', '--smoke-app', timeout=5)
+    assert record['passed'] is False and record['error_code'] == 'ResourceInspectionError'
+    assert record['inspection_failure_site'] == 'OTHER'
+    assert record['inspection_native_error'] == native_error
+    assert not samples and clock.sleeps == [] and closed == [True]
+    assert record['temporary_cleaned'] is True
+    assert 'PRIVATE_RAW_PATH_AND_TEXT' not in str(record) and str(tmp_path) not in str(record)
+
+
+@pytest.mark.parametrize('native_error', [True, -1, 0x100000000, 'PRIVATE_NATIVE_ERROR'])
+def test_inspection_diagnostic_rejects_non_native_or_unbounded_codes(native_error):
+    detail = sampler._inspection_failure_details(budget.ResourceInspectionError(native_error=native_error))
+    assert detail == {'inspection_failure_site': 'OTHER'}
+
+
+def test_real_walk_failure_has_fixed_origin_without_private_path(tmp_path, monkeypatch):
+    target = tmp_path/'owned-private.bin'; target.write_bytes(b'x')
+    real_lstat = Path.lstat
+    def denied(path, *args, **kwargs):
+        if path == target:
+            raise PermissionError('PRIVATE_WALK_ERROR')
+        return real_lstat(path, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'lstat', denied)
+        with pytest.raises(budget.ResourceInspectionError) as caught:
+            budget.managed_disk_usage([target])
+    detail = sampler._inspection_failure_details(caught.value)
+    assert detail == {'inspection_failure_site': 'STORAGE_WALK'}

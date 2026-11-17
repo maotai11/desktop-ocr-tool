@@ -130,3 +130,47 @@ def test_nonactivation_hit_test_uses_native_physical_rect_at_high_dpi(monkeypatc
         patch.setattr(module.sys, 'platform', 'win32')
         patch.setattr(ctypes, 'WinDLL', lambda *args, **kwargs: Native(), raising=False)
         assert module.prevent_button_activation(ctypes.addressof(message), [Button()]) is expected
+
+
+def test_overlay_prepares_native_clickthrough_and_nonactivation_before_each_show(overlay, qapp, monkeypatch):
+    from src.ui import invoice_check_overlay as module
+    calls = []
+    monkeypatch.setattr(module, 'pin_without_activation',
+                        lambda widget, enabled, click_through: calls.append(
+                            (widget.isVisible(), enabled, click_through)) or True)
+    assert overlay.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+    assert overlay.set_snapshot(snapshot(qapp.primaryScreen().devicePixelRatio()))
+    assert calls == [(False, True, True), (True, True, True)]
+    calls.clear()
+    assert overlay.set_pinned(False)
+    assert calls == [(False, False, True), (True, False, True)]
+    assert overlay.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+
+
+
+
+def test_scoped_native_noactivate_changes_only_activation_bit(monkeypatch):
+    import ctypes
+    from src.ui import invoice_check_overlay as module
+    state = {'style': 0x00000088}
+    class Function:
+        def __init__(self, action): self.action = action
+        def __call__(self, *args): return self.action(*args)
+    def update(handle, index, value):
+        previous = state['style']
+        state['style'] = value
+        return previous
+    class Native:
+        GetWindowLongPtrW = Function(lambda *args: state['style'])
+        SetWindowLongPtrW = Function(update)
+    class Window:
+        def winId(self): return 100
+    with monkeypatch.context() as patch:
+        patch.setattr(module.sys, 'platform', 'win32')
+        patch.setattr(ctypes, 'WinDLL', lambda *a, **kw: Native(), raising=False)
+        patch.setattr(ctypes, 'set_last_error', lambda *a: None, raising=False)
+        patch.setattr(ctypes, 'get_last_error', lambda: 0, raising=False)
+        assert module.set_native_noactivate(Window(), True)
+        assert state['style'] == 0x08000088
+        assert module.set_native_noactivate(Window(), False)
+        assert state['style'] == 0x00000088

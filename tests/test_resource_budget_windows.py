@@ -105,3 +105,84 @@ def test_windows_filesystem_allocation_and_actual_cluster_reservation(tmp_path):
     before = usage.bytes
     target.write_bytes(b'x' * (block * 3 + 1))
     assert managed_disk_usage([tmp_path]).bytes >= before + block * 2
+
+
+@pytest.mark.parametrize('whole_directory', [False, True])
+def test_actual_windows_file_disappears_between_stat_and_attribute_handle(tmp_path, monkeypatch, whole_directory):
+    from src.core import resource_budget as budget
+    retired = tmp_path / '_MEI-owned-fixture'; retired.mkdir()
+    target = retired / 'retiring.bin'; target.write_bytes(b'x' * 100_000)
+    kept = tmp_path / 'keep.bin'; kept.write_bytes(b'preserved')
+    original = budget._windows_allocated_bytes
+    errors = []
+
+    def remove_before_native_open(path):
+        if path == target:
+            path.unlink()
+            if whole_directory:
+                retired.rmdir()
+            try:
+                return original(path)
+            except budget.ResourceInspectionError as exc:
+                errors.append(exc.native_error)
+                raise
+        return original(path)
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', remove_before_native_open)
+    usage = budget.managed_disk_usage([tmp_path])
+    assert errors and all(code in (2, 3) for code in errors)
+    assert usage.files == 1 and usage.bytes < 100_000
+    assert kept.read_bytes() == b'preserved'
+
+
+def test_cached_windows_bindings_still_measure_live_file_growth(tmp_path):
+    from src.core import resource_budget as budget
+    target = tmp_path / 'growing.bin'; target.write_bytes(b'x')
+    bindings = budget._windows_file_api()
+    before = budget._windows_allocated_bytes(target)
+    target.write_bytes(b'y' * 100_000)
+    after = budget._windows_allocated_bytes(target)
+    assert budget._windows_file_api() is bindings
+    assert after >= 100_000 and after > before
+
+
+def test_actual_windows_replacement_cannot_reuse_a_live_alias_identity(tmp_path, monkeypatch):
+    from src.core import resource_budget as budget
+    survivor = tmp_path / 'survivor.bin'; survivor.write_bytes(b'x' * 200_000)
+    replaced = tmp_path / 'replaced.bin'; os.link(survivor, replaced)
+    original = budget._windows_allocated_bytes
+
+    def replace_before_native_open(path):
+        if path == replaced:
+            path.unlink()
+            path.write_bytes(b'new bytes!')
+        return original(path)
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', replace_before_native_open)
+    with pytest.raises(budget.ResourceInspectionError):
+        budget.managed_disk_usage([survivor, replaced])
+    assert survivor.stat().st_size == 200_000 and replaced.read_bytes() == b'new bytes!'
+
+
+@pytest.mark.parametrize('continuous', [False, True])
+def test_actual_windows_same_inode_growth_is_remeasured_once(tmp_path, monkeypatch, continuous):
+    from src.core import resource_budget as budget
+    target = tmp_path / 'growing.bin'; target.write_bytes(b'x')
+    original = budget._windows_allocated_bytes
+    calls = []
+
+    def grow_after_query(path):
+        result = original(path)
+        calls.append(result)
+        if continuous or len(calls) == 1:
+            with path.open('ab') as stream:
+                stream.write(b'x' * 200_000)
+        return result
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', grow_after_query)
+    if continuous:
+        with pytest.raises(budget.ResourceInspectionError):
+            budget.managed_disk_usage([target])
+    else:
+        assert budget.managed_disk_usage([target]).bytes >= 200_001
+    assert len(calls) == 2

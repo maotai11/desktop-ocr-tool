@@ -51,6 +51,7 @@ BOOLS = frozenset((
     'helper_inference_and_reap bounded_raster_inference no_history_or_capture_files ownership_drained '
 ).split())
 NUMBERS = frozenset(('limit_bytes sample_interval_ms samples peak_rss_bytes peak_sampled_private_bytes peak_job_private_bytes '
+    'count minimum_ms maximum_ms mean_ms median_ms p95_ms '
     'peak_disk_bytes max_processes maximum_active_mei_directories active_processes total_processes '
     'job_limit_bytes inner_report_bytes manual_rounds_completed fields_each large_source_pixels '
     'schema helper_protocol iterations_per_profile iterations_completed '
@@ -89,7 +90,7 @@ ENUMS = {
         'UPSTREAM_TRAINING_REPLAY_AND_SYNTHETIC_ROBUSTNESS_ONLY'},
     'memory_limit_kind': {'Windows shared Job private allocation', 'POSIX per-process RLIMIT_AS'},
 }
-CONTAINERS = {'resource_budget', 'stages', 'cold_application', 'manual_invoice_and_helpers', 'workload_checks', 'checks', 'phases', 'collection', 'execution', 'model_profiles', 'profiles',
+CONTAINERS = {'resource_budget', 'stages', 'cold_application', 'manual_invoice_and_helpers', 'observed_sample_gaps', 'workload_checks', 'checks', 'phases', 'collection', 'execution', 'model_profiles', 'profiles',
     'v6-small', 'v6-medium', 'source_manifest', 'build_manifest', 'handwriting', 'helper',
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
@@ -198,8 +199,8 @@ def safe_fields(value, depth=0, context=None):
             else: invalid.append(key)
         elif key in NUMBERS:
             if item is None and key in ('training_rank', 'peak_sampled_direct_child_rss_kib', 'exit_code'): result[key] = None
-            elif key in ('elapsed_seconds','wall_seconds','scan_duration_seconds') and safe_number(item) and item >= 0: result[key] = item
-            elif key not in ('elapsed_seconds','wall_seconds','scan_duration_seconds') and type(item) is int and safe_number(item) and (item >= 0 or key == 'exit_code'): result[key] = item
+            elif key in ('elapsed_seconds','wall_seconds','scan_duration_seconds','mean_ms') and safe_number(item) and item >= 0: result[key] = item
+            elif key not in ('elapsed_seconds','wall_seconds','scan_duration_seconds','mean_ms') and type(item) is int and safe_number(item) and (item >= 0 or key == 'exit_code'): result[key] = item
             else: invalid.append(key)
         elif key in CONTAINERS:
             if isinstance(item, dict): result[key] = safe_fields(item, depth + 1, key)

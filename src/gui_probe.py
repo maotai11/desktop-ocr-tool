@@ -362,31 +362,76 @@ def _invoice_native_overlay_check(overlay):
         return
     import ctypes
     from ctypes import wintypes
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtWidgets import QApplication, QWidget
+
     user = ctypes.WinDLL('user32', use_last_error=True)
-    user.GetWindowLongPtrW.argtypes = [wintypes.HWND,ctypes.c_int]
+    user.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
     user.GetWindowLongPtrW.restype = ctypes.c_ssize_t
-    style = user.GetWindowLongPtrW(int(overlay.winId()),-20)
+    style = user.GetWindowLongPtrW(int(overlay.winId()), -20)
     _require(style & 0x00000008 and style & 0x08000000 and style & 0x00000020)
-    from PySide6.QtWidgets import QWidget
     user.GetForegroundWindow.restype = wintypes.HWND
-    user.SetForegroundWindow.argtypes = [wintypes.HWND]
-    user.SetForegroundWindow.restype = wintypes.BOOL
-    source = QWidget()
+    user.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    user.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+    user.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    user.WindowFromPoint.argtypes = [wintypes.POINT]
+    user.WindowFromPoint.restype = wintypes.HWND
+    user.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user.GetAncestor.restype = wintypes.HWND
+    user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    class Source(QWidget):
+        armed = False
+        deactivations = 0
+        def event(self, event):
+            if self.armed and event.type() == QEvent.Type.WindowDeactivate:
+                self.deactivations += 1
+            return super().event(event)
+    source = Source()
+    cursor = wintypes.POINT()
+    have_cursor = bool(user.GetCursorPos(ctypes.byref(cursor)))
     try:
-        source.setWindowTitle('Owned invoice probe focus fixture')
-        source.show()
-        source.activateWindow()
-        user.SetForegroundWindow(int(source.winId()))
-        _dispatch_for(30)
-        foreground = user.GetForegroundWindow()
-        _require(foreground == int(source.winId()))
+        _require(have_cursor)
+        # Repeated GUI probes may no longer own Windows' foreground grant after
+        # the separate native actor exits. A real click on this verified fixture
+        # surface earns focus instead of assuming SetForegroundWindow succeeded.
         overlay.hide()
+        source.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        source.setWindowTitle('Owned invoice probe focus fixture')
+        source.resize(180, 100)
+        area = QApplication.primaryScreen().availableGeometry()
+        source.move(area.left() + 8, area.top() + 8)
+        source.show()
+        _dispatch_for(30)
+        handle = int(source.winId())
+        client = wintypes.RECT()
+        _require(bool(user.GetClientRect(handle, ctypes.byref(client))))
+        point = wintypes.POINT((client.right - client.left) // 2,
+                              (client.bottom - client.top) // 2)
+        _require(bool(user.ClientToScreen(handle, ctypes.byref(point))))
+        hit = user.WindowFromPoint(point)
+        root = user.GetAncestor(hit, 2) if hit else None
+        owner = wintypes.DWORD()
+        user.GetWindowThreadProcessId(hit, ctypes.byref(owner))
+        _require(root == handle and owner.value == os.getpid())
+        _require(bool(user.SetCursorPos(point.x, point.y)))
+        user.mouse_event(0x0002, 0, 0, 0, 0)
+        user.mouse_event(0x0004, 0, 0, 0, 0)
+        _until(lambda: user.GetForegroundWindow() == handle, 2000)
+        source.armed = True
         _require(overlay.restore())
         _dispatch_for(30)
-        _require(user.GetForegroundWindow() == foreground)
+        _require(user.GetForegroundWindow() == handle and source.deactivations == 0)
     finally:
-        source.close()
-        source.deleteLater()
+        # No focus restoration: a steal must remain a failed assertion. Cleanup
+        # only releases this probe's button/cursor/window resources.
+        try:
+            user.mouse_event(0x0004, 0, 0, 0, 0)
+            if have_cursor:
+                user.SetCursorPos(cursor.x, cursor.y)
+        finally:
+            source.close()
+            source.deleteLater()
 
 
 

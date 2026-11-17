@@ -4,10 +4,141 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+from types import SimpleNamespace
 
 import pytest
 
 from src.core import resource_budget as budget
+
+
+@pytest.mark.parametrize('native_error', [2, 3])
+def test_disappearing_owned_file_is_removed_as_a_whole_measurement(tmp_path, monkeypatch, native_error):
+    removed = tmp_path / 'unpacking.tmp'
+    removed.write_bytes(b'x' * 200_000)
+    kept = tmp_path / 'keep.bin'
+    kept.write_bytes(b'preserved')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+
+    def allocation(path):
+        if path == removed:
+            path.unlink()
+            raise budget.ResourceInspectionError(native_error=native_error)
+        return path.stat().st_size
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    usage = budget.managed_disk_usage([tmp_path])
+    assert usage.files == 1 and usage.directories == 1
+    assert len(kept.read_bytes()) <= usage.bytes < 200_000
+
+
+@pytest.mark.parametrize('native_error,remove', [(2, False), (3, False), (5, False), (32, False),
+                                               (33, False), (5, True), (32, True)])
+def test_unconfirmed_or_unrelated_inspection_failure_is_never_skipped(tmp_path, monkeypatch, native_error, remove):
+    target = tmp_path / 'owned.bin'
+    target.write_bytes(b'keep original data')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+
+    def allocation(path):
+        if remove:
+            path.unlink()
+        raise budget.ResourceInspectionError(native_error=native_error)
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    with pytest.raises(budget.ResourceInspectionError):
+        budget.managed_disk_usage([target])
+    if not remove:
+        assert target.read_bytes() == b'keep original data'
+
+
+def test_recreated_path_after_native_not_found_still_blocks_admission(tmp_path, monkeypatch):
+    target = tmp_path / 'recreated.bin'
+    target.write_bytes(b'old')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+
+    def allocation(path):
+        path.unlink()
+        path.write_bytes(b'recreated live allocation')
+        raise budget.ResourceInspectionError(native_error=2)
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    with pytest.raises(budget.ResourceInspectionError):
+        budget.managed_disk_usage([target])
+    assert target.read_bytes() == b'recreated live allocation'
+
+
+def test_successful_replacement_cannot_hide_the_old_live_hardlink(tmp_path, monkeypatch):
+    survivor = tmp_path / 'survivor.bin'; survivor.write_bytes(b'x' * 200_000)
+    replaced = tmp_path / 'replaced.bin'; os.link(survivor, replaced)
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+
+    def allocation(path):
+        if path == replaced:
+            path.unlink()
+            path.write_bytes(b'new bytes!')
+        return path.stat().st_size
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    with pytest.raises(budget.ResourceInspectionError):
+        budget.managed_disk_usage([survivor, replaced])
+    assert survivor.stat().st_size == 200_000
+    assert replaced.read_bytes() == b'new bytes!'
+
+
+@pytest.mark.parametrize('continuous', [False, True])
+def test_same_inode_growth_gets_one_fresh_allocation_query_or_blocks(tmp_path, monkeypatch, continuous):
+    target = tmp_path / 'growing.bin'; target.write_bytes(b'x')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    calls = []
+
+    def allocation(path):
+        old_size = path.stat().st_size
+        calls.append(old_size)
+        if continuous or len(calls) == 1:
+            path.write_bytes(b'x' * (old_size + 200_000))
+        return old_size
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    if continuous:
+        with pytest.raises(budget.ResourceInspectionError):
+            budget.managed_disk_usage([target])
+    else:
+        usage = budget.managed_disk_usage([target])
+        assert usage.files == 1 and usage.bytes >= 200_001
+    assert len(calls) == 2
+
+
+def test_same_size_write_timestamp_requires_fresh_native_measurement(tmp_path, monkeypatch):
+    target = tmp_path / 'rewritten.bin'; target.write_bytes(b'old')
+    monkeypatch.setattr(budget, 'sys', SimpleNamespace(platform='win32'))
+    calls = []
+
+    def allocation(path):
+        calls.append(True)
+        if len(calls) == 1:
+            old = path.stat()
+            path.write_bytes(b'new')
+            os.utime(path, ns=(old.st_atime_ns, old.st_mtime_ns + 1_000_000_000))
+        return 3
+
+    monkeypatch.setattr(budget, '_windows_allocated_bytes', allocation)
+    assert budget.managed_disk_usage([target]).files == 1
+    assert len(calls) == 2 and target.read_bytes() == b'new'
+
+
+def test_directory_removed_during_enumeration_has_no_phantom_allocation(tmp_path, monkeypatch):
+    removed = tmp_path / 'retired'; removed.mkdir()
+    (tmp_path / 'keep.bin').write_bytes(b'kept')
+    original = Path.iterdir
+
+    def enumerate_owned(path):
+        if path == removed:
+            path.rmdir()
+        return original(path)
+
+    monkeypatch.setattr(Path, 'iterdir', enumerate_owned)
+    usage = budget.managed_disk_usage([tmp_path])
+    assert usage.files == 1 and usage.directories == 1
+    assert (tmp_path / 'keep.bin').read_bytes() == b'kept'
 
 
 def test_disk_counts_overlapping_roots_and_hardlinks_once(tmp_path):
