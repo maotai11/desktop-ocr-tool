@@ -172,7 +172,10 @@ jobs:
             $stressProcess = $null
             try {
               $stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru
-              if (-not $stressProcess.WaitForExit(900000)) { throw 'Frozen stress timed out' }
+              # Hosted Windows evidence: 500 Small + 400 Medium completed with
+              # steady CPU progress at 900 s. Keep all 1000 calls and a finite
+              # 25-minute wall deadline; cleanup below is unchanged.
+              if (-not $stressProcess.WaitForExit(1500000)) { throw 'Frozen stress timed out' }
               if ($stressProcess.ExitCode -ne 0) { throw 'Frozen stress failed' }
               $stress = Get-Content $stressReport -Raw -Encoding UTF8 | ConvertFrom-Json
               if (-not $stress.passed -or $stress.iterations_per_profile -ne 500 -or -not $stress.frozen -or $stress.executable_sha256 -ne $manifest.executable_sha256 -or $stress.version -ne $manifest.version) { throw 'Incomplete frozen stress report' }

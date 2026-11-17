@@ -105,6 +105,8 @@ Astral 是該 Windows 發行包供應者，並非 python.org 官方安裝器；�
 
 `artifacts/resource-budget.json` 是額外必需證據，不代替任何既有安全／封網／500次模型推論門檻。外部host在onefile啟動前以suspended程序加入Windows Job，量cold_application及manual_invoice_and_helpers兩階段。後者跑三輪真Small模型核對、目前列、600萬像素有界輸入及影像helper；檢查收尾後無子程序、臨時檔已清。
 
+模型壓測仍要求 Small、Medium 各完成500次、文字及模型身分一致。Windows 診斷 run `44075654073` 在舊900秒期限內已完成 Small 500次、Medium 400次，無辨識錯誤且CPU與進度持續增加；原期限截斷了正常工作。等待上限因此改為有限1500秒，保存載入／每10次進度與延遲，超時仍終止自有程序樹、等待回收並釋放handle。此診斷不是發行證據；正式同版EXE仍須重新完成全部1000次，1GB資源限制不變。
+
 四項峰值各自嚴格小於1,000,000,000 bytes：process-tree RSS、採樣private、原生Job peak private、EXE＋活動_MEI解壓＋管理profile磁碟。20ms是目標採樣間隔，不當作連續任意時刻RSS證明；原生Job峰值另列，模型檔大小不取代實際用量。OS可能將配置上限向下按頁對齊；故意觸發拒絕的大額配置負例可能增加Job會計峰值，不是正常工作量通過證據。正式正常workload的原生峰值仍必須低於1GB。
 
 公開報告只保留型別已驗證的峰值、計數、固定旗標、來源／EXE／同run雜湊，不公開逐樣本trace、路徑、文件影像或OCR文字。GUI原生focus報告在探針暫存中驗證後回收，公開只保留required/verified。

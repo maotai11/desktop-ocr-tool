@@ -69,12 +69,12 @@ def _stress_block(mutant):
     marker = "$stressReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-runtime-stress.json'\n"
     block = textwrap.dedent(step['run'].split(marker, 1)[1].rsplit('\n} finally {', 1)[0])
     command = "$stressProcess = Start-Process -FilePath $exe -ArgumentList @('--stress-ocr', $stressReport) -PassThru"
-    assert block.count(command) == block.count('WaitForExit(900000)') == 1
+    assert block.count(command) == block.count('WaitForExit(1500000)') == 1
     # Preserve the actual production supervisor. Capture its real SafeHandle at
     # fixture launch; no Process method or cleanup behavior is mocked.
     block = block.replace(command, '$stressProcess = Start-Process -FilePath $exe '
                           '-ArgumentList $fixtureArguments -PassThru; $ownedHandle = $stressProcess.SafeHandle')
-    block = block.replace('WaitForExit(900000)', 'WaitForExit(5000)')
+    block = block.replace('WaitForExit(1500000)', 'WaitForExit(5000)')
     if mutant:
         assert block.count('$stressProcess.Kill($true)') == 1
         block = block.replace('$stressProcess.Kill($true)', '$stressProcess.Kill()')
