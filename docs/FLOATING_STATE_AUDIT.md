@@ -1,4 +1,6 @@
-# 浮動視窗狀態檢查（rc.14）
+# 浮動視窗狀態檢查（rc.14 歷史紀錄）
+
+> 本文件保留 rc.14 當時的問題、修正與測試名稱。rc.18 已移除 A／B 核對、整列搜尋及其專用測試，以下相關段落不再代表現行功能；若要查看當時程式，請使用 [rc.14 版本](https://github.com/maotai11/desktop-ocr-tool/tree/v1.8.0-rc.14)。現行 GUI 契約為 15 項，包含主浮窗快捷複製及已移除功能不存在的檢查，詳見 [目前驗證範圍](VALIDATION_COVERAGE.md)。
 
 這次檢查從「視窗已關閉、最小化、正在框選、工作尚未返回」等狀態切入，追查延遲回覆、重新開啟及退出時的交互影響。分組檢查範圍為核對／整列搜尋、文件／歷史編輯、截圖／手寫，以及浮窗／系統匣／總退出流程；另一組交叉檢查可重現情境，補上成品 GUI 探針。
 
@@ -25,13 +27,13 @@
 | 總退出已開始，系統匣手寫或設定完成事件才到達 | 已停用浮窗仍建立新工具，或套用舊設定 | 工具入口及模態返回檢查退出狀態，不新建工作、不儲存；`test_tray_cannot_create_handwriting_after_shutdown_begins`、`test_modal_return_after_shutdown_cannot_publish_settings` |
 | 程式退出期間，歷史 DB 回覆、刪除／清理／匯出／另存對話才返回 | 獨立視窗仍能新增工作，或再次彈出完成訊息 | 歷史與編輯器進入停止狀態，保留記憶體草稿，不再存檔、改 DB、匯出或排 OCR；`test_history_shutdown_ignores_queued_db_responses_and_keeps_editor_draft`、`test_history_modal_return_after_shutdown_cannot_write_or_export`、`test_editor_shutdown_blocks_rerun_and_file_dialog_completion` |
 
-回歸測試位於 repository 的 `tests/test_comparison_ui.py`、`test_shared_search_ui.py`、`test_comparison_controller.py`、`test_shared_search_controller.py`、`test_document_history_lifecycle.py`、`test_capture_overlay_lifecycle.py`、`test_handwriting_window_lifecycle.py` 、`test_handwriting.py`、`test_settings_lifecycle.py` 及 `test_floating_shutdown_entries.py`。這些是可重現的事件順序，沒有把同一個 assert 重複計算成不同功能的完成證明。
+當時的回歸測試位於 rc.14 repository 的 `tests/test_comparison_ui.py`、`test_shared_search_ui.py`、`test_comparison_controller.py`、`test_shared_search_controller.py`、`test_document_history_lifecycle.py`、`test_capture_overlay_lifecycle.py`、`test_handwriting_window_lifecycle.py` 、`test_handwriting.py`、`test_settings_lifecycle.py` 及 `test_floating_shutdown_entries.py`。這些是可重現的事件順序，沒有把同一個 assert 重複計算成不同功能的完成證明。
 
 手寫另有實際測試子程序的回收回歸：`test_hidden_window_reaps_hung_helper_and_explicit_reopen_recognition_succeeds` 啟動會掛住的自有 helper，隱藏視窗後確認程序、工作與等待 timer 都退役，隱藏期間不接受新辨識；明確重開並送出新的辨識後才成功。這是程序生命週期證據，不是筆跡模型準確率測試。
 
-## 成品要再次檢查的操作
+## rc.14 成品要求的操作
 
-既有 GUI 探針保留設定、歷史、編輯、選字複製、文件、手寫、兩種核對與退出流程。rc.14 再增加三個具名 check：
+rc.14 當時的 GUI 探針包含設定、歷史、編輯、選字複製、文件、手寫、兩種核對與退出流程。rc.14 再增加三個具名 check：
 
 | Check | 要驗證的狀態轉換 |
 | --- | --- |
@@ -39,13 +41,13 @@
 | `capture_cancel_restart_ignores_old_gesture` | 中斷框選後重新開始，舊滑鼠放開事件不能完成新框 |
 | `shutdown_rejects_late_tool_entries` | 總退出開始後，晚到的工具入口不能再建立／啟動工作 |
 
-因此同版 GUI 報告必須包含 **15 項**檢查，在來源、打包 EXE、防火牆及隔離 profile 四種模式分別執行。具體操作與檢查的副作用見 [驗證矩陣](VALIDATION_COVERAGE.md)。手寫項目另測隱藏後超過送出延遲，仍不新增辨識請求，直到明確重新開啟；這個使用替身的介面檢查不能取代原生 helper 的程序回收測試。
+因此 rc.14 的 GUI 報告要求 **15 項**檢查，在來源、打包 EXE、防火牆及隔離 profile 四種模式分別執行。具體操作與檢查的副作用見 [驗證矩陣](VALIDATION_COVERAGE.md)。手寫項目另測隱藏後超過送出延遲，仍不新增辨識請求，直到明確重新開啟；這個使用替身的介面檢查不能取代原生 helper 的程序回收測試。
 
 第二次啟動的喚醒分支另用合成 Windows 訊息緩衝區測試正常還原與退出拒絕；這個來源回歸不等於已跑過所有 Windows 程序間通訊情境，也不由三項新 GUI check 代證。
 
 新回歸測試與成品 GUI 探針分開判讀。pytest 通過只證明列出的狀態與事件順序；四種 GUI 結果仍須各自出現在同版 `validation-metadata.zip`，對上來源 commit 與 EXE SHA256。本地 offscreen 通過不能代替 Windows 原生桌面結果，也不能沿用 rc.13 報告。
 
-## 保留的行為與限制
+## rc.14 行為與限制
 
 - 開窗不等於開始 OCR。需要持續核對的功能，仍由使用者按開始；暫停／關閉後不再排下一輪。
 - 退出會阻止新增工作並丟棄過期回覆；已進入單次原生辨識的工作可能要等它返回才能收尾，不能保證任意原生運算立即中斷。

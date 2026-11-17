@@ -7,7 +7,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts.verify_candidate_bundle import VERSION, sha256_file, verify_candidate
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe, gui_probe
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, gui_probe
 
 EXE_BYTES = b'fake-exe-byte-fixture'.ljust(128, b'\0')
 
@@ -44,11 +44,10 @@ def candidate(tmp_path, monkeypatch):
         'frozen-app-smoke.json': dict(common, probe='application_lifecycle', phase_a=True,
                                      engine_ready=True, shutdown_clean=True,
                                      threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True,
-                                                      'history_maintenance': True, 'shared_search': True}),
+                                                      'history_maintenance': True}),
     }
     probes['frozen-handwriting.json'] = handwriting_probe(VERSION, hashlib.sha256(exe).hexdigest())
     probes['frozen-handwriting-image.json'] = image_probe(VERSION, hashlib.sha256(exe).hexdigest(), profiles)
-    probes['frozen-shared-search.json'] = shared_search_probe(VERSION, hashlib.sha256(exe).hexdigest())
     probes['frozen-gui.json'] = gui_probe(VERSION, hashlib.sha256(exe).hexdigest())
     manifest = {'handwriting': handwriting_identity(), 'schema': 2, 'platform': 'win32', 'version': VERSION,
                 'executable_name': f'InkPick-v{VERSION}.exe',
@@ -74,7 +73,7 @@ def candidate(tmp_path, monkeypatch):
     write_bundle()
     for name, value in probes.items():
         (firewall / name).write_bytes(encoded(value))
-        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json', 'frozen-shared-search.json': 'source-shared-search.json', 'frozen-gui.json': 'source-gui.json'}[name]
+        source_name = {'frozen-selftest.json': 'source-selftest.json', 'frozen-app-smoke.json': 'source-app-smoke.json', 'frozen-handwriting.json': 'source-handwriting.json', 'frozen-handwriting-image.json': 'source-handwriting-image.json', 'frozen-gui.json': 'source-gui.json'}[name]
         (tmp_path / source_name).write_bytes(encoded(dict(value, frozen=False, executable_sha256=None)))
     gate = {'passed': True, 'version': VERSION, 'executable_sha256': manifest['executable_sha256'],
             'clean_machine_verified': False,
@@ -365,5 +364,42 @@ def test_release_requires_500_stress_iterations_of_both_exact_profiles(candidate
     if defect == 'failed_iteration': report['profiles']['v6-small']['failures'] = [{'iteration': 1}]
     if defect == 'wrong_model': report['profiles']['v6-medium']['identity']['runtime_version'] = 'wrong'
     path.write_bytes(encoded(report))
+    with pytest.raises(ValueError):
+        verify_candidate(root, 'a' * 40)
+
+
+@pytest.mark.parametrize('stage', ['embedded', 'source', 'firewall'])
+@pytest.mark.parametrize('defect', ['absence_false', 'absence_missing', 'absence_nonbool', 'quick_false', 'quick_missing', 'quick_nonbool', 'legacy_worker'])
+def test_removed_tools_cannot_reappear_in_current_candidate_evidence(candidate, stage, defect):
+    root, manifest, contents, write_bundle = candidate
+    probe_name = 'frozen-app-smoke.json' if defect == 'legacy_worker' else 'frozen-gui.json'
+    source_name = 'source-app-smoke.json' if defect == 'legacy_worker' else 'source-gui.json'
+    member = 'candidate-validation/' + probe_name
+    path = root / (source_name if stage == 'source' else 'artifacts/firewall-validation/' + probe_name)
+    report = json.loads(contents[member] if stage == 'embedded' else path.read_bytes())
+    if defect == 'legacy_worker':
+        report['threads_stopped']['shared_search'] = True
+    elif defect == 'quick_missing':
+        del report['checks']['launcher_copy_controls']
+    elif defect in ('quick_false', 'quick_nonbool'):
+        report['checks']['launcher_copy_controls'] = False if defect == 'quick_false' else 1
+    elif defect == 'absence_missing':
+        del report['checks']['removed_comparison_tools_absent']
+    else:
+        report['checks']['removed_comparison_tools_absent'] = False if defect == 'absence_false' else 1
+    raw = encoded(report)
+    # Rebind byte hashes, so rejection depends on the actual retained contract.
+    if stage == 'embedded':
+        contents[member] = raw
+        manifest['candidate_probes'][probe_name]['sha256'] = hashlib.sha256(raw).hexdigest()
+        contents['BUILD_MANIFEST.json'] = encoded(manifest)
+        write_bundle()
+    else:
+        path.write_bytes(raw)
+        if stage == 'firewall':
+            gate_path = root / 'artifacts/firewall-validation/candidate-gate.json'
+            gate = json.loads(gate_path.read_bytes())
+            gate['probes'][probe_name]['sha256'] = hashlib.sha256(raw).hexdigest()
+            gate_path.write_bytes(encoded(gate))
     with pytest.raises(ValueError):
         verify_candidate(root, 'a' * 40)

@@ -7,9 +7,9 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QTextEdit, QScrollArea, QLabel, QMessageBox,
-    QFrame, QMenu, QApplication, QProgressBar, QComboBox, QGraphicsOpacityEffect, QStyle
+    QFrame, QMenu, QApplication, QProgressBar, QComboBox, QGraphicsOpacityEffect, QStyle, QButtonGroup
 )
-from PySide6.QtCore import Qt, QEvent, QUrl, QPropertyAnimation, QEasingCurve, QSize, Signal
+from PySide6.QtCore import Qt, QEvent, QUrl, QPropertyAnimation, QEasingCurve, QSize, QPoint, Signal
 from PySide6.QtGui import QDesktopServices, QIcon, QPixmap, QPainter, QPen, QColor, QPainterPath
 
 from .theme import (
@@ -94,11 +94,8 @@ def _line_icon(kind: str, color: str) -> QIcon:
 
 
 class FloatingWidget(QWidget):
-    comparison_status = Signal(str)
-    shared_search_status = Signal(str)
     settings_saved = Signal()
     clipboard_pause_changed = Signal(bool)
-    region_tool_requested = Signal()
 
     def __init__(self, item_repo, file_mgr, db_worker, ocr_worker,
                  cfg, data_dir, parent=None, tag_repo=None):
@@ -114,23 +111,12 @@ class FloatingWidget(QWidget):
         self._console = None
         self._ui_closing = False
         self._settings_dialogs = set()
+        self._copy_cleanup_popup = None
         self._refreshing_history = False
         self._handwriting = None
         self._documents = None
         self._document_controller = None
         self._documents_closing = False
-        self._comparison = None
-        self._comparison_controller = None
-        self._comparison_overlay = None
-        self._comparison_closing = False
-        self._shared_search = None
-        self._shared_search_controller = None
-        self._shared_search_selector = None
-        self._shared_search_preview = None
-        self._shared_search_closing = False
-        self._shared_search_selection = 0
-        self._shared_search_selection_signature = None
-        self._shared_search_applying_selection = False
         self._clip_paused = False
         self._ocr_ready = False
         self._items = []
@@ -143,6 +129,8 @@ class FloatingWidget(QWidget):
         self._drag_host = None
 
         self._setup_ui()
+        self.settings_saved.connect(self._refresh_copy_preferences)
+        self._refresh_copy_preferences()
         self._position_widget()
         self.refresh_list()
         # Worker mutations may originate from either window or maintenance.
@@ -170,6 +158,7 @@ class FloatingWidget(QWidget):
             return
         self._ui_closing = True
         self.setEnabled(False)
+        self._close_copy_cleanup()
         self._capture_ocr_callback = self._capture_image_callback = None
         self._list_reveal.stop()
         for menu in self.findChildren(QMenu):
@@ -180,18 +169,6 @@ class FloatingWidget(QWidget):
             self._console.shutdown()
         for editor in tuple(getattr(self, '_editor_windows', {}).values()):
             editor.shutdown()
-
-    def prepare_region_capture(self):
-        """A single fullscreen selector owns input across all capture modes."""
-        if self._ui_closing:
-            return
-        self._cancel_shared_search_selection()
-        self._cancel_comparison_selection()
-        self.pause_shared_search()
-        self.pause_comparison()
-        for window in (self._shared_search, self._comparison):
-            if window is not None:
-                window.hide()
 
     def _setup_ui(self):
         from ..core.version import APP_DISPLAY_NAME
@@ -242,15 +219,15 @@ class FloatingWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
         vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(16, 12, 16, 14)
-        vbox.setSpacing(10)
+        vbox.setContentsMargins(12, 10, 12, 12)
+        vbox.setSpacing(8)
 
         # The only draggable region is the quiet title row.
         top_bar = QHBoxLayout()
         top_bar.setSpacing(8)
         brand = QLabel()
-        brand.setPixmap(application_icon().pixmap(28, 28))
-        brand.setFixedSize(28, 28)
+        brand.setPixmap(application_icon().pixmap(24, 24))
+        brand.setFixedSize(24, 24)
         title = QLabel("拾字筆")
         title.setStyleSheet(f"color: {_TEXT_PRI}; font-size: 15px; font-weight: 600;")
         for label in (brand, title):
@@ -263,21 +240,28 @@ class FloatingWidget(QWidget):
         self._ocr_status_lbl.setMaximumWidth(92)
         self._ocr_status_lbl.setStyleSheet(f"font-size: 11px; color: {_TEXT_SEC};")
         top_bar.addWidget(self._ocr_status_lbl)
-        self._btn_settings = QPushButton()
+        self._btn_settings = QPushButton("設定")
         self._btn_settings.setIcon(_line_icon('settings', _TEXT_SEC))
-        self._btn_settings.setFixedSize(28, 28)
+        self._btn_settings.setFixedSize(60, 28)
         self._btn_settings.setAccessibleName("設定")
         self._btn_settings.setToolTip("設定")
-        self._btn_settings.setStyleSheet("padding: 4px; background: transparent;")
+        self._btn_settings.setStyleSheet("padding: 3px 6px; background: transparent;")
         self._btn_settings.clicked.connect(self.open_settings)
         top_bar.addWidget(self._btn_settings)
         vbox.addLayout(top_bar)
 
+        # Capture and its output preferences form one visible, direct workflow.
+        capture_card = QFrame()
+        capture_card.setObjectName('captureCard')
+        capture_card.setStyleSheet(f'QFrame#captureCard {{ background: {_BG_RAISE}; border: 1px solid {_BORDER_L}; border-radius: 12px; }}')
+        capture_layout = QVBoxLayout(capture_card)
+        capture_layout.setContentsMargins(8, 6, 8, 6)
+        capture_layout.setSpacing(4)
         self._btn_ocr = QPushButton("擷取文字")
         self._btn_ocr.setEnabled(False)
         self._btn_ocr.setIcon(_line_icon('capture', _ACCENT_T))
         self._btn_ocr.setIconSize(QSize(20, 20))
-        self._btn_ocr.setMinimumHeight(46)
+        self._btn_ocr.setFixedHeight(40)
         self._btn_ocr.setToolTip("框選螢幕並辨識文字 · Ctrl+Shift+O")
         self._btn_ocr.clicked.connect(self.trigger_capture_ocr)
         self._btn_ocr.setStyleSheet(f"""
@@ -290,43 +274,65 @@ class FloatingWidget(QWidget):
             QPushButton:disabled {{ background: {_BG_RAISE}; color: {_TEXT_SEC}; }}
             QPushButton:focus {{ border-color: {_TEXT_PRI}; }}
         """)
-        vbox.addWidget(self._btn_ocr)
+        capture_layout.addWidget(self._btn_ocr)
+        mode_bar = QWidget()
+        mode_bar.setObjectName('copyModeBar')
+        mode_bar.setStyleSheet(f'QWidget#copyModeBar {{ background: {_BG}; border-radius: 7px; }}')
+        mode_layout = QHBoxLayout(mode_bar)
+        mode_layout.setContentsMargins(2, 2, 2, 2)
+        mode_layout.setSpacing(2)
+        self._copy_mode_group = QButtonGroup(self)
+        self._copy_mode_group.setExclusive(True)
+        self._copy_mode_buttons = {}
+        for label, mode in [('複製全部', 'all'), ('選字複製', 'select')]:
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setFixedHeight(24)
+            button.setAccessibleName(label)
+            button.setToolTip('框選畫面辨識後，自動複製全部文字。' if mode == 'all' else '框選畫面辨識後，先選擇要複製的文字。')
+            button.setStyleSheet(f'QPushButton {{ background: transparent; color: {_TEXT_SEC}; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; font-size: 11px; }} QPushButton:checked {{ background: {_ACCENT_18}; color: {_ACCENT}; border-color: {_ACCENT_35}; }} QPushButton:focus {{ border-color: {_ACCENT}; }}')
+            button.clicked.connect(lambda checked=False, choice=mode: self._set_quick_copy_mode(choice))
+            self._copy_mode_group.addButton(button)
+            self._copy_mode_buttons[mode] = button
+            mode_layout.addWidget(button)
+        capture_layout.addWidget(mode_bar)
+        self._btn_copy_cleanup = QPushButton('複製清理 · 未啟用  ▾')
+        self._btn_copy_cleanup.setFixedHeight(24)
+        self._btn_copy_cleanup.setAccessibleName('複製清理')
+        self._btn_copy_cleanup.setToolTip('直接調整逗號、撇號、換行與標點空白的移除／替換方式。')
+        self._btn_copy_cleanup.setStyleSheet(f'QPushButton {{ text-align: left; background: transparent; color: {_TEXT_SEC}; border: 1px solid {_BORDER}; border-radius: 6px; padding: 2px 7px; font-size: 11px; }} QPushButton:hover {{ background: {_BG_HOVER}; color: {_TEXT_PRI}; }}')
+        self._btn_copy_cleanup.clicked.connect(self._open_copy_cleanup)
+        capture_layout.addWidget(self._btn_copy_cleanup)
+        self._copy_settings_notice = QLabel('未儲存，請確認設定資料夾可寫入後重試。')
+        self._copy_settings_notice.setAccessibleName('複製設定儲存狀態')
+        self._copy_settings_notice.setWordWrap(True)
+        self._copy_settings_notice.setStyleSheet(f'color: {_ERROR}; font-size: 11px;')
+        self._copy_settings_notice.hide()
+        capture_layout.addWidget(self._copy_settings_notice)
+        vbox.addWidget(capture_card)
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self._btn_screenshot = QPushButton("截圖")
         self._btn_screenshot.setIcon(_line_icon('image', _TEXT_SEC))
-        self._btn_screenshot.setMinimumHeight(34)
+        self._btn_screenshot.setFixedHeight(32)
         self._btn_screenshot.setToolTip("框選截圖 · Ctrl+Shift+S")
         self._btn_screenshot.clicked.connect(self.trigger_capture_image)
         self._btn_handwriting = QPushButton("手寫")
         self._btn_handwriting.setIcon(_line_icon('pen', _TEXT_SEC))
-        self._btn_handwriting.setMinimumHeight(34)
+        self._btn_handwriting.setFixedHeight(32)
         self._btn_handwriting.setToolTip("寫一個字，點選候選即可複製")
         self._btn_handwriting.clicked.connect(self.open_handwriting)
         actions.addWidget(self._btn_screenshot)
         actions.addWidget(self._btn_handwriting)
-        vbox.addLayout(actions)
 
         self._btn_documents = QPushButton("文件套版")
         self._btn_documents.setIcon(_line_icon('folder', _TEXT_SEC))
-        self._btn_documents.setMinimumHeight(32)
+        self._btn_documents.setFixedHeight(32)
         self._btn_documents.setToolTip("匯入 PDF／圖片，框選欄位後套用文字模板")
         self._btn_documents.clicked.connect(self.open_document_template)
-        vbox.addWidget(self._btn_documents)
-        self._btn_comparison = QPushButton("A／B 核對")
-        self._btn_comparison.setMinimumHeight(32)
-        self._btn_comparison.setToolTip("固定兩個位置持續核對，用顏色提醒不同")
-        self._btn_comparison.clicked.connect(self.open_comparison)
-        comparison_actions = QHBoxLayout()
-        comparison_actions.setSpacing(8)
-        comparison_actions.addWidget(self._btn_comparison)
-        self._btn_shared_search = QPushButton("整列搜尋")
-        self._btn_shared_search.setMinimumHeight(32)
-        self._btn_shared_search.setToolTip("框選同一行輸入的數值，在發票範圍找符合位置；支援換列與反藍追蹤")
-        self._btn_shared_search.clicked.connect(self.open_shared_search)
-        comparison_actions.addWidget(self._btn_shared_search)
-        vbox.addLayout(comparison_actions)
+        actions.addWidget(self._btn_documents)
+        vbox.addLayout(actions)
 
         self._ocr_progress_bar = QProgressBar()
         self._ocr_progress_bar.setFixedHeight(3)
@@ -347,7 +353,7 @@ class FloatingWidget(QWidget):
         section.addStretch()
         self._btn_batch_select = QPushButton("多選")
         self._btn_batch_select.setCheckable(True)
-        self._btn_batch_select.setFixedHeight(26)
+        self._btn_batch_select.setFixedHeight(24)
         self._btn_batch_select.setToolTip("選取多筆紀錄")
         self._btn_batch_select.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {_TEXT_SEC}; padding: 2px 6px; }}
@@ -356,7 +362,7 @@ class FloatingWidget(QWidget):
         self._btn_batch_select.clicked.connect(self._toggle_batch_mode)
         section.addWidget(self._btn_batch_select)
         self._btn_batch_action = QPushButton("操作 (0)")
-        self._btn_batch_action.setFixedHeight(26)
+        self._btn_batch_action.setFixedHeight(24)
         self._btn_batch_action.hide()
         self._btn_batch_action.setStyleSheet(f"color: {_ACCENT}; padding: 2px 6px;")
         self._btn_batch_action.clicked.connect(self._show_batch_menu)
@@ -368,13 +374,13 @@ class FloatingWidget(QWidget):
         filter_shell.setObjectName("filterShell")
         filter_shell.setStyleSheet(f"QWidget#filterShell {{ background: {_BG_RAISE}; border-radius: 9px; }}")
         filter_bar = QHBoxLayout(filter_shell)
-        filter_bar.setContentsMargins(3, 3, 3, 3)
+        filter_bar.setContentsMargins(2, 2, 2, 2)
         filter_bar.setSpacing(2)
         self._filter_buttons = {}
         for label, key in [("全部", "all"), ("文字", "text"), ("圖片", "image"), ("釘選", "pinned")]:
             btn = QPushButton(label)
             btn.setCheckable(True)
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(24)
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; border-radius: 6px; padding: 3px 8px;
@@ -445,25 +451,112 @@ class FloatingWidget(QWidget):
         self._storage_attachments.setToolTipsVisible(True)
         self._storage_records.setToolTipsVisible(True)
         self._btn_data_dir.clicked.connect(self.show_storage_locations)
-        self._btn_pause = QPushButton()
+        self._btn_pause = QPushButton("暫停收錄")
         self._btn_pause.setCheckable(True)
-        self._btn_pause.setFixedSize(30, 30)
+        self._btn_pause.setFixedSize(82, 28)
         self._btn_pause.setIcon(_line_icon('pause', _TEXT_SEC))
         self._btn_pause.setAccessibleName("暫停剪貼簿紀錄")
         self._btn_pause.setToolTip("暫停剪貼簿紀錄")
         self._btn_pause.clicked.connect(self.toggle_clipboard_pause)
         self._btn_pause.setStyleSheet(f"""
-            QPushButton {{ padding: 5px; background: transparent; }}
+            QPushButton {{ padding: 3px 4px; background: transparent; font-size: 11px; }}
             QPushButton:checked {{ background: {_ERROR_18}; border-color: {_ERROR_35}; }}
         """)
         for button in (self._btn_console, self._btn_data_dir):
-            button.setMinimumHeight(30)
+            button.setMinimumHeight(28)
             button.setStyleSheet(f"background: transparent; color: {_TEXT_SEC}; padding: 4px 3px; font-size: 11px;")
         bottom_bar.addWidget(self._btn_console)
         bottom_bar.addWidget(self._btn_data_dir)
         bottom_bar.addStretch()
         bottom_bar.addWidget(self._btn_pause)
         vbox.addLayout(bottom_bar)
+
+    def _refresh_copy_preferences(self, *_):
+        if self._ui_closing:
+            return
+        from .copy_preferences import cleanup_summary, read_copy_mode
+        mode = read_copy_mode(self._cfg)
+        for choice, button in self._copy_mode_buttons.items():
+            button.setChecked(choice == mode)
+        self._btn_copy_cleanup.setText(f'複製清理 · {cleanup_summary(self._cfg)}  ▾')
+
+    def _set_quick_copy_mode(self, mode):
+        if self._ui_closing or not self.isVisible():
+            return
+        if self._settings_dialogs:
+            self._refresh_copy_preferences()
+            return
+        from .copy_preferences import set_copy_mode
+        try:
+            set_copy_mode(self._cfg, mode)
+        except (OSError, ValueError) as error:
+            self._refresh_copy_preferences()
+            if not self._ui_closing and self.isVisible():
+                self._copy_settings_notice.setText(
+                    '設定格式有誤，請檢查設定檔後再試。' if isinstance(error, ValueError)
+                    else '未儲存，請確認設定資料夾可寫入後重試。')
+                self._copy_settings_notice.show()
+            return
+        self._copy_settings_notice.hide()
+        self._refresh_copy_preferences()
+
+    def _close_copy_cleanup(self):
+        popup = self._copy_cleanup_popup
+        self._copy_cleanup_popup = None
+        if popup is not None:
+            popup.reject()
+
+    def _open_copy_cleanup(self):
+        if self._ui_closing or not self.isVisible() or self._settings_dialogs:
+            return
+        popup = self._copy_cleanup_popup
+        if popup is not None:
+            popup.raise_()
+            popup.activateWindow()
+            return
+        from .copy_preferences import CopyCleanupDialog
+        popup = CopyCleanupDialog(self._cfg, parent=self, compact=True)
+        if self._ui_closing or not self.isVisible() or self._settings_dialogs:
+            popup.reject()
+            popup.deleteLater()
+            return
+        self._copy_cleanup_popup = popup
+        popup.preferences_saved.connect(self._refresh_copy_preferences)
+
+        def finished(*_):
+            if self._copy_cleanup_popup is popup:
+                self._copy_cleanup_popup = None
+            popup.deleteLater()
+
+        popup.finished.connect(finished)
+        popup.installEventFilter(self)
+        popup.adjustSize()
+        popup.show()
+        self._position_copy_cleanup(popup)
+        popup.raise_()
+        popup.activateWindow()
+
+    def _position_copy_cleanup(self, popup):
+        if self._copy_cleanup_popup is not popup or self._ui_closing:
+            return
+        area = self.screen().availableGeometry()
+        frame = popup.frameGeometry()
+        right = self.frameGeometry().right() + 8
+        x = right if right + frame.width() <= area.right() else self.frameGeometry().left() - frame.width() - 8
+        x = max(area.left(), min(x, area.right() - frame.width() + 1))
+        y = self._btn_copy_cleanup.mapToGlobal(self._btn_copy_cleanup.rect().bottomLeft()).y()
+        y = max(area.top(), min(y, area.bottom() - frame.height() + 1))
+        popup.move(popup.pos() + QPoint(x, y) - frame.topLeft())
+
+    def showEvent(self, event):
+        if hasattr(self, '_copy_mode_buttons'):
+            self._refresh_copy_preferences()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self._close_copy_cleanup()
+        self._copy_settings_notice.hide()
+        super().hideEvent(event)
 
     def _populate_storage_menu(self):
         from .storage_locations import get_storage_locations
@@ -496,6 +589,7 @@ class FloatingWidget(QWidget):
     def show_storage_locations(self):
         if self._ui_closing:
             return
+        self._close_copy_cleanup()
         self._populate_storage_menu()
         self._storage_menu.popup(self._btn_data_dir.mapToGlobal(self._btn_data_dir.rect().bottomLeft()))
 
@@ -518,6 +612,7 @@ class FloatingWidget(QWidget):
     def open_handwriting(self):
         if self._ui_closing:
             return
+        self._close_copy_cleanup()
         if self._handwriting is None:
             from .handwriting_window import HandwritingWindow
             self._handwriting = HandwritingWindow(self)
@@ -535,6 +630,7 @@ class FloatingWidget(QWidget):
     def open_document_template(self):
         if self._ui_closing or self._documents_closing:
             return
+        self._close_copy_cleanup()
         if self._documents is None:
             from ..workers.document_worker import DocumentController
             from .document_template_window import DocumentTemplateWindow
@@ -569,335 +665,6 @@ class FloatingWidget(QWidget):
     def documents_is_stopped(self):
         return self._document_controller is None or self._document_controller.is_stopped
 
-    def open_comparison(self):
-        if self._ui_closing or self._comparison_closing:
-            return
-        self.region_tool_requested.emit()
-        self._cancel_shared_search_selection()
-        self.pause_shared_search()
-        if self._shared_search is not None:
-            self._shared_search.hide()
-        if self._comparison is None:
-            from ..comparison.controller import ComparisonController
-            from .comparison_window import ComparisonWindow
-            from .capture_overlay import CaptureOverlay
-            controller = ComparisonController(self._ocr_worker, parent=self)
-            # Independent top-level: hiding the floating launcher must not hide
-            # the comparison status while the user works in another program.
-            window = ComparisonWindow(controller)
-            overlay = CaptureOverlay()
-            self._comparison, self._comparison_controller = window, controller
-            self._comparison_overlay = overlay
-            window.select_requested.connect(self._select_comparison_region)
-            window.screen_invalidated.connect(
-                self._cancel_comparison_selection)
-            window.closed.connect(self._cancel_comparison_selection)
-            controller.group_changed.connect(
-                lambda: self._cancel_comparison_selection() if window._selection_active else None)
-            overlay.cancelled.connect(lambda: window.set_selection_active(False)
-                                      if not self._comparison_closing else None)
-            controller.updated.connect(self._comparison_results_changed)
-            controller.groups_changed.connect(self._comparison_results_changed)
-            controller.state_changed.connect(self._comparison_state_changed)
-            controller.failed.connect(lambda message: self.comparison_status.emit('uncertain'))
-            controller.before_capture = self._comparison_can_capture
-        self.hide()
-        self._comparison.open()
-
-    def _comparison_state_changed(self, state):
-        if state in ('idle', 'paused'):
-            self.comparison_status.emit('paused')
-        elif state == 'running':
-            self._comparison_results_changed()
-
-    def _comparison_results_changed(self, *_):
-        controller = self._comparison_controller
-        if controller is None:
-            return
-        if not controller.running:
-            self.comparison_status.emit('paused')
-            return
-        results = [group['result'] for group in controller.groups]
-        verdicts = [result.get('verdict') if result else None for result in results]
-        status = ('mismatch' if 'mismatch' in verdicts else
-                  'running' if not any(verdicts) else
-                  'uncertain' if any(verdict not in ('match', 'mismatch') for verdict in verdicts) else 'match')
-        self.comparison_status.emit(status)
-
-    def _select_comparison_region(self, name):
-        if self._ui_closing or self._comparison_closing:
-            return
-        self.region_tool_requested.emit()
-        self.hide()
-        group_id = self._comparison_controller.active_group_id
-        self._comparison.set_selection_active(True)
-        self._comparison_overlay.selection_prompt = f'框選 {name} 區域 · Esc 取消'
-
-        def selected(x, y, width, height, monitor):
-            if (self._comparison_closing or self._comparison._closed_by_user
-                    or not self._comparison._selection_active):
-                return
-            if self._comparison_controller.active_group_id != group_id:
-                self._comparison.set_selection_active(False)
-                return
-            self._comparison.set_region(name, (x, y, width, height, monitor))
-            self._comparison.set_selection_active(False)
-
-        self._comparison_overlay.start_capture(selected)
-
-    def _cancel_comparison_selection(self):
-        if self._comparison_overlay is not None:
-            self._comparison_overlay._cancel()
-        if (self._comparison is not None and self._comparison._selection_active
-                and not self._comparison_closing):
-            self._comparison.set_selection_active(False)
-
-    def _comparison_can_capture(self):
-        if self._comparison_closing or not self._comparison.can_capture():
-            return False
-        # Other InkPick windows can obscure source pixels as well. Check them
-        # before every cycle; never silently compare our own tool over a target.
-        from PySide6.QtCore import QRect
-        screen = QApplication.primaryScreen()
-        if screen is None:
-            return False
-        origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
-        regions = [QRect(*rect[:4]) for rect in self._comparison_controller.target_regions]
-        for window in QApplication.topLevelWidgets():
-            if window is self._comparison or not window.isVisible() or window.isMinimized():
-                continue
-            frame = window.frameGeometry()
-            bounds = QRect(round((frame.x() - origin.x()) * dpr),
-                           round((frame.y() - origin.y()) * dpr),
-                           round(frame.width() * dpr), round(frame.height() * dpr))
-            if any(bounds.intersects(region) for region in regions):
-                return False
-        return True
-
-    def pause_comparison(self):
-        if self._comparison_controller is not None:
-            self._comparison_controller.pause()
-
-    def shutdown_comparison(self):
-        self._comparison_closing = True
-        if self._comparison_overlay is not None:
-            self._comparison_overlay._cancel()
-        if self._comparison_controller is not None:
-            self._comparison_controller.shutdown()
-        if self._comparison is not None:
-            self._comparison.shutdown()
-
-    def comparison_is_stopped(self):
-        return self._comparison_controller is None or self._comparison_controller.is_stopped
-
-    def open_shared_search(self):
-        """One session-only search tool, sharing the existing serialized OCR worker."""
-        if self._ui_closing or self._shared_search_closing:
-            return
-        self.region_tool_requested.emit()
-        self._cancel_comparison_selection()
-        self.pause_comparison()
-        if self._comparison is not None:
-            self._comparison.hide()
-        if self._shared_search is None:
-            from ..comparison.shared_controller import SharedSearchController
-            from .shared_search_window import SharedSearchWindow
-            from .capture_overlay import CaptureOverlay
-            controller = SharedSearchController(self._ocr_worker, parent=self)
-            window = SharedSearchWindow(controller)
-            selector = CaptureOverlay()
-            self._shared_search = window
-            self._shared_search_controller = controller
-            self._shared_search_selector = selector
-            window.select_requested.connect(self._select_shared_search_region)
-            window.preview_requested.connect(self._preview_shared_search_region)
-            window.screen_invalidated.connect(self._cancel_shared_search_selection)
-            window.closed.connect(self._cancel_shared_search_selection)
-            selector.cancelled.connect(self._shared_search_selection_cancelled)
-            controller.fields_changed.connect(self._shared_search_fields_changed)
-            self.settings_saved.connect(controller.invalidate_cache)
-            controller.updated.connect(self._shared_search_results_changed)
-            controller.state_changed.connect(self._shared_search_results_changed)
-            controller.failed.connect(lambda _: self.shared_search_status.emit('uncertain'))
-            controller.before_capture = self._shared_search_can_capture
-            controller.after_capture = window.after_capture
-        self.hide()
-        self._shared_search.open()
-
-    def _shared_search_region_signature(self):
-        controller = self._shared_search_controller
-        if controller is None:
-            return None
-        return (tuple((field['id'], field.get('region')) for field in controller.fields),
-                controller.b_region, controller.tracking_region, controller.row_pitch,
-                getattr(controller, 'source_mode', 'fields'), getattr(controller, 'source_region', None))
-
-    def _shared_search_fields_changed(self):
-        window = self._shared_search
-        if (window is not None and window._selection_active
-                and not self._shared_search_applying_selection
-                and self._shared_search_selection_signature != self._shared_search_region_signature()):
-            self._cancel_shared_search_selection()
-
-    def _cancel_shared_search_selection(self):
-        self._shared_search_selection += 1
-        self._shared_search_selection_signature = None
-        preview = self._shared_search_preview
-        self._shared_search_preview = None
-        if preview is not None:
-            preview.reject()
-        if self._shared_search_selector is not None:
-            self._shared_search_selector._cancel()
-        if (self._shared_search is not None and self._shared_search._selection_active
-                and not self._shared_search_closing):
-            self._shared_search.set_selection_active(False)
-
-    def _shared_search_selection_cancelled(self):
-        self._shared_search_selection += 1
-        self._shared_search_selection_signature = None
-        if self._shared_search is not None and not self._shared_search_closing:
-            self._shared_search.set_selection_active(False)
-
-    def _select_shared_search_region(self, name):
-        if self._ui_closing or self._shared_search_closing or self._shared_search is None:
-            return
-        self.region_tool_requested.emit()
-        controller, window = self._shared_search_controller, self._shared_search
-        if name not in ('B', 'TRACK', 'SOURCE') and name not in {field['id'] for field in controller.fields}:
-            return
-        self._cancel_shared_search_selection()
-        token = self._shared_search_selection
-        self.hide()
-        window.set_selection_active(True)
-        self._shared_search_selection_signature = self._shared_search_region_signature()
-        label = ('發票位置（B）' if name == 'B' else '輸入值範圍（A）' if name == 'SOURCE' else '輸入表格（換列用）' if name == 'TRACK' else
-                 '輸入數值（A）')
-        self._shared_search_selector.selection_prompt = f'框選 {label} · Esc 取消'
-
-        def selected(x, y, width, height, monitor):
-            if (self._shared_search_closing or token != self._shared_search_selection
-                    or getattr(window, '_closed_by_user', False) or not window._selection_active
-                    or self._shared_search_selection_signature != self._shared_search_region_signature()):
-                return
-            if name not in ('B', 'TRACK', 'SOURCE') and name not in {field['id'] for field in controller.fields}:
-                return
-            self._shared_search_applying_selection = True
-            try:
-                window.set_region(name, (x, y, width, height, monitor))
-            finally:
-                self._shared_search_applying_selection = False
-                self._shared_search_selection_signature = None
-                window.set_selection_active(False)
-
-        self._shared_search_selector.start_capture(selected)
-
-    def _preview_shared_search_region(self, name):
-        """Pause first; preview a single explicit in-memory desktop snapshot."""
-        if self._ui_closing or self._shared_search_closing or self._shared_search is None:
-            return
-        from PySide6.QtCore import QTimer
-        from PySide6.QtWidgets import QDialog
-        from .region_preview_dialog import RegionPreviewDialog
-        controller, window = self._shared_search_controller, self._shared_search
-        region = (controller.b_region if name == 'B' else controller.tracking_region if name == 'TRACK'
-                  else getattr(controller, 'source_region', None) if name == 'SOURCE'
-                  else next((field['region'] for field in controller.fields if field['id'] == name), None))
-        screen = QApplication.primaryScreen()
-        if region is None or screen is None:
-            return
-        self.region_tool_requested.emit()
-        self._cancel_shared_search_selection()
-        token = self._shared_search_selection
-        self.hide()
-        window.set_selection_active(True)
-        signature = self._shared_search_region_signature()
-        self._shared_search_selection_signature = signature
-        geometry, scale = screen.geometry(), screen.devicePixelRatio()
-
-        def valid():
-            current = QApplication.primaryScreen()
-            return (not self._ui_closing and not self._shared_search_closing
-                    and token == self._shared_search_selection and window._selection_active
-                    and not window._closed_by_user and signature == self._shared_search_region_signature()
-                    and current is screen and current.geometry() == geometry and current.devicePixelRatio() == scale)
-
-        def preview():
-            if not valid():
-                return
-            try:
-                image = screen.grabWindow(0).toImage()
-                image.setDevicePixelRatio(1)
-                if (image.width(), image.height()) != (round(geometry.width() * scale), round(geometry.height() * scale)):
-                    raise ValueError('Incomplete screen snapshot')
-                dialog = RegionPreviewDialog(image, region)
-                image = None
-                self._shared_search_preview = dialog
-                accepted = dialog.exec() == QDialog.DialogCode.Accepted
-                if accepted and valid():
-                    self._shared_search_applying_selection = True
-                    try:
-                        window.set_region(name, dialog.selected_region)
-                    finally:
-                        self._shared_search_applying_selection = False
-            except (ValueError, RuntimeError):
-                if valid():
-                    window._failed('暫時無法預覽，請重新框選後再試。')
-            finally:
-                self._shared_search_preview = None
-                if token == self._shared_search_selection:
-                    self._shared_search_selection_signature = None
-                    window.set_selection_active(False)
-        QTimer.singleShot(100, preview)
-
-    def _shared_search_can_capture(self):
-        window, controller = self._shared_search, self._shared_search_controller
-        if self._shared_search_closing or window is None or not window.can_capture():
-            return False
-        from PySide6.QtCore import QRect
-        screen = QApplication.primaryScreen()
-        if screen is None:
-            return False
-        origin, dpr = screen.geometry().topLeft(), screen.devicePixelRatio()
-        regions = [QRect(*region[:4]) for region in controller.target_regions]
-        for other in QApplication.topLevelWidgets():
-            if (other is window or other is window.highlight_overlay or other is window.resume_button or other is window.manual_button
-                    or not other.isVisible() or other.isMinimized()):
-                continue
-            frame = other.frameGeometry()
-            bounds = QRect(round((frame.x() - origin.x()) * dpr),
-                           round((frame.y() - origin.y()) * dpr),
-                           round(frame.width() * dpr), round(frame.height() * dpr))
-            if any(bounds.intersects(region) for region in regions):
-                return False
-        return window.before_capture()
-
-    def _shared_search_results_changed(self, *_):
-        controller = self._shared_search_controller
-        if controller is None or not controller.running:
-            self.shared_search_status.emit('paused')
-            return
-        states = [(field.get('result') or {}).get('status') for field in controller.fields]
-        self.shared_search_status.emit('missing' if 'missing' in states else
-                                       'uncertain' if any(state not in ('matched',) for state in states)
-                                       else 'matched')
-
-    def pause_shared_search(self):
-        if self._shared_search is not None:
-            self._shared_search.pause()
-        elif self._shared_search_controller is not None:
-            self._shared_search_controller.pause()
-
-    def shutdown_shared_search(self):
-        self._shared_search_closing = True
-        self._cancel_shared_search_selection()
-        if self._shared_search_controller is not None:
-            self._shared_search_controller.shutdown()
-        if self._shared_search is not None:
-            self._shared_search.shutdown()
-
-    def shared_search_is_stopped(self):
-        return self._shared_search_controller is None or self._shared_search_controller.is_stopped
-
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')
         if pos_mode == 'remember':
@@ -930,6 +697,8 @@ class FloatingWidget(QWidget):
             self._cfg.set('ui', 'widget_saved_y', pos.y())
 
     def eventFilter(self, watched, event):
+        if watched is self._copy_cleanup_popup and event.type() == QEvent.Type.Resize:
+            self._position_copy_cleanup(watched)
         drag_targets = tuple(
             target
             for target in (self._drag_host, getattr(self, "_ocr_status_lbl", None))
@@ -1336,6 +1105,7 @@ class FloatingWidget(QWidget):
     def open_console(self):
         if self._ui_closing:
             return
+        self._close_copy_cleanup()
         if self._console is None:
             from .main_window import MainWindow
             self._console = MainWindow(
@@ -1359,6 +1129,13 @@ class FloatingWidget(QWidget):
     def open_settings(self):
         if self._ui_closing:
             return
+        if self._settings_dialogs:
+            for dialog in self._settings_dialogs:
+                if not dialog._closed:
+                    dialog.raise_()
+                    dialog.activateWindow()
+            return
+        self._close_copy_cleanup()
         from .settings_dialog import SettingsDialog
         from PySide6.QtWidgets import QDialog
         ocr_engine = getattr(self, '_ocr_engine', None)
@@ -1410,6 +1187,7 @@ class FloatingWidget(QWidget):
         self._btn_pause.setAccessibleName(label)
         self._btn_pause.setToolTip(label)
         self._btn_pause.setIcon(_line_icon('play' if self._clip_paused else 'pause', _TEXT_SEC))
+        self._btn_pause.setText("繼續收錄" if self._clip_paused else "暫停收錄")
         self.clipboard_pause_changed.emit(self._clip_paused)
 
     def paste_last_item(self):

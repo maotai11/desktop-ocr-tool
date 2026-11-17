@@ -101,10 +101,6 @@ jobs:
         run: python src/main.py --self-test-handwriting-image source-handwriting-image.json
       - id: source_documents
         run: python src/main.py --self-test-documents artifacts/source-documents.json
-      - id: source_comparison
-        run: python src/main.py --self-test-comparison source-comparison.json
-      - id: source_shared_search
-        run: python src/main.py --self-test-shared-search source-shared-search.json
       - id: source_gui
         run: python src/main.py --self-test-gui source-gui.json
       - name: Trace synthetic application process trees for network activity
@@ -157,23 +153,6 @@ jobs:
               }
             } finally {
               $docProcess.Dispose()
-            }
-            $comparisonReport = Join-Path $PWD 'artifacts/firewall-validation/frozen-comparison.json'
-            if (Test-Path -LiteralPath $comparisonReport) { Remove-Item -LiteralPath $comparisonReport }
-            $comparisonProcess = Start-Process -FilePath $exe -ArgumentList @('--self-test-comparison', "`"$comparisonReport`"") -PassThru
-            try {
-              if (-not $comparisonProcess.WaitForExit(120000)) {
-                $comparisonProcess.Kill($true)
-                throw 'Frozen comparison probe timed out'
-              }
-              if ($comparisonProcess.ExitCode -ne 0) { throw 'Frozen comparison probe failed' }
-              $comparison = Get-Content -LiteralPath $comparisonReport -Raw -Encoding UTF8 | ConvertFrom-Json
-              if (-not $comparison.passed -or -not $comparison.frozen -or $comparison.probe -cne 'comparison_lifecycle' -or
-                  $comparison.version -cne $manifest.version -or $comparison.executable_sha256 -cne $manifest.executable_sha256) {
-                throw 'Frozen comparison probe identity differs from candidate'
-              }
-            } finally {
-              $comparisonProcess.Dispose()
             }
             & ./scripts/validate_handwriting_firewall.ps1 -BundleDirectory $bundle -ReportDirectory artifacts/firewall-validation
             if ($LASTEXITCODE -ne 0) { throw 'Outer/helper outbound-blocked handwriting gate failed' }
@@ -258,7 +237,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.17'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.18'
     runs-on: ubuntu-latest
     permissions:
       contents: write

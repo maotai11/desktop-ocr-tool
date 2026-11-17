@@ -148,28 +148,12 @@ def test_shutdown_probe_detects_late_launcher_resurrection(qapp, tmp_path, monke
     assert checks['temporary_files_cleaned'] is True
 
 
-@pytest.mark.parametrize('defect', ['ineffective_adjustment', 'retained_snapshot'])
-def test_preview_probe_rejects_ineffective_controls_and_retained_screen(qapp, tmp_path, monkeypatch, defect):
-    from PySide6.QtWidgets import QDialog
-    from src.ui.region_preview_dialog import RegionPreviewDialog
-    if defect == 'ineffective_adjustment':
-        monkeypatch.setattr(RegionPreviewDialog, 'nudge', lambda *_: True)
-    else:
-        monkeypatch.setattr(RegionPreviewDialog, 'done', QDialog.done)
-    destination = tmp_path / 'preview-failure.json'
-    assert gui_probe.run_gui_probe(destination) == 1
-    report = json.loads(destination.read_text(encoding='utf-8'))
-    assert report['checks']['shared_search_controls'] is True
-    assert report['checks']['region_preview_adjustment'] is False
-    assert report['checks']['windows_and_workers_closed'] is True
-    assert report['checks']['temporary_files_cleaned'] is True
-
-
 @pytest.mark.parametrize('defect', ['replacement_not_saved', 'cleanup_bypassed'])
 def test_settings_probe_rejects_lost_rules_and_unformatted_copy(qapp, tmp_path, monkeypatch, defect):
     if defect == 'replacement_not_saved':
         from src.core.config import ConfigManager
         original = ConfigManager.set
+        original_update = ConfigManager.update_section
 
         def lose_replacement(cfg, *keys_and_value):
             if keys_and_value[:2] == ('clipboard', 'copy_replace_commas'):
@@ -177,6 +161,12 @@ def test_settings_probe_rejects_lost_rules_and_unformatted_copy(qapp, tmp_path, 
             return original(cfg, *keys_and_value)
 
         monkeypatch.setattr(ConfigManager, 'set', lose_replacement)
+        def lose_atomic_replacement(cfg, section, values):
+            values = dict(values)
+            if section == 'clipboard' and 'copy_replace_commas' in values:
+                values['copy_replace_commas'] = ''
+            return original_update(cfg, section, values)
+        monkeypatch.setattr(ConfigManager, 'update_section', lose_atomic_replacement)
     else:
         from src.clipboard import writer
         monkeypatch.setattr(writer, 'prepare_copy_text', lambda text, cfg=None: text)
@@ -201,5 +191,68 @@ def test_document_gui_probe_rejects_unwanted_cleanup_of_template_copy(qapp, tmp_
     checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
     assert checks['settings_cancel_and_apply'] is True
     assert checks['document_import_template_zoom_clear'] is False
+    assert checks['windows_and_workers_closed'] is True
+    assert checks['temporary_files_cleaned'] is True
+
+
+@pytest.mark.parametrize('defect', ['mode_not_saved', 'cleanup_not_saved'])
+def test_launcher_copy_probe_rejects_controls_that_do_not_persist(qapp, tmp_path, monkeypatch, defect):
+    from src.ui import copy_preferences
+    if defect == 'mode_not_saved':
+        monkeypatch.setattr(copy_preferences, 'set_copy_mode', lambda *args: True)
+    else:
+        def discard_draft(dialog):
+            dialog.preferences_saved.emit()
+            dialog.accept()
+        monkeypatch.setattr(copy_preferences.CopyCleanupDialog, '_save', discard_draft)
+    destination = tmp_path / 'quick-copy-failure.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
+    assert checks['settings_cancel_and_apply'] is True
+    assert checks['launcher_copy_controls'] is False
+    assert checks['windows_and_workers_closed'] is True
+    assert checks['temporary_files_cleaned'] is True
+
+
+@pytest.mark.parametrize('defect', ['launcher', 'tray', 'worker_owner', 'packaged_module', 'cli'])
+def test_removed_comparison_contract_rejects_retained_entry_or_implementation(qapp, tmp_path, monkeypatch, defect):
+    from src.ui.widget import FloatingWidget
+    from src.ui.tray_manager import TrayManager
+    if defect in ('launcher', 'worker_owner'):
+        from PySide6.QtWidgets import QPushButton
+        original = FloatingWidget.__init__
+        def retained_widget(widget, *args, **kwargs):
+            original(widget, *args, **kwargs)
+            if defect == 'launcher':
+                QPushButton('A/B 核對', widget)
+            else:
+                widget._shared_search_controller = object()
+        monkeypatch.setattr(FloatingWidget, '__init__', retained_widget)
+    elif defect == 'tray':
+        original = TrayManager._build_menu
+        def retained_tray(tray):
+            original(tray)
+            tray._tray.contextMenu().addAction('整列搜尋')
+        monkeypatch.setattr(TrayManager, '_build_menu', retained_tray)
+    elif defect == 'packaged_module':
+        import importlib.util
+        from importlib.machinery import ModuleSpec
+        original = importlib.util.find_spec
+        monkeypatch.setattr(importlib.util, 'find_spec', lambda name, *args, **kwargs:
+                            ModuleSpec(name, loader=None) if name == 'src.comparison_probe'
+                            else original(name, *args, **kwargs))
+    else:
+        from src import main
+        original = main._build_parser
+        def retired_cli():
+            parser = original()
+            parser.add_argument('--self-test-comparison')
+            return parser
+        monkeypatch.setattr(main, '_build_parser', retired_cli)
+    destination = tmp_path / 'removed-feature-failure.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    checks = json.loads(destination.read_text(encoding='utf-8'))['checks']
+    assert checks['handwriting_stroke_candidate_copy'] is True
+    assert checks['removed_comparison_tools_absent'] is False
     assert checks['windows_and_workers_closed'] is True
     assert checks['temporary_files_cleaned'] is True

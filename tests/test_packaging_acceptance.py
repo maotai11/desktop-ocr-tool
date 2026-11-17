@@ -100,15 +100,16 @@ def valid_reports(paths):
                             checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
         '--smoke-app': dict(common, probe='application_lifecycle', phase_a=True,
                             engine_ready=True, shutdown_clean=True,
-                            threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True, 'history_maintenance': True, 'shared_search': True}),
+                            threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True, 'history_maintenance': True}),
     }
 
 
 @pytest.mark.parametrize('defect', ['none', 'wrong_hash', 'not_frozen', 'wrong_version',
                                   'offscreen', 'model_hash', 'thread_running', 'claimed_clean',
-                                  'maintenance_missing', 'maintenance_running', 'shared_missing', 'shared_running'])
+                                  'maintenance_missing', 'maintenance_running', 'legacy_worker',
+                                  'absence_false', 'absence_missing', 'absence_nonbool'])
 def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
-    from handwriting_release_fixtures import identity, image_probe, probe, shared_search_probe, gui_probe
+    from handwriting_release_fixtures import identity, image_probe, probe, gui_probe
 
     from scripts import handwriting_bundle
     monkeypatch.setattr(handwriting_bundle, 'identity', lambda _: identity())
@@ -118,7 +119,6 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     reports = valid_reports(paths)
     reports['--self-test-handwriting'] = probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     reports['--self-test-handwriting-image'] = image_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']), build.bundled_model_profiles(build.ROOT))
-    reports['--self-test-shared-search'] = shared_search_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     reports['--self-test-gui'] = gui_probe(build.APP_VERSION, build.sha256_file(paths['out_exe']))
     if defect == 'wrong_hash': reports['--self-test']['executable_sha256'] = '0' * 64
     if defect == 'not_frozen': reports['--self-test']['frozen'] = False
@@ -128,15 +128,17 @@ def test_exact_executable_candidate_gate(tmp_path, monkeypatch, defect):
     if defect == 'thread_running': reports['--smoke-app']['threads_stopped']['ocr'] = False
     if defect == 'maintenance_missing': reports['--smoke-app']['threads_stopped'].pop('history_maintenance')
     if defect == 'maintenance_running': reports['--smoke-app']['threads_stopped']['history_maintenance'] = False
-    if defect == 'shared_missing': reports['--smoke-app']['threads_stopped'].pop('shared_search')
-    if defect == 'shared_running': reports['--smoke-app']['threads_stopped']['shared_search'] = False
+    if defect == 'legacy_worker': reports['--smoke-app']['threads_stopped']['shared_search'] = True
+    if defect == 'absence_false': reports['--self-test-gui']['checks']['removed_comparison_tools_absent'] = False
+    if defect == 'absence_missing': reports['--self-test-gui']['checks'].pop('removed_comparison_tools_absent')
+    if defect == 'absence_nonbool': reports['--self-test-gui']['checks']['removed_comparison_tools_absent'] = 1
     if defect == 'claimed_clean': reports['--smoke-app']['clean_machine_verified'] = True
     def run(executable, mode, report_path):
         write_validation_report(report_path, reports[mode])
         return reports[mode]
     monkeypatch.setattr(build, '_run_probe', run)
     if defect == 'none':
-        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json', 'frozen-gui.json'}
+        assert set(build.validate_candidate(paths)) == {'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-gui.json'}
     else:
         with pytest.raises(RuntimeError):
             build.validate_candidate(paths)

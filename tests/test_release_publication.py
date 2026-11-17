@@ -10,7 +10,7 @@ import pytest
 from model_profile_fixtures import fixture_profiles, fixture_validation, profile_report
 
 from scripts import publish_prerelease as publisher
-from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, shared_search_probe, gui_probe
+from handwriting_release_fixtures import identity as handwriting_identity, probe as handwriting_probe, extra_evidence, image_probe, gui_probe
 from scripts.verify_candidate_bundle import verify_candidate
 
 COMMIT = "a" * 40
@@ -438,10 +438,9 @@ def candidate(tmp_path, monkeypatch):
                                          checks={"qt": True, "models": True, "ocr": True, "database": True}),
               "frozen-app-smoke.json": dict(common, probe="application_lifecycle", phase_a=True,
                                           engine_ready=True, shutdown_clean=True,
-                                          threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True, "history_maintenance": True, "shared_search": True})}
+                                          threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True, "history_maintenance": True})}
     probes["frozen-handwriting.json"] = handwriting_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
     probes["frozen-handwriting-image.json"] = image_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest(), profiles)
-    probes["frozen-shared-search.json"] = shared_search_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
     probes["frozen-gui.json"] = gui_probe(publisher.VERSION, hashlib.sha256(exe).hexdigest())
     manifest = {"handwriting": handwriting_identity(), "schema": 2, "platform": "win32", "version": publisher.VERSION,
                 "executable_name": publisher.EXE_NAME, "executable_sha256": hashlib.sha256(exe).hexdigest(),
@@ -463,7 +462,7 @@ def candidate(tmp_path, monkeypatch):
     for name, probe in probes.items():
         (frozen / name).write_bytes(encoded(probe))
         (firewall / name).write_bytes(encoded(probe))
-        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json", "frozen-handwriting-image.json": "source-handwriting-image.json", "frozen-shared-search.json": "source-shared-search.json", "frozen-gui.json": "source-gui.json"}[name]
+        source_name = {"frozen-selftest.json": "source-selftest.json", "frozen-app-smoke.json": "source-app-smoke.json", "frozen-handwriting.json": "source-handwriting.json", "frozen-handwriting-image.json": "source-handwriting-image.json", "frozen-gui.json": "source-gui.json"}[name]
         (root / source_name).write_bytes(encoded(dict(probe, frozen=False, executable_sha256=None)))
     gate = {"schema": 1, "passed": True, "version": publisher.VERSION,
             "executable_sha256": manifest["executable_sha256"], "clean_machine_verified": False,
@@ -510,8 +509,14 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     for asset in prepared.assets:
         if asset.name != publisher.CHECKSUM_NAME: assert f"{asset.sha256}  {asset.name}\n" in sums
     with zipfile.ZipFile(tmp_path / "upload" / publisher.METADATA_NAME) as archive:
+        assert len(archive.namelist()) == 33
         assert "verified-bundle.json" in archive.namelist()
         assert "artifacts/firewall-validation/candidate-gate.json" in archive.namelist()
+        assert not any('comparison' in name or 'shared-search' in name for name in archive.namelist())
+        for name in ('source-gui.json', 'candidate-validation/frozen-gui.json',
+                     'artifacts/firewall-validation/frozen-gui.json',
+                     'artifacts/portable-validation/isolated-gui.json'):
+            assert json.loads(archive.read(name))['checks']['removed_comparison_tools_absent'] is True
     assert "尚未完成乾淨、斷網 Windows 10／11" in prepared.body
     assert "主螢幕" in prepared.body and "QThread" in prepared.body
     assert 'InkPick 拾字筆' in prepared.body and '11,853' in prepared.body
@@ -656,12 +661,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
         publisher.prepare_release(root, report, tmp_path / "upload", CONTEXT)
 
 
-
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.18'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.19'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.17'
+    assert publisher.VERSION == '1.8.0-rc.18'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -669,7 +673,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.18'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.19'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
@@ -892,88 +896,11 @@ def test_portable_document_lifecycle_and_digest_reach_metadata_without_document_
 
 
 @pytest.mark.parametrize('relative', [
-    'source-comparison.json',
-    'artifacts/firewall-validation/frozen-comparison.json',
-    'artifacts/portable-validation/isolated-comparison.json',
-])
-@pytest.mark.parametrize('defect', [
-    'missing', 'wrong_executable', 'wrong_version', 'wrong_platform', 'wrong_qt',
-    'false_check', 'missing_check', 'string_check', 'schema_bool',
-    'claims_model_inference', 'failure_diagnostic',
-])
-def test_comparison_evidence_requires_complete_current_candidate_contract(candidate, tmp_path, relative, defect):
-    root, report_path, _, _, _ = candidate
-    path = root / relative
-    report = json.loads(path.read_bytes())
-    if defect == 'missing':
-        path.unlink()
-    else:
-        if defect == 'wrong_executable': report['executable_sha256'] = '0' * 64
-        elif defect == 'wrong_version': report['version'] = '1.0.0'
-        elif defect == 'wrong_platform': report['platform'] = 'linux'
-        elif defect == 'wrong_qt': report['qt_platform'] = 'offscreen'
-        elif defect == 'false_check': report['checks']['same_snapshot_pairs'] = False
-        elif defect == 'missing_check': report['checks'].pop('cancelled_results_ignored')
-        elif defect == 'string_check': report['checks']['workers_stopped'] = 'true'
-        elif defect == 'schema_bool': report['schema'] = True
-        elif defect == 'claims_model_inference': report['model_inference_tested'] = True
-        elif defect == 'failure_diagnostic': report['error_code'] = 'COMPARISON_PROBE_CHECK_FAILED'
-        path.write_text(json.dumps(report), encoding='utf-8')
-        if path.name == 'isolated-comparison.json':
-            gate_path = path.parent / 'isolated-profile-gate.json'
-            gate = json.loads(gate_path.read_bytes())
-            gate['probes'][path.name]['sha256'] = publisher.sha256_file(path)
-            gate_path.write_text(json.dumps(gate), encoding='utf-8')
-    output = tmp_path / 'comparison-refused'
-    with pytest.raises(publisher.PublicationError):
-        publisher.prepare_release(root, report_path, output, CONTEXT)
-    assert not output.exists()
-
-
-@pytest.mark.parametrize('relative', ['source-comparison.json',
-    'artifacts/firewall-validation/frozen-comparison.json'])
-def test_comparison_source_commit_must_match_the_current_build(candidate, tmp_path, relative):
-    root, report_path, _, _, _ = candidate
-    path = root / relative
-    report = json.loads(path.read_bytes())
-    report['source_commit'] = '0' * 40
-    path.write_text(json.dumps(report), encoding='utf-8')
-    with pytest.raises(publisher.PublicationError, match='Comparison probe source'):
-        publisher.prepare_release(root, report_path, tmp_path / 'wrong-comparison-source', CONTEXT)
-
-
-def test_comparison_reports_publish_fixed_checks_without_captured_text(candidate, tmp_path):
-    root, report_path, _, _, _ = candidate
-    paths = ('source-comparison.json', 'artifacts/firewall-validation/frozen-comparison.json',
-             'artifacts/portable-validation/isolated-comparison.json')
-    for relative in paths:
-        path = root / relative
-        report = json.loads(path.read_bytes())
-        report.update(a='PRIVATE_COMPARISON_A', b='PRIVATE_COMPARISON_B',
-                      image_path='PRIVATE_COMPARISON_PATH')
-        path.write_text(json.dumps(report), encoding='utf-8')
-    gate_path = root / 'artifacts/portable-validation/isolated-profile-gate.json'
-    gate = json.loads(gate_path.read_bytes())
-    gate['probes']['isolated-comparison.json']['sha256'] = publisher.sha256_file(root / paths[-1])
-    gate_path.write_text(json.dumps(gate), encoding='utf-8')
-    prepared = publisher.prepare_release(root, report_path, tmp_path / 'comparison-public', CONTEXT)
-    metadata = next(asset for asset in prepared.assets if asset.name == publisher.METADATA_NAME)
-    with zipfile.ZipFile(metadata.path) as archive:
-        for relative in paths:
-            raw = archive.read(relative)
-            assert b'PRIVATE_COMPARISON' not in raw
-            public = json.loads(raw)
-            assert public['probe'] == 'comparison_lifecycle'
-            assert public['checks']['same_snapshot_pairs'] is True
-            assert public['checks']['workers_stopped'] is True
-            assert public['model_inference_tested'] is False
-
-
-@pytest.mark.parametrize('relative', [
     'source-gui.json', 'artifacts/firewall-validation/frozen-gui.json',
     'artifacts/portable-validation/isolated-gui.json',
 ])
-@pytest.mark.parametrize('defect', ['missing', 'false_check', 'missing_check', 'wrong_executable'])
+@pytest.mark.parametrize('defect', ['missing', 'false_check', 'missing_check', 'wrong_executable',
+    'absence_false', 'absence_missing', 'absence_nonbool', 'quick_false', 'quick_missing', 'quick_nonbool'])
 def test_gui_control_evidence_is_mandatory_for_every_published_runtime(candidate, tmp_path, relative, defect):
     root, report_path, _, _, _ = candidate
     path = root / relative
@@ -985,6 +912,14 @@ def test_gui_control_evidence_is_mandatory_for_every_published_runtime(candidate
             report['checks']['settings_cancel_and_apply'] = False
         elif defect == 'missing_check':
             del report['checks']['windows_and_workers_closed']
+        elif defect == 'absence_missing':
+            del report['checks']['removed_comparison_tools_absent']
+        elif defect in ('absence_false', 'absence_nonbool'):
+            report['checks']['removed_comparison_tools_absent'] = False if defect == 'absence_false' else 1
+        elif defect == 'quick_missing':
+            del report['checks']['launcher_copy_controls']
+        elif defect in ('quick_false', 'quick_nonbool'):
+            report['checks']['launcher_copy_controls'] = False if defect == 'quick_false' else 1
         else:
             report['executable_sha256'] = '0' * 64
         path.write_text(json.dumps(report), encoding='utf-8')

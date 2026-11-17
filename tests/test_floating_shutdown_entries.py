@@ -73,41 +73,21 @@ def test_shutdown_retires_normal_selector_without_reveal_or_late_submission(
     assert not pipeline._selection_is_current(123, object())
 
 
-@pytest.mark.parametrize('tool', ['paired', 'shared'])
-def test_normal_and_comparison_selectors_are_mutually_exclusive(
-        qtbot, running_pipeline, monkeypatch, tool):
-    pipeline, widget, normal = running_pipeline
+@pytest.mark.parametrize('next_mode', ['region_ocr', 'region_image'])
+def test_restarting_normal_selector_retires_pending_old_mode(
+        qtbot, running_pipeline, monkeypatch, next_mode):
+    pipeline, widget, overlay = running_pipeline
     submissions = []
     monkeypatch.setattr(pipeline.capture, 'capture_region', lambda *args: submissions.append(args))
-
-    def open_tool():
-        if tool == 'paired':
-            widget.open_comparison()
-            return widget._comparison, widget._comparison_overlay, lambda: widget._select_comparison_region('A')
-        widget.open_shared_search()
-        widget._shared_search_controller.set_source_mode('fields')
-        field = widget._shared_search_controller.fields[0]['id']
-        return widget._shared_search, widget._shared_search_selector, lambda: widget._select_shared_search_region(field)
-
-    window, selector, begin = open_tool()
-    qtbot.addWidget(window)
-    qtbot.addWidget(selector)
-    begin()
-    _select(qtbot, selector)  # Old owner has a 150 ms pending selection.
     pipeline.start_region_capture('region_ocr')
+    _select(qtbot, overlay)  # The first selector has a delayed accepted drag.
+    pipeline.start_region_capture(next_mode)
     qtbot.wait(180)
-    assert normal.isVisible() and not selector.isVisible()
-    assert not window._selection_active and not window.isVisible()
-    if tool == 'paired':
-        assert not widget._comparison_controller.regions
-    else:
-        assert widget._shared_search_controller.fields[0]['region'] is None
-    _select(qtbot, normal)
-    open_tool()  # Switch back while normal capture is pending.
-    begin()
-    qtbot.wait(180)
-    assert selector.isVisible() and not normal.isVisible() and not widget.isVisible()
+    assert overlay.isVisible() and not widget.isVisible()
     assert not submissions
+    _select(qtbot, overlay)
+    qtbot.waitUntil(lambda: len(submissions) == 1)
+    assert submissions[0][-2] == next_mode
 
 
 def test_tray_cannot_create_handwriting_after_shutdown_begins(

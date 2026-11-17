@@ -1,6 +1,6 @@
 # 版本驗證範圍與結果判讀
 
-目前版本：1.8.0-rc.17。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
+目前版本：1.8.0-rc.18。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
 
 每版實際結果以該版 Release 的 `validation-metadata.zip` 為準，必須同時對上來源 commit 與 EXE SHA256。缺少、跳過、取消、逾時、不支援或未完成的必需報告不能當成通過；不能拿前版的綠燈替代新版。這份操作範圍表不是預先宣告尚未執行的發布檢查已成功。
 
@@ -16,39 +16,37 @@
 | rc.15 | 整列搜尋改為選定 B OCR 文字下方的數值／百分比；新增數字近似、日期換算、手動重辨與背景透明度，整列搜尋具名檢查共 22 項 | 合成匹配與視窗檢查不證明模型準確率、任意日期格式或實體乾淨電腦驗收；四種模式仍讀同版結果 |
 | rc.16 | 整區多列取值、B 位置排他、近似候選可見、目前列箭頭、同位置換發票與預覽調整；shared 27、GUI 16 項 | 不把行級 OCR 框當字元／儲存格，不宣稱任意版型、數字或純文字自動分欄皆可正確辨識 |
 | rc.17 | 設定分區及四種移除／替換規則；既有 GUI 16 項加入取消、持久化、動作切換及文件套版複製不受清理影響 | 不以合成設定字串推論任意剪貼簿內容、所有原生對話或全部設定排列已覆蓋 |
+| rc.18 | 重整主浮窗並加入複製模式／四項清理快捷入口；移除 A／B、整列搜尋及專用預覽；GUI 15 項包含快捷操作與舊功能不存在契約，網路 6 組，metadata 33 份 | 刪除功能與調整證據清單不等於新版已通過；仍須取得同版完整測試、EXE、安全及隔離結果 |
 
 ## GUI 要驗證到哪裡
 
 GUI 探針使用測試自己建立的文字、圖片、PDF、資料庫及視窗，實際開啟 Qt 元件、觸發指定控制與檢查狀態變化。原生 OCR、滑鼠／作業系統互動及檔案內容有各自的探針；合成操作不代表所有真人操作、任意文件或所有外部軟體都已覆蓋。
 
-本版 GUI 探針有下列 **16 個具名檢查**，不是「任意操作都測過」。發布須分別核對同版 `source-gui.json`、`frozen-gui.json`、防火牆及隔離 profile 的 GUI 結果；本地 offscreen 通過不代替 Windows 成品證據。
+本版 GUI 探針有下列 **15 個具名檢查**，不是「任意操作都測過」。發布須分別核對同版 `source-gui.json`、`frozen-gui.json`、防火牆及隔離 profile 的 GUI 結果；本地 offscreen 通過不代替 Windows 成品證據。
 
 | 報告 check | 實際操作／副作用 | 本版結果依據 |
 | --- | --- | --- |
 | `launcher_actions_and_capture_cancel` | 點浮窗 OCR／截圖，進入真框選工具後 Esc 取消；開檔案位置選單 | 同版 GUI 報告 |
+| `launcher_copy_controls` | 真浮窗切換全部／選字並重讀保存值，同模式不重複寫；清理面板取消維持設定 bytes／剪貼簿，替換／移除／停用後檢查複製效果，不送完整設定通知或修改其他值 | 同版 GUI 報告 |
 | `settings_cancel_and_apply` | 真 modal 編輯四列後取消不寫；儲存替換、重開、切移除／停用並檢查剪貼簿；通知剪貼簿／封存控制器，開機啟動 OS 寫入用替身 | 同版 GUI 報告 |
 | `history_search_tags_and_pin` | DB worker 存兩筆、歷史搜尋、右鍵釘選同步浮窗；新增標籤並套用 | 同版 GUI 報告 |
 | `editor_save_and_history_refresh` | 編輯器保存文字／備註，兩個歷史視窗同步刷新 | 同版 GUI 報告 |
 | `ocr_selection_copy_explicit` | 真保存 → 可控 OCR 回覆 → DB → 選字窗；未選不複製、清除選取、只複製第二行 | 同版 GUI 報告 |
 | `document_import_template_zoom_clear` | 真 PNG／PDF 匯入與 renderer；縮放／拖曳／滑鼠框選；可控辨識後填模板、清理設定開啟時複製及預覽仍保持模板原文、清框／清文件 | 同版 GUI 報告 |
 | `handwriting_stroke_candidate_copy` | 真 pad 滑鼠筆畫 → 可控候選 → 點字複製；續寫座標不變、撤銷／清除；隱藏超過 debounce 不再送出，明確重新開啟才恢復 | 同版 GUI 報告 |
-| `paired_comparison_controls` | 傳統 A／B 新增組、模式、迷你、置頂、框選取消及關閉 | 同版 GUI 報告 |
-| `shared_search_controls` | 整列搜尋新增 A、列距、模式、日期換算、背景透明度、標示置頂、手動辨識、B 框選取消及關閉 | 同版 GUI 報告 |
-| `region_preview_adjustment` | 真 launcher 預覽入口，單次合成快照、真 modal 移動／拖角／倍率、套用／取消／關閉與影像釋放；禁止讀取 runner 真桌面 | 同版 GUI 報告 |
+| `removed_comparison_tools_absent` | 真浮窗／系統匣沒有退休入口、專用視窗／工作者／模組不存在，舊 CLI 參數實際被拒絕 | 同版 GUI 報告 |
 | `tray_pause_and_quit_route` | 系統匣／浮窗的暫停同步；退出走 Pipeline 關閉 | 同版 GUI 報告 |
 | `minimized_windows_restore` | 最小化後重新開啟工具／編輯窗，檢查已還原 | 同版 GUI 報告 |
-| `capture_cancel_restart_ignores_old_gesture` | 真框選拖曳取消／重開，舊 release 不產生擷取；一般與兩種核對框選透過實際 Pipeline 切換 | 同版 GUI 報告 |
+| `capture_cancel_restart_ignores_old_gesture` | 真框選拖曳取消／重開，舊 release 不產生擷取；一般 OCR／截圖使用實際 Pipeline 入口 | 同版 GUI 報告 |
 | `shutdown_rejects_late_tool_entries` | 總退出後觸發工具入口，檢查不建立新工作與視窗 | 同版 GUI 報告 |
-| `windows_and_workers_closed` | 本次視窗、OCR／DB／文件／核對工作者完成關閉 | 同版 GUI 報告 |
+| `windows_and_workers_closed` | 本次視窗、OCR／DB／文件／手寫工作者完成關閉 | 同版 GUI 報告 |
 | `temporary_files_cleaned` | 刪除探針自己建立的暫存，不動既有 profile | 同版 GUI 報告 |
 
-此 GUI 探針明列 `model_inference_tested=false`、`ocr_accuracy_tested=false`、`clean_machine_verified=false`。原生檔案挑選器只回傳測試自己建立的檔案；自動啟動的 OS 寫入使用替身，未在這個探針修改開機項目。真 OCR 模型、原生手寫 helper、真桌面擷取結果、任意 GUI 狀態、實體滑鼠及多 DPI 不由這 16 項代證，須讀各自功能探針或人工驗收。
+此 GUI 探針明列 `model_inference_tested=false`、`ocr_accuracy_tested=false`、`clean_machine_verified=false`。原生檔案挑選器只回傳測試自己建立的檔案；自動啟動的 OS 寫入使用替身，未在這個探針修改開機項目。真 OCR 模型、原生手寫 helper、真桌面擷取結果、任意 GUI 狀態、實體滑鼠及多 DPI 不由這 15 項代證，須讀各自功能探針或人工驗收。
 
-選定 B OCR 文字下方的 A 數值與百分比、開始收起控制窗、手動辨識／恢復介面按鈕、跨前景切換置頂，以及畫面變動後清除舊標示另由整列搜尋／UI 檢查驗證；不能因 `shared_search_controls` 通過，就說它已測到尚未觸發的全部結果狀態。結果仍限主螢幕、OCR 行級框，重複候選需選擇，近似與 needs_review 不當成確定命中。
+rc.18 不再執行固定位置核對、整列搜尋或專用範圍預覽的功能探針，也不接受舊報告冒充本版證據。現行 GUI 的移除確認檢查應在 source、frozen、防火牆及隔離 profile 四種模式分別通過；有殘留入口、模組或工作者即不能通過這個檢查。
 
-整列搜尋報告現在要求 27 個具名布林檢查。`invoice_match_annotation` 取代舊 A 定位檢查，要求標示依選定 B 文字框定位；新增 `numeric_similarity_review`（相似不能變成綠色）、`roc_gregorian_date_equivalence`（支援的同日換算）、`manual_refresh_rechecks_unchanged_invoice`（手動重讀未變畫面）及 `annotation_background_opacity`（只改底板、不重開隱藏標示）。既有快取、換列、晚到回覆、停止、工作者與暫存清理檢查保留。來源、frozen、封網、隔離 profile 皆需完整新鍵集合，不能用前版 22 項替代。新增 `source_region_rows_extracted`、`row_values_exclusive_invoice_positions`、`near_candidates_visible_for_review`、`source_row_arrow_navigation`、`changed_invoice_refreshes_matches`，實際驅動合成 MSS 擷取、工作者、預設整區 UI、上一列／下一列及手動按鈕；Windows 原生像素檢查另驗證箭頭移動、隱藏／恢復和清除。
-
-rc.15 的兩輪獨立對抗檢查發現並修正不支援年制前綴被截掉、一般文字匹配繞過日期限制，以及混合有效／不支援年制的分類錯誤。另以 700 組一位數字差異檢查近似保持需確認，並檢查 B 快取、位置變動、20 次快速手動重辨與晚到關閉。這些是受控 OCR／擷取與 Qt offscreen 測試；實際 Windows 置頂及成品結果仍由同版報告負責。
+發布 metadata 契約為 33 份；其中 candidate probe 由 6 份改為 5 份，隔離 profile probe 由 8 份改為 6 份。Linux 網路觀察保留六組現行合成路徑。這些數量只描述驗證範圍，實際通過數、略過項目與所有雜湊均讀同版報告。
 
 ## 原生元件不是一個「無毒」勾選
 

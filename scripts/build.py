@@ -39,28 +39,20 @@ RELEASE_DOCUMENTATION = {
     "docs/ui/floating-window.png": "docs/ui/floating-window.png",
     "docs/ui/ocr-selection.png": "docs/ui/ocr-selection.png",
     "docs/ui/copy-settings.png": "docs/ui/copy-settings.png",
+    "docs/ui/copy-cleanup.png": "docs/ui/copy-cleanup.png",
     "docs/ui/file-locations.png": "docs/ui/file-locations.png",
     "docs/ui/document-template.png": "docs/ui/document-template.png",
     "docs/ui/document-fields.png": "docs/ui/document-fields.png",
-    "docs/ui/comparison-window.png": "docs/ui/comparison-window.png",
-    "docs/ui/comparison-compact.png": "docs/ui/comparison-compact.png",
-    "docs/SHARED_SEARCH.md": "docs/SHARED_SEARCH.md",
     "docs/VALIDATION_COVERAGE.md": "docs/VALIDATION_COVERAGE.md",
     "docs/FLOATING_STATE_AUDIT.md": "docs/FLOATING_STATE_AUDIT.md",
     "docs/CONFIG_WIRING_MATRIX.md": "docs/CONFIG_WIRING_MATRIX.md",
-    "docs/ui/shared-search-window.png": "docs/ui/shared-search-window.png",
-    "docs/ui/b-inline-callouts.png": "docs/ui/b-inline-callouts.png",
-    "docs/ui/a-inline-annotations.png": "docs/ui/a-inline-annotations.png",
-    "docs/ui/invoice-field-callouts.png": "docs/ui/invoice-field-callouts.png",
-    "docs/ui/invoice-row-callouts.png": "docs/ui/invoice-row-callouts.png",
 }
 
 # Exact root-level outputs written by the validation workflow. Tracked files
 # with these names still remain source inputs and must pass the dirty check.
 GENERATED_VALIDATION_FILES = frozenset({
     'test-results.xml', 'source-selftest.json', 'source-app-smoke.json',
-    'source-handwriting.json', 'source-handwriting-image.json', 'source-comparison.json',
-    'source-shared-search.json',
+    'source-handwriting.json', 'source-handwriting-image.json',
     'source-gui.json',
 })
 
@@ -334,7 +326,7 @@ def validate_candidate(paths):
         elif (report.get('phase_a') is not True or report.get('engine_ready') is not True
               or report.get('shutdown_clean') is not True
               or report.get('database_integrity') != 'ok'
-              or report.get('threads_stopped') != {"capture": True, "ocr": True, "database": True, "hotkeys": True, "history_maintenance": True, "shared_search": True}):
+              or report.get('threads_stopped') != {"capture": True, "ocr": True, "database": True, "hotkeys": True, "history_maintenance": True}):
             raise RuntimeError(f'Incomplete lifecycle gate: {report_path}')
         reports[name] = {'sha256': sha256_file(report_path), 'status': 'PASSED'}
     if sha256_file(paths['out_exe']) != expected_hash:
@@ -357,14 +349,6 @@ def validate_candidate(paths):
         check_handwriting_image_probe(report, dict(manifest, executable_sha256=expected_hash), True)
     except ValueError as exc:
         raise RuntimeError('Incomplete handwriting image candidate gate') from exc
-    reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
-    from scripts.verify_candidate_bundle import check_shared_search_probe
-    path = paths['validation_dir'] / 'frozen-shared-search.json'
-    report = _run_probe(paths['out_exe'], '--self-test-shared-search', path)
-    try:
-        check_shared_search_probe(report, {'version': APP_VERSION, 'executable_sha256': expected_hash}, True)
-    except ValueError as exc:
-        raise RuntimeError('Incomplete shared-search candidate gate') from exc
     reports[path.name] = {'sha256': sha256_file(path), 'status': 'PASSED'}
     from scripts.verify_candidate_bundle import check_gui_probe
     path = paths['validation_dir'] / 'frozen-gui.json'

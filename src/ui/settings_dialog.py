@@ -289,70 +289,12 @@ class SettingsDialog(QDialog):
         )
         clf.addRow("文字：", self._cb_auto_text)
 
-        from ..clipboard.text_cleanup import COPY_CLEANUP_OPTIONS, MAX_REPLACEMENT_LENGTH
-        self._copy_cleanup_checks = {}
-        self._copy_cleanup_modes = {}
-        self._copy_cleanup_replacements = {}
-        self._original_cleanup_replacements = {}
-        self._cleanup_replacement_edited = set()
-        cleanup = QGroupBox('複製清理')
-        cleanup.setToolTip('套用於一般 OCR、歷史與編輯器的文字複製，以及「貼上最後一筆」；文件套版及手寫候選保留原樣。原始文字不變。個別規則優先於「所有標點與空白」；替代文字不會再次被清理。')
-        cleanup_rows = QVBoxLayout(cleanup)
-        cleanup_rows.setSpacing(10)
-        titles = {'copy_remove_commas': '逗號', 'copy_remove_apostrophes': '撇號',
-                  'copy_remove_newlines': '換行', 'copy_remove_punctuation': '所有標點與空白'}
-        notes = {'copy_remove_commas': '處理半形／全形逗號（,，）。',
-                 'copy_remove_apostrophes': "處理撇號（'‘’＇），不改動其他引號。",
-                 'copy_remove_newlines': '處理換行；Windows CRLF 算一次。其他空白保留。',
-                 'copy_remove_punctuation': '處理 Unicode 標點及所有空白，包含小數點、負號、半形／全形空格、Tab 與換行；數值格式也會改變。'}
-        for key, _, _ in COPY_CLEANUP_OPTIONS:
-            suffix = key.removeprefix('copy_remove_')
-            row = QHBoxLayout()
-            check = QCheckBox(titles[key])
-            check.setChecked(self._cfg.get('clipboard', key, default=False) is True)
-            check.setFixedWidth(130)
-            mode = QComboBox()
-            mode.addItem('移除', 'remove')
-            mode.addItem('替換', 'replace')
-            chosen = self._cfg.get('clipboard', 'copy_cleanup_mode_' + suffix, default='remove')
-            if chosen not in ('remove', 'replace'):
-                mode.addItem('請選擇處理方式', None)
-                mode.setCurrentIndex(2)
-            else:
-                mode.setCurrentIndex(1 if chosen == 'replace' else 0)
-            mode.setFixedWidth(90)
-            edit = QLineEdit()
-            value = self._cfg.get('clipboard', 'copy_replace_' + suffix, default='')
-            self._original_cleanup_replacements[key] = value
-            value = value if isinstance(value, str) else ''
-            edit.setMaxLength(max(MAX_REPLACEMENT_LENGTH * 2, len(value.encode('utf-16-le', errors='surrogatepass')) // 2))
-            edit.setText(value)
-            edit.setMinimumWidth(0)
-            edit.textChanged.connect(lambda text, rule=key: self._cleanup_replacement_edited.add(rule))
-            edit.setPlaceholderText('自訂替代文字')
-            edit.setAccessibleName(titles[key] + '替代文字')
-            mode.setAccessibleName(titles[key] + '處理方式')
-            note = notes[key] + ' 原始文字不變。' + '\n移除會刪除指定字元；替換可輸入自己的字串，留空也可。最多 64 字，儲存後立即生效。'
-            for control in (check, mode, edit):
-                control.setToolTip(note)
-            info = self._info_button(note)
-            def refresh(*_, checkbox=check, action=mode, replacement=edit):
-                action.setEnabled(checkbox.isChecked())
-                replacement.setVisible(action.currentData() == 'replace')
-                replacement.setEnabled(checkbox.isChecked())
-            check.toggled.connect(refresh)
-            mode.currentIndexChanged.connect(refresh)
-            refresh()
-            row.addWidget(check)
-            row.addWidget(mode)
-            row.addWidget(edit, 1)
-            row.addStretch()
-            row.addWidget(info)
-            cleanup_rows.addLayout(row)
-            self._copy_cleanup_checks[key] = check
-            self._copy_cleanup_modes[key] = mode
-            self._copy_cleanup_replacements[key] = edit
-        clv.addWidget(cleanup)
+        from .copy_preferences import CopyCleanupEditor
+        self._copy_cleanup_editor = CopyCleanupEditor(self._cfg)
+        for name in ('_copy_cleanup_checks', '_copy_cleanup_modes', '_copy_cleanup_replacements',
+                     '_original_cleanup_replacements', '_cleanup_replacement_edited'):
+            setattr(self, name, getattr(self._copy_cleanup_editor, name))
+        clv.addWidget(self._copy_cleanup_editor)
         self._cb_auto_image = QCheckBox("自動收錄剪貼簿圖片")
         self._cb_auto_image.setChecked(
             self._cfg.get('clipboard', 'auto_save_image', default=False)
@@ -462,26 +404,14 @@ class SettingsDialog(QDialog):
     def _save(self):
         if self._closed:
             return
-        from ..clipboard.text_cleanup import validate_copy_replacement
-        for key in self._copy_cleanup_checks:
-            active = self._copy_cleanup_checks[key].isChecked()
-            mode = self._copy_cleanup_modes[key].currentData()
-            if active and mode not in ('remove', 'replace'):
-                QMessageBox.warning(self, '請確認複製清理', '請為每個規則選擇移除或替換。')
-                if not self._closed:
-                    self._tabs.setCurrentIndex(3)
-                    self._copy_cleanup_modes[key].setFocus()
-                return
-            original = self._original_cleanup_replacements[key]
-            replacement = (self._copy_cleanup_replacements[key].text() if key in self._cleanup_replacement_edited
-                           else original)
-            if ((active and mode == 'replace') or key in self._cleanup_replacement_edited) and not validate_copy_replacement(replacement):
-                QMessageBox.warning(self, '請確認替代文字', '替代文字最多 64 字，不可包含換行或控制字元。請調整後再儲存。')
-                if self._closed:
-                    return
+        issue = self._copy_cleanup_editor.validation_issue()
+        if issue:
+            control, message = issue
+            QMessageBox.warning(self, '請確認複製清理', message)
+            if not self._closed:
                 self._tabs.setCurrentIndex(3)
-                self._copy_cleanup_replacements[key].setFocus()
-                return
+                control.setFocus()
+            return
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
         self._cfg.set('history', 'auto_archive_days', self._sp_archive_days.value())
@@ -495,13 +425,7 @@ class SettingsDialog(QDialog):
         self._cfg.set('clipboard', 'ocr_copy_mode', self._ocr_copy_mode.currentData())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
-        for key, check in self._copy_cleanup_checks.items():
-            self._cfg.set('clipboard', key, check.isChecked())
-            suffix = key.removeprefix('copy_remove_')
-            if self._copy_cleanup_modes[key].currentData() is not None:
-                self._cfg.set('clipboard', 'copy_cleanup_mode_' + suffix, self._copy_cleanup_modes[key].currentData())
-            if key in self._cleanup_replacement_edited:
-                self._cfg.set('clipboard', 'copy_replace_' + suffix, self._copy_cleanup_replacements[key].text())
+        self._copy_cleanup_editor.save()
 
         from ..core.autostart import set_autostart
         if self._cb_autostart.isChecked() != self._initial_autostart:
