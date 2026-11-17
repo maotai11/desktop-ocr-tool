@@ -7,7 +7,7 @@ function Assert-GuiProbe($Report, [string]$Version, [string]$Hash) {
         $Report.platform -cne 'win32' -or $Report.qt_platform -cne 'windows') {
         throw 'GUI feature candidate identity mismatch'
     }
-    foreach ($key in @('passed', 'frozen')) {
+    foreach ($key in @('passed', 'frozen', 'invoice_focus_native_required', 'invoice_focus_native_verified')) {
         if ($Report.$key -isnot [bool] -or $Report.$key -ne $true) {
             throw "Incomplete GUI feature native capture gate: $key"
         }
@@ -17,7 +17,7 @@ function Assert-GuiProbe($Report, [string]$Version, [string]$Hash) {
             throw 'Unexpected GUI feature accuracy or clean-machine claim'
         }
     }
-    $checkNames = @('launcher_actions_and_capture_cancel', 'settings_cancel_and_apply', 'launcher_copy_controls', 'history_search_tags_and_pin',
+    $checkNames = @('launcher_actions_and_capture_cancel', 'settings_cancel_and_apply', 'launcher_copy_controls', 'manual_invoice_check', 'history_search_tags_and_pin',
         'editor_save_and_history_refresh', 'ocr_selection_copy_explicit', 'document_import_template_zoom_clear',
         'handwriting_stroke_candidate_copy', 'removed_comparison_tools_absent',
         'tray_pause_and_quit_route', 'minimized_windows_restore', 'capture_cancel_restart_ignores_old_gesture',

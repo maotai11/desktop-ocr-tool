@@ -2,14 +2,15 @@
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timedelta
-from dataclasses import replace
 from contextlib import contextmanager
-from typing import Optional, List
-from .database import Database, write_transaction
-from .models import ItemDTO, ItemCreateDTO, OcrResultDTO, TagDTO, StatsDTO
-from .hasher import sha256_text
+from dataclasses import replace
+from datetime import datetime, timedelta
+from typing import List, Optional
+
 from ..core.constants import DEDUP_SECONDS
+from .database import Database, write_transaction
+from .hasher import sha256_text
+from .models import ItemCreateDTO, ItemDTO, OcrResultDTO, StatsDTO, TagDTO
 
 logger = logging.getLogger(__name__)
 _UNSET = object()
@@ -116,6 +117,22 @@ class ItemRepository:
             except Exception:
                 pass  # nosec B110 — connection may be broken; rollback failure is unrecoverable
             return None
+
+    def cleanup_unreferenced_capture(self, relative_path, file_manager, remove):
+        """Read-only admission: even a quota-rejected insert may release its files.
+
+        Serialize with application writers through deletion. Preserve on any
+        unreadable reference; soft-deleted items still own their files.
+        """
+        target = file_manager.get_abs_path(relative_path)
+        with self._db._write_lock:
+            rows = self._conn.execute(
+                'SELECT raw_image_path,thumbnail_path,annotation_path FROM items')
+            for row in rows:
+                for stored in row:
+                    if stored and file_manager.get_abs_path(stored) == target:
+                        return False
+            return remove()
 
     def get_by_id(self, item_id: int) -> Optional[ItemDTO]:
         row = self._conn.execute(

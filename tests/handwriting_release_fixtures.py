@@ -77,6 +77,9 @@ def extra_evidence(root, manifest):
         vulnerabilities_count=0, findings=[],
         dependency_inventory_sha256=hashlib.sha256(inventory).hexdigest())
     (root / 'artifacts/security-audit.json').write_text(json.dumps(audit), encoding='utf-8')
+    from resource_release_fixtures import receipt
+    resource = receipt(manifest['version'], manifest['executable_sha256'], manifest['source']['commit'])
+    (root / 'artifacts/resource-budget.json').write_text(json.dumps(resource), encoding='utf-8')
     firewall = root / 'artifacts/firewall-validation'
     for destination, frozen in ((root / 'source-gui.json', False),
                                 (firewall / 'frozen-gui.json', True)):
@@ -155,6 +158,7 @@ def extra_evidence(root, manifest):
 def gui_probe(version, executable_hash, frozen=True):
     from src.gui_probe import GUI_CHECK_NAMES
     return dict(schema=1, probe='gui_feature_lifecycle', version=version,
+        invoice_focus_native_required=True, invoice_focus_native_verified=True,
         platform='win32', qt_platform='windows', frozen=frozen, passed=True,
         executable_sha256=executable_hash if frozen else None, clean_machine_verified=False,
         fixture_kind='SYNTHETIC_GUI_CONTROLS', ocr_accuracy_tested=False,

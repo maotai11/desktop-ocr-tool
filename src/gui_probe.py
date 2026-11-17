@@ -13,7 +13,7 @@ GUI_CHECK_NAMES = (
     'history_search_tags_and_pin', 'editor_save_and_history_refresh',
     'ocr_selection_copy_explicit', 'document_import_template_zoom_clear',
     'handwriting_stroke_candidate_copy', 'removed_comparison_tools_absent',
-    'tray_pause_and_quit_route',
+    'manual_invoice_check', 'tray_pause_and_quit_route',
     'minimized_windows_restore', 'capture_cancel_restart_ignores_old_gesture',
     'shutdown_rejects_late_tool_entries',
     'windows_and_workers_closed', 'temporary_files_cleaned',
@@ -31,7 +31,9 @@ def _removed_tools_absent(app, shell, tray, pipeline):
     import io
     import threading
     from contextlib import redirect_stderr
+
     from PySide6.QtWidgets import QPushButton
+
     from .main import _build_parser
 
     retired_modules = (
@@ -207,6 +209,185 @@ def _context_action(console, label):
         menu.close()
     point = console._table.visualItemRect(console._table.item(0, 0)).center()
     _modal(lambda: console._table.customContextMenuRequested.emit(point), [choose], popup=True)
+
+
+def _exercise_manual_invoice_check(app, shell, cfg, repo):
+    """Earn manual snapshot evidence with real UI/controller and owned oracle data."""
+    from copy import deepcopy
+
+    import numpy as np
+    from PySide6.QtCore import QObject, Qt, Signal
+
+    from .invoice_check import controller as controller_module
+
+    class Capture(QObject):
+        finished = Signal(str, object)
+        stopped = Signal()
+        def __init__(self):
+            super().__init__()
+            self.requests, self.busy, self.closed = [], False, False
+        def request(self, token, regions, cancel_event):
+            if self.closed or self.busy:
+                return False
+            self.requests.append((token, dict(regions), cancel_event))
+            self.busy = True
+            return True
+        def finish(self, payload):
+            self.busy = False
+            self.finished.emit(self.requests[-1][0], payload)
+            if self.closed:
+                self.stopped.emit()
+        def cancel(self):
+            if self.requests:
+                self.requests[-1][2].set()
+        def shutdown(self):
+            self.closed = True
+            self.cancel()
+            if not self.busy:
+                self.stopped.emit()
+
+    class Ocr(QObject):
+        document_ocr_done = Signal(str, int, str, object)
+        def __init__(self):
+            super().__init__()
+            self.requests = []
+        def queue_document_ocr(self, token, index, stage, image, cancel_event=None):
+            self.requests.append((token, index, stage, image.copy(), cancel_event))
+            return True
+        def finish(self):
+            token, index, stage, _, _ = self.requests[-1]
+            self.document_ocr_done.emit(token, index, stage, result(stage))
+
+    def observation(text, x, y, width=80):
+        return {'text': text, 'raw_text': text, 'confidence': .99, 'box': [x,y,width,16]}
+
+    def result(stage):
+        if stage == 'invoice':
+            pairs = [('日期','1150824'),('發票號碼','AB12345678'),('銷售額合計','1000'),('營業稅','50'),('賣方統編','24536806')]
+            detail = [item for i,(label,value) in enumerate(pairs)
+                      for item in (observation(label,5,i*35+5,85), observation(value,100,i*35+5,120))]
+        else:
+            values = (['金額','稅額','日期','憑證號碼','統編'] if stage == 'header'
+                      else ['1000','50','2026-08-24','AB12345678','24536806'])
+            detail = [observation(text,i*100+10,5) for i,text in enumerate(values)]
+        return {'status':'done','text':'OWNED SYNTHETIC INVOICE','detail':detail}
+
+    regions = {'invoice': (20,30,320,200,1), 'table': (350,30,500,125,1)}
+    invoice = np.full((200,320,3),255,np.uint8)
+    invoice[10:20,10:20] = 0
+    table = np.full((125,500,3),255,np.uint8)
+    table[[0,30,60,90,120]] = 0
+    table[32:59,5:75] = (240,60,0)
+    table[67:75,300:320] = (0,0,200)  # Unselected adjacent-row sentinel.
+    payload = {'regions':regions,'images':{'invoice':invoice,'table':table},'captured_at_ns':42}
+    capture, ocr = Capture(), Ocr()
+    original_controller = controller_module.InvoiceCheckController
+    clipboard_before, history_before = app.clipboard().text(), repo.count()
+    clipboard_writes = []
+    def changed_clipboard():
+        clipboard_writes.append(True)
+    with _replace(controller_module, 'InvoiceCheckController',
+                  lambda worker, parent=None: original_controller(ocr,parent,capture_service=capture,settle_ms=0)):
+        _require(shell._btn_invoice_check.isEnabled())
+        shell._btn_invoice_check.click()
+    window, controller = shell._invoice_window, shell._invoice_controller
+    _require(window is not None and window.isVisible() and controller is not None)
+    app.clipboard().dataChanged.connect(changed_clipboard)
+    try:
+        _dispatch_for(50)
+        _require(not capture.requests and not ocr.requests and controller.last_result is None)
+        for side, region in regions.items():
+            _require(controller.set_region(side,region))
+        window.set_ocr_ready(True)
+        window._check_button.click()
+        _until(lambda: len(capture.requests) == 1)
+        capture.finish(deepcopy(payload))
+        for stage in ('invoice','header','row'):
+            _require(ocr.requests[-1][2] == stage)
+            if stage == 'row':
+                crop = ocr.requests[-1][3]
+                _require(crop.shape == (29,500,3) and not np.any(np.all(crop == (0,0,200),axis=2)))
+            ocr.finish()
+        _until(lambda: len(capture.requests) == 2)
+        capture.finish(deepcopy(payload))
+        _until(lambda: window._snapshot is not None)
+        snapshot = deepcopy(window._snapshot)
+        _require(len(snapshot['checks']) == 5 and all(item['status'] == 'matched' for item in snapshot['checks']))
+        _require(snapshot['active_row'] == [0,31,500,29] and controller.last_result == window._snapshot)
+        _require(all(state.text() == '相符' for _,state,_ in window._result_rows))
+        _require(window.overlay.isVisible() and len(window.overlay.marks) == 5 and bool(window.overlay.callouts))
+        _require(bool(window.overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
+        _require(window.overlay.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating))
+        expected = [(regions['invoice'][0]+item['invoice']['box'][0],regions['invoice'][1]+item['invoice']['box'][1],item['invoice']['box'][2],item['invoice']['box'][3]) for item in snapshot['checks']]
+        _require([mark['anchor'] for mark in window.overlay.marks] == expected)
+        window._transparency.setValue(35)
+        _require(window.overlay.background_transparency == 35)
+        window._transparency.setValue(100)
+        _require(window.overlay.background_transparency == 100)
+        _invoice_native_overlay_check(window.overlay)
+        count = len(capture.requests)
+        _dispatch_for(75)
+        _require(len(capture.requests) == count and len(ocr.requests) == 3)
+        window.action_bar.check.click()
+        _until(lambda: len(capture.requests) == count+1)
+        capture.finish(deepcopy(payload))
+        window.action_bar.stop.click()
+        ocr.finish()
+        _require(window._snapshot is None and controller.last_result is None and not window.overlay.isVisible())
+        controller.results_ready.emit(snapshot)
+        _require(window._snapshot is None and not window.overlay.isVisible())
+        window.open()
+        window._check_button.click()
+        _until(lambda: len(capture.requests) == count+2)
+        capture.finish(deepcopy(payload))
+        stale = ocr.requests[-1]
+        window.close()
+        ocr.document_ocr_done.emit(stale[0],stale[1],stale[2],result(stale[2]))
+        controller.results_ready.emit(snapshot)
+        _require(window._snapshot is None and not window.isVisible() and not window.overlay.isVisible())
+        _require(not clipboard_writes and app.clipboard().text() == clipboard_before and repo.count() == history_before)
+        return True
+    finally:
+        app.clipboard().dataChanged.disconnect(changed_clipboard)
+        window.shutdown()
+        if capture.busy:
+            capture.finish(None)
+        if controller._ocr_pending is not None:
+            ocr.finish()
+        _require(controller.is_stopped and not window.overlay.isVisible() and not window.action_bar.isVisible())
+
+
+def _invoice_native_overlay_check(overlay):
+    if sys.platform != 'win32':
+        return
+    import ctypes
+    from ctypes import wintypes
+    user = ctypes.WinDLL('user32', use_last_error=True)
+    user.GetWindowLongPtrW.argtypes = [wintypes.HWND,ctypes.c_int]
+    user.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+    style = user.GetWindowLongPtrW(int(overlay.winId()),-20)
+    _require(style & 0x00000008 and style & 0x08000000 and style & 0x00000020)
+    from PySide6.QtWidgets import QWidget
+    user.GetForegroundWindow.restype = wintypes.HWND
+    user.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user.SetForegroundWindow.restype = wintypes.BOOL
+    source = QWidget()
+    try:
+        source.setWindowTitle('Owned invoice probe focus fixture')
+        source.show()
+        source.activateWindow()
+        user.SetForegroundWindow(int(source.winId()))
+        _dispatch_for(30)
+        foreground = user.GetForegroundWindow()
+        _require(foreground == int(source.winId()))
+        overlay.hide()
+        _require(overlay.restore())
+        _dispatch_for(30)
+        _require(user.GetForegroundWindow() == foreground)
+    finally:
+        source.close()
+        source.deleteLater()
+
 
 
 def _exercise_gui(app, directory, checks):
@@ -430,6 +611,7 @@ def _exercise_gui(app, directory, checks):
             # The launcher changes only copy preferences. It must neither open
             # the full settings dialog nor restart unrelated background work.
             import json
+
             from .ui.copy_preferences import CopyCleanupDialog
             before_quick = json.loads(Path(cfg._settings_path).read_text(encoding='utf-8'))
             quick_writes, original_save = [], cfg.save
@@ -627,6 +809,8 @@ def _exercise_gui(app, directory, checks):
             checks['handwriting_stroke_candidate_copy'] = not ink.pad.buffer.strokes and not ink._buttons
             ink.close()
 
+            checks['manual_invoice_check'] = _exercise_manual_invoice_check(app,shell,cfg,repo)
+
             checks['removed_comparison_tools_absent'] = _removed_tools_absent(app, shell, tray, pipeline)
 
             shell.show()
@@ -640,7 +824,7 @@ def _exercise_gui(app, directory, checks):
             _until(lambda: pipeline.closed)
             checks['tray_pause_and_quit_route'] = pipeline.closing and pipeline.closed and watcher._stopped
             _require(not overlay.isVisible())
-            tool_names = ('_console', '_handwriting', '_documents', '_copy_cleanup_popup')
+            tool_names = ('_console', '_handwriting', '_documents', '_copy_cleanup_popup', '_invoice_window')
             owned_tools = tuple(getattr(shell, name) for name in tool_names)
             terminal_settings = Path(cfg._settings_path).read_bytes()
             unexpected_modals = []
@@ -660,7 +844,7 @@ def _exercise_gui(app, directory, checks):
                     if not action.isSeparator():
                         action.trigger()
                 for entry in (shell.toggle_visibility, shell.open_console, shell.open_handwriting,
-                              shell.open_document_template,
+                              shell.open_document_template, shell.open_invoice_check,
                               shell.open_settings, shell._open_copy_cleanup,
                               shell.trigger_capture_ocr, shell.trigger_capture_image):
                     entry()
@@ -675,7 +859,7 @@ def _exercise_gui(app, directory, checks):
                 and not selected and not watcher.active and maintenance.is_stopped
                 and not any(window.isVisible() for window in app.topLevelWidgets()
                             if id(window) not in before_windows)
-                and shell.handwriting_is_stopped() and shell.documents_is_stopped())
+                and shell.handwriting_is_stopped() and shell.documents_is_stopped() and shell.invoice_check_is_stopped())
             _require(not forbidden_captures)
         finally:
             if pipeline is not None:
@@ -702,7 +886,7 @@ def _exercise_gui(app, directory, checks):
             checks['windows_and_workers_closed'] = (
                 pipeline is not None and pipeline.closed and database._closed
                 and not thread.isRunning() and not ocr.isRunning() and not capture.isRunning()
-                and shell.handwriting_is_stopped() and shell.documents_is_stopped()
+                and shell.handwriting_is_stopped() and shell.documents_is_stopped() and shell.invoice_check_is_stopped()
                 and not any(window.isVisible() for window in owned_windows))
             for window in owned_windows:
                 window.deleteLater()
@@ -725,6 +909,8 @@ def run_gui_probe(report_path):
               'clean_machine_verified': False, 'passed': False,
               'fixture_kind': 'SYNTHETIC_GUI_CONTROLS',
               'model_inference_tested': False, 'ocr_accuracy_tested': False,
+              'invoice_focus_native_required': sys.platform == 'win32',
+              'invoice_focus_native_verified': False,
               'checks': dict.fromkeys(GUI_CHECK_NAMES, False)}
     commit = os.environ.get('GITHUB_SHA', '')
     if re.fullmatch('[0-9a-f]{40}', commit):
@@ -751,6 +937,10 @@ def run_gui_probe(report_path):
             temporary = Path(directory).resolve()
             os.environ['DESKTOP_OCR_HOME'] = str(temporary)
             _exercise_gui(app, temporary, report['checks'])
+            if report['invoice_focus_native_required']:
+                from .invoice_focus_probe import verify_fresh_child
+                report['invoice_focus_native_verified'] = verify_fresh_child(app, temporary)
+                report['checks']['manual_invoice_check'] &= report['invoice_focus_native_verified']
         report['checks']['temporary_files_cleaned'] = not temporary.exists()
         report['passed'] = all(value is True for value in report['checks'].values())
     except Exception:  # noqa: BLE001 - reports must never disclose text, paths, pixels or tracebacks

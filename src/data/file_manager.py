@@ -6,6 +6,8 @@ import string
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from PIL import Image
+from ..core.resource_budget import (BoundedWriter, disk_quota_guard, register_managed_root,
+                                    raster_preflight, disk_write_reservation, create_managed_directory)
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +16,11 @@ class FileManager:
     def __init__(self, data_dir: str, thumbnail_size: tuple = (80, 80)):
         self._data_dir = str(Path(data_dir).resolve())
         self._thumb_size = thumbnail_size
-        for sub in ('captures', 'thumbnails', 'annotations', 'exports'):
-            os.makedirs(os.path.join(data_dir, sub), exist_ok=True)
+        register_managed_root(self._data_dir, owner=self)
+        # An existing over-budget profile remains inspectable; no eager writes.
+        if not Path(self._data_dir).parent.is_dir():
+            raise FileNotFoundError('請先選擇已存在的資料上層資料夾')
+
 
     def _dated_subdir(self, base: str) -> str:
         now = datetime.now()
@@ -29,56 +34,67 @@ class FileManager:
         return f"{now}_{rand}.{ext}"
 
     def save_capture(self, image_data, ext: str = 'png') -> tuple:
-        sub = self._dated_subdir(os.path.join(self._data_dir, 'captures'))
         if not (isinstance(image_data, (Image.Image, bytes)) or hasattr(image_data, 'shape')):
             raise ValueError(f"不支援的圖片格式: {type(image_data)}")
         image_format = Image.registered_extensions().get('.' + ext.lower())
         if image_format is None:
             raise ValueError(f'不支援的圖片副檔名: {ext}')
-        # Exclusively create the destination. A filename collision must never
-        # overwrite another capture, including one referenced by SQLite.
-        for _ in range(100):
-            abs_path = os.path.join(sub, self._make_filename(ext))
-            try:
-                handle = open(abs_path, 'xb')
-            except FileExistsError:
-                continue
-            try:
-                with handle:
-                    if isinstance(image_data, bytes):
-                        handle.write(image_data)
-                    else:
-                        image = image_data if isinstance(image_data, Image.Image) else Image.fromarray(image_data)
-                        image.save(handle, format=image_format)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-            except Exception:
-                # This process owns this newly created incomplete file only.
-                Path(abs_path).unlink(missing_ok=True)
-                raise
-            break
+        if isinstance(image_data, bytes):
+            maximum = len(image_data)
         else:
-            raise FileExistsError('無法建立唯一截圖檔名，請重試')
-
-        rel_path = os.path.relpath(abs_path, self._data_dir)
-        logger.debug(f"已儲存擷取圖片: {abs_path}")
-        return abs_path, rel_path
+            width, height = image_data.size if isinstance(image_data, Image.Image) else image_data.shape[1::-1]
+            raster_preflight(int(width), int(height))
+            maximum = int(width) * int(height) * 8 + 65536
+        with disk_quota_guard(self, reserve_bytes=disk_write_reservation(self._data_dir, maximum, new_directories=4)):
+            sub = self._dated_subdir(os.path.join(self._data_dir, 'captures'))
+            for _ in range(100):
+                abs_path = os.path.join(sub, self._make_filename(ext))
+                try:
+                    handle = open(abs_path, 'xb')
+                except FileExistsError:
+                    continue
+                try:
+                    with handle:
+                        writer = BoundedWriter(handle, maximum)
+                        if isinstance(image_data, bytes):
+                            writer.write(image_data)
+                        else:
+                            image = image_data if isinstance(image_data, Image.Image) else Image.fromarray(image_data)
+                            image.save(writer, format=image_format)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                except Exception:
+                    Path(abs_path).unlink(missing_ok=True)
+                    raise
+                break
+            else:
+                raise FileExistsError('無法建立唯一截圖檔名，請重試')
+        return abs_path, os.path.relpath(abs_path, self._data_dir)
 
     def create_thumbnail(self, image_path: str) -> tuple:
-        sub = self._dated_subdir(os.path.join(self._data_dir, 'thumbnails'))
-        base = os.path.basename(image_path)
-        name, _ = os.path.splitext(base)
-        thumb_filename = f"{name}_thumb.png"
-        abs_path = os.path.join(sub, thumb_filename)
+        temporary = None
         try:
-            with Image.open(image_path) as img:
-                img.thumbnail(self._thumb_size, Image.LANCZOS)
-                img.save(abs_path, 'PNG')
-            rel_path = os.path.relpath(abs_path, self._data_dir)
-            return abs_path, rel_path
-        except Exception as e:
-            logger.error(f"建立縮圖失敗: {e}")
+            maximum = int(self._thumb_size[0]) * int(self._thumb_size[1]) * 8 + 65536
+            with disk_quota_guard(self, reserve_bytes=disk_write_reservation(self._data_dir, maximum, new_directories=4)):
+                sub = self._dated_subdir(os.path.join(self._data_dir, 'thumbnails'))
+                name = Path(image_path).stem
+                import tempfile
+                descriptor, temporary = tempfile.mkstemp(prefix=f'{name}_', suffix='_thumb.png', dir=sub)
+                destination = Path(temporary)
+                with os.fdopen(descriptor, 'wb') as stream, Image.open(image_path) as image:
+                    raster_preflight(*image.size)
+                    image.thumbnail(self._thumb_size, Image.LANCZOS)
+                    image.save(BoundedWriter(stream, maximum), 'PNG')
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                temporary = None
+                return str(destination), os.path.relpath(destination, self._data_dir)
+        except Exception:
+            logger.warning('無法建立縮圖，原始圖片未變更')
             return '', ''
+        finally:
+            if temporary is not None:
+                Path(temporary).unlink(missing_ok=True)
 
     def delete_item_files(self, item) -> list:
         failed = []
@@ -106,5 +122,6 @@ class FileManager:
 
     def get_export_dir(self) -> str:
         d = os.path.join(self._data_dir, 'exports')
-        os.makedirs(d, exist_ok=True)
+        create_managed_directory(self._data_dir, owner=self)
+        create_managed_directory(d, owner=self)
         return d

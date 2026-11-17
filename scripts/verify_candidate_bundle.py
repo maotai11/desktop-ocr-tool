@@ -190,7 +190,8 @@ def check_gui_probe(report, manifest, frozen):
         version=manifest['version'], frozen=frozen, platform='win32', qt_platform='windows',
         executable_sha256=manifest['executable_sha256'] if frozen else None,
         clean_machine_verified=False, fixture_kind='SYNTHETIC_GUI_CONTROLS',
-        ocr_accuracy_tested=False, model_inference_tested=False)
+        ocr_accuracy_tested=False, model_inference_tested=False,
+        invoice_focus_native_required=True, invoice_focus_native_verified=True)
     if (type(report) is not dict or any(type(report.get(key)) is not type(value)
             or report.get(key) != value for key, value in expected.items())):
         raise ValueError('Incomplete GUI lifecycle identity')
@@ -500,7 +501,7 @@ def verify_handwriting_source_distribution(archive, prefix, identity, source_fil
             'patch_sha256': patch_hash, 'native_source_sha256': helper_source['sha256']}
 
 
-def verify_candidate(root, expected_commit, inspect_payload=False):
+def verify_candidate(root, expected_commit, inspect_payload=False, *, expected_run_id=None, expected_run_attempt=None):
     root = Path(root)
     artifacts = root / 'artifacts'
     bundles = list(artifacts.glob(f'InkPick-v{VERSION}.zip'))
@@ -633,6 +634,14 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
     check_gui_probe(gui_source, manifest, False)
     if gui_source.get('source_commit') != expected_commit:
         raise ValueError('GUI source commit mismatch')
+    resource_path = artifacts / 'resource-budget.json'
+    from scripts.benchmark_resource_budget import validate_resource_report, ResourceGateError
+    try:
+        validate_resource_report(_json(resource_path.read_bytes()), version=VERSION,
+            executable_sha256=executable_hash.hexdigest(), source_commit=expected_commit,
+            run_id=expected_run_id, run_attempt=expected_run_attempt)
+    except ResourceGateError as exc:
+        raise ValueError('Incomplete actual resource budget evidence') from exc
     stress_path = artifacts / 'firewall-validation/frozen-runtime-stress.json'
     check_frozen_stress(_json(stress_path.read_bytes()), manifest)
     suites = ET.parse(root / 'test-results.xml').getroot()
@@ -663,6 +672,8 @@ def verify_candidate(root, expected_commit, inspect_payload=False):
                          'run_id': os.environ.get('GITHUB_RUN_ID'),
                          'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
                          'source_commit': expected_commit},
+            'resource_budget': {'status': 'PASSED', 'report_sha256': sha256_file(resource_path),
+                                'limit_bytes': 1_000_000_000},
             'native_payload_audit': {
                 'status': 'PASSED', 'native_files_count': native_report['native_files_count'],
                 'report_sha256': sha256_file(artifacts / 'native-payload-audit.json'),
@@ -678,7 +689,9 @@ def main(argv=None):
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--inspect-payload', action='store_true')
     args = parser.parse_args(argv)
-    report = verify_candidate(args.artifact_root, args.expected_commit, args.inspect_payload)
+    report = verify_candidate(args.artifact_root, args.expected_commit, args.inspect_payload,
+                              expected_run_id=os.environ.get('GITHUB_RUN_ID'),
+                              expected_run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return 0
 

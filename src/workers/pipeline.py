@@ -29,6 +29,8 @@ class Pipeline(QObject):
         self._ocr_selections = {}
         self._capture_overlay = None
         self._switching_capture = False
+        self._invoice_selection = None
+        self._capture_serial = 0
         self._tools_poll = QTimer(self)
         self._tools_poll.setInterval(25)
         self._tools_poll.timeout.connect(self._finish_shutdown)
@@ -56,6 +58,13 @@ class Pipeline(QObject):
         capture.finished.connect(self.capture_stopped)
         ocr.finished.connect(self.ocr_stopped)
         db_thread.finished.connect(self.db_stopped)
+        for name, callback in (
+                ('invoice_tool_requested', self.cancel_region_capture),
+                ('invoice_region_requested', self.start_invoice_region_capture),
+                ('invoice_selection_cancelled', self.cancel_invoice_region_capture)):
+            signal = getattr(widget, name, None)
+            if signal is not None:
+                signal.connect(callback)
 
     def set_history_maintenance(self, controller):
         self.history_maintenance = controller
@@ -67,8 +76,19 @@ class Pipeline(QObject):
         overlay.cancelled.connect(self._capture_cancelled)
 
     def _capture_cancelled(self):
+        self._finish_invoice_selection()
         if not self.closing and not self._switching_capture:
             self._reveal_launcher()
+
+    def _finish_invoice_selection(self):
+        selection, self._invoice_selection = self._invoice_selection, None
+        self._capture_serial += 1
+        if selection is not None and not self.closing:
+            selection[0].set_selection_active(False)
+
+    def cancel_invoice_region_capture(self):
+        if self._invoice_selection is not None:
+            self.cancel_region_capture()
 
     def _reveal_launcher(self):
         if self.closing:
@@ -86,12 +106,67 @@ class Pipeline(QObject):
                 self._capture_overlay._cancel()
         finally:
             self._switching_capture = False
+        self._finish_invoice_selection()
+
+    def start_invoice_region_capture(self, side):
+        if self.closing or self._capture_overlay is None or side not in ('invoice', 'table'):
+            return
+        window = getattr(self.widget, '_invoice_window', None)
+        controller = getattr(self.widget, '_invoice_controller', None)
+        if (window is None or controller is None or not window.isVisible()
+                or getattr(self.widget, '_invoice_closing', False)):
+            return
+        self.cancel_region_capture()
+        self._capture_serial += 1
+        serial = self._capture_serial
+        self._invoice_selection = (window, controller, side)
+
+        def current():
+            return (not self.closing and not getattr(self.widget, '_invoice_closing', False)
+                    and serial == self._capture_serial
+                    and self._invoice_selection == (window, controller, side))
+
+        controller.cancel()
+        if not current():
+            return
+        window.set_selection_active(True)
+        if not current():
+            return
+        self.widget.hide()
+        if not current():
+            return
+        self._capture_overlay.selection_prompt = ('框選左側發票位置' if side == 'invoice'
+                                                  else '框住右側欄名與資料列')
+
+        def selected(x, y, width, height, monitor):
+            if (self.closing or serial != self._capture_serial
+                    or self._invoice_selection != (window, controller, side)):
+                return
+            self._finish_invoice_selection()
+            if (self.closing or getattr(self.widget, '_invoice_closing', False)
+                    or not window.isVisible()):
+                return
+            self._reveal_launcher()
+            try:
+                accepted = controller.set_region(side, (x, y, width, height, monitor))
+            except ValueError as exc:
+                controller.failed.emit(str(exc))
+                return
+            if (not self.closing and not getattr(self.widget, '_invoice_closing', False)
+                    and accepted is not False and window.isVisible()):
+                controller.preview_once(side)
+
+        self._capture_overlay.start_capture(selected)
 
     def start_region_capture(self, mode):
         if self.closing or self._capture_overlay is None:
             return
         if mode not in ('region_ocr', 'region_image'):
             raise ValueError('Unsupported region capture mode')
+        hide_invoice = getattr(self.widget, 'hide_invoice_check', None)
+        if hide_invoice is not None:
+            hide_invoice()
+        self._capture_overlay.selection_prompt = ''
         from ..clipboard.writer import get_clipboard_epoch
         self.widget.hide()
         clipboard_epoch = get_clipboard_epoch()
@@ -268,6 +343,8 @@ class Pipeline(QObject):
             self.widget.shutdown_handwriting()
         if hasattr(self.widget, 'shutdown_documents'):
             self.widget.shutdown_documents()
+        if hasattr(self.widget, 'shutdown_invoice_check'):
+            self.widget.shutdown_invoice_check()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
             stop = getattr(self.clipboard, 'stop', None)
@@ -340,6 +417,10 @@ class Pipeline(QObject):
             return
         if (hasattr(self.widget, 'documents_is_stopped') and
                 not self.widget.documents_is_stopped()):
+            self._tools_poll.start()
+            return
+        if (hasattr(self.widget, 'invoice_check_is_stopped') and
+                not self.widget.invoice_check_is_stopped()):
             self._tools_poll.start()
             return
         self._tools_poll.stop()

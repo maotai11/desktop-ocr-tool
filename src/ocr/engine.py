@@ -13,6 +13,7 @@ from .preprocessor import (plan_ocr_tiles, prepare_ocr_tile, restore_tile_result
                            validate_image_shape, MAX_ENCODED_BYTES)
 from .secondary_engine import SecondaryEngineBase, NullSecondaryEngine
 from .model_validator import DEFAULT_MODEL_PROFILE
+from .retry_candidates import collect_retry_candidates, validated_alternatives
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ class OcrEngine:
                 result['preprocessing'] = {'strategy': 'whole_image', 'source_hw': list(image.shape[:2])}
                 return result
             merged, tile_evidence, warnings, tile_hypotheses = [], [], [], []
+            tile_candidates = []
             for index, tile in enumerate(tiles):
                 _check_cancelled(cancel_event)
                 if self._progress_callback:
@@ -230,6 +232,22 @@ class OcrEngine:
                                         'detail': result['detail']})
                 raw = [[r['box'], r['text'], r['confidence']] for r in result['detail']]
                 mapped = restore_tile_results(raw, tile)
+                for row in result.get('detail', []):
+                    try:
+                        items = validated_alternatives(row.get('alternatives'))
+                        if not items:
+                            continue
+                        parent = restore_tile_results([[row['box'], row['text'], row['confidence']]], tile)
+                        alternatives = []
+                        for item in items:
+                            candidate = restore_tile_results([[item['box'], item['raw_text'], item['confidence']]], tile)
+                            if candidate:
+                                alternatives.append(dict(item, box=candidate[0][0]))
+                        if parent and alternatives:
+                            tile_candidates.append({'box': parent[0][0], 'original_text': row['text'],
+                                                    'alternatives': alternatives})
+                    except Exception as candidate_error:
+                        logger.warning('切片候選座標整理未完成 (%s)', type(candidate_error).__name__)
                 merged, conflicts = fuse_tiles(merged, mapped)
                 if conflicts:
                     warnings.append(f'tile {index + 1}: overlapping seam hypotheses disagree')
@@ -237,6 +255,7 @@ class OcrEngine:
                 tile_evidence.append(dict(tile, inference_skipped=uniform, engine=result.get('engine', 'unknown'),
                                           model_version=result.get('model_version', 'unknown')))
             final = self._process_results(merged, int((time.monotonic() - started) * 1000))
+            self._attach_retry_candidates(final, tile_candidates)
             # Tiling is a bounded recovery path, not a completeness certificate.
             final['status'] = 'needs_review'
             for row in final['detail']:
@@ -275,6 +294,7 @@ class OcrEngine:
             if not preprocessed:
                 image = upscale_if_small(image, self._max_short_side)
             warnings = []
+            retry_candidates = []
             hypotheses = {'pass_metadata': {}, 'retry_policy': {
                 'max_passes': self._max_ocr_passes if self._enable_second_pass else 1,
                 'selection': 'retain_prior_text_on_conflict',
@@ -342,6 +362,13 @@ class OcrEngine:
                     candidate = self._do_ocr_array(enhanced)
                     _check_cancelled(cancel_event)
                     hypotheses[pass_name] = self._snapshot_results(candidate)
+                    try:
+                        retry_candidates.extend(collect_retry_candidates(
+                            self._snapshot_results(results), hypotheses[pass_name], pass_name))
+                    except Exception as candidate_error:
+                        # Review metadata must not prevent the existing full
+                        # detector/recognizer pass from recovering any text.
+                        logger.warning('辨識候選整理未完成 (%s)', type(candidate_error).__name__)
                     disagree = has_text_conflicts(results, candidate)
                     conflicts = conflicts or disagree
                     metadata[pass_name].update(outcome='completed', conflict=disagree,
@@ -382,6 +409,7 @@ class OcrEngine:
 
             elapsed_ms = int((time.time() - t0) * 1000)
             primary_result = self._process_results(results, elapsed_ms)
+            self._attach_retry_candidates(primary_result, retry_candidates)
             primary_result['hypotheses'] = hypotheses
             if warnings:
                 primary_result.update(status='needs_review', warnings=warnings)
@@ -430,6 +458,34 @@ class OcrEngine:
                     'detail': [], 'elapsed_ms': elapsed_ms, 'error': str(e)}
 
     @staticmethod
+    def _attach_retry_candidates(result, evidence):
+        """Attach only to the exact retained parent; never substitute its text."""
+        if not isinstance(evidence, list):
+            return
+        for row in result.get('detail', []):
+            try:
+                alternatives = validated_alternatives(row.get('alternatives'))
+                for record in evidence[:512]:
+                    if (not isinstance(record, dict) or not isinstance(record.get('original_text'), str)
+                            or len(record['original_text']) > 2048
+                            or row.get('text') != _s2t(record['original_text'])
+                            or not np.array_equal(np.asarray(row.get('box')), np.asarray(record.get('box')))):
+                        continue
+                    for candidate in validated_alternatives(record.get('alternatives')):
+                        if any(old['raw_text'] == candidate['raw_text'] for old in alternatives):
+                            continue
+                        candidate['text'] = _s2t(candidate['raw_text'])
+                        if candidate['text'] != row['text']:
+                            alternatives.append(candidate)
+                # No primary data is changed if validating a metadata row fails.
+                if alternatives:
+                    for candidate in alternatives:
+                        candidate['text'] = _s2t(candidate['raw_text'])
+                    row['alternatives'] = alternatives[:8]
+            except Exception as candidate_error:
+                logger.warning('辨識候選附加未完成 (%s)', type(candidate_error).__name__)
+
+    @staticmethod
     def _snapshot_results(results):
         snapshot = []
         for item in results or []:
@@ -462,6 +518,20 @@ class OcrEngine:
                 if points.shape != (4, 2) or not np.isfinite(points).all():
                     raise ValueError('Invalid OCR quadrilateral')
                 detail['box'] = (points * [sx, sy]).tolist()
+            try:
+                alternatives = validated_alternatives(detail.get('alternatives'))
+                for candidate in alternatives:
+                    candidate['box'] = (np.asarray(candidate['box'], dtype=float) * [sx, sy]).tolist()
+                    candidate['text'] = _s2t(candidate['raw_text'])
+                alternatives = [dict(candidate, text=_s2t(candidate['raw_text']))
+                                for candidate in validated_alternatives(alternatives)]
+                if alternatives:
+                    detail['alternatives'] = alternatives
+                else:
+                    detail.pop('alternatives', None)
+            except Exception as candidate_error:
+                detail.pop('alternatives', None)
+                logger.warning('候選座標整理未完成 (%s)', type(candidate_error).__name__)
         result['coordinate_transform'] = {'source_hw': list(original_hw),
                                            'processed_hw': list(processed_hw),
                                            'scale_to_source_xy': [sx, sy],

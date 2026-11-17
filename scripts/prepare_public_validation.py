@@ -17,14 +17,14 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.18'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.19'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'source_documents', 'source_gui', 'network_audit', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify')
-WINDOWS_ONLY = {'runtime_preparation', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify'}
+    'source_handwriting', 'source_image', 'source_documents', 'source_gui', 'network_audit', 'build', 'resource_budget', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify')
+WINDOWS_ONLY = {'runtime_preparation', 'build', 'resource_budget', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
 BOOLS = frozenset((
@@ -39,22 +39,28 @@ BOOLS = frozenset((
     'copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
     'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
     'native_archive_coverage_verified native_security_policy_passed '
-    'launcher_actions_and_capture_cancel settings_cancel_and_apply launcher_copy_controls history_search_tags_and_pin '
+    'launcher_actions_and_capture_cancel settings_cancel_and_apply launcher_copy_controls manual_invoice_check history_search_tags_and_pin '
     'editor_save_and_history_refresh ocr_selection_copy_explicit document_import_template_zoom_clear '
     'handwriting_stroke_candidate_copy tray_pause_and_quit_route minimized_windows_restore '
     'capture_cancel_restart_ignores_old_gesture shutdown_rejects_late_tool_entries '
     'windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
     'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published '
-    'removed_comparison_tools_absent '
+    'removed_comparison_tools_absent invoice_focus_native_required invoice_focus_native_verified '
+    'cold_os_cache_verified bootloader_owned_before_resume temporary_cleaned native_capture_used '
+    'shared_small_engine_verified three_manual_checks only_current_row no_automatic_capture '
+    'helper_inference_and_reap bounded_raster_inference no_history_or_capture_files ownership_drained '
 ).split())
-NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
+NUMBERS = frozenset(('limit_bytes sample_interval_ms samples peak_rss_bytes peak_sampled_private_bytes peak_job_private_bytes '
+    'peak_disk_bytes max_processes maximum_active_mei_directories active_processes total_processes '
+    'job_limit_bytes inner_report_bytes manual_rounds_completed fields_each large_source_pixels '
+    'schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
     'wall_seconds timeout_seconds memory_limit_mib peak_sampled_direct_child_rss_kib '
     'rss_sampling_ms unexpected_children_at_test_exit collected executable_bytes bundle_bytes '
     'size_bytes label_count model_size_bytes source_size_bytes stdout_bytes character_count output_classes packages_count vulnerabilities_count internet_family_calls cases_completed cases_passed '
     'native_files_count archive_entries_count unmapped_count unresolved_dependencies_count invalid_signatures_count '
     'signature_files_checked antivirus_detections_count antivirus_scanned_files_count scan_duration_seconds sample_submission_consent maps_reporting').split())
-HASHES = frozenset(('sha256 executable_sha256 bundle_sha256 model_sha256 character_sha256 '
+HASHES = frozenset(('inner_report_sha256 sha256 executable_sha256 bundle_sha256 model_sha256 character_sha256 '
     'helper_sha256 helper_source_sha256 alphabet_sha256 validation_sha256 '
     'source_manifest_sha256 report_sha256 working_tree_sha256 decoder_sha256 dependency_inventory_sha256 '
     'files_inventory_sha256 scan_scope_files_sha256 native_security_policy_sha256 archive_sha256').split())
@@ -63,7 +69,7 @@ ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'windows_runtime_preparation', 'dependency_vulnerabilities', 'runtime_network'},
+              'resource_budget', 'document_template_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'windows_runtime_preparation', 'dependency_vulnerabilities', 'runtime_network'},
     'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
     'python_version': {'3.12.16'}, 'openssl_version': {'3.5.9'},
     'provider': {'astral-sh/python-build-standalone'},
@@ -83,7 +89,7 @@ ENUMS = {
         'UPSTREAM_TRAINING_REPLAY_AND_SYNTHETIC_ROBUSTNESS_ONLY'},
     'memory_limit_kind': {'Windows shared Job private allocation', 'POSIX per-process RLIMIT_AS'},
 }
-CONTAINERS = {'checks', 'phases', 'collection', 'execution', 'model_profiles', 'profiles',
+CONTAINERS = {'resource_budget', 'stages', 'cold_application', 'manual_invoice_and_helpers', 'workload_checks', 'checks', 'phases', 'collection', 'execution', 'model_profiles', 'profiles',
     'v6-small', 'v6-medium', 'source_manifest', 'build_manifest', 'handwriting', 'helper',
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
@@ -151,6 +157,14 @@ def safe_fields(value, depth=0, context=None):
                     parsed[role] = {'version': fields[1], 'sha256': fields[2]}
             if len(parsed) == 3: result[key] = parsed
             else: invalid.append(key)
+        elif key == 'workflow' and value.get('probe') == 'resource_budget':
+            if (type(item) is dict and set(item) == {'repository','run_id','run_attempt','source_commit'}
+                    and item['repository'] == 'maotai11/desktop-ocr-tool'
+                    and isinstance(item['source_commit'], str) and re.fullmatch('[0-9a-f]{40}', item['source_commit'])
+                    and all(type(item[k]) is str and re.fullmatch('[1-9][0-9]{0,19}', item[k]) for k in ('run_id','run_attempt'))):
+                result[key] = dict(item)
+            else:
+                invalid.append(key)
         elif key == 'models' and isinstance(item, dict) and context != 'checks':
             result[key] = safe_fields(item, depth + 1, 'models')
         elif key in BOOLS:
@@ -193,7 +207,7 @@ def safe_fields(value, depth=0, context=None):
             else: invalid.append(key)
     # These flags disclose only presence/count, never error/trace/paths/labels.
     result['nonpublic_error_present'] = any(bool(value.get(k)) for k in
-        ('error', 'traceback', 'stderr', 'error_type', 'cleanup_error_types', 'group_termination_error_type'))
+        ('error', 'error_code', 'traceback', 'stderr', 'error_type', 'cleanup_error_types', 'group_termination_error_type'))
     for key in ('cases', 'negative_protocol', 'failures', 'wheels', 'installed', 'candidates'):
         item = value.get(key)
         if isinstance(item, (list, dict)):
@@ -306,12 +320,23 @@ def observed_result(value):
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
              'page_override','template_merge','source_unchanged','temporary_files_cleaned',
-             'launcher_actions_and_capture_cancel','settings_cancel_and_apply','launcher_copy_controls','history_search_tags_and_pin',
+             'launcher_actions_and_capture_cancel','settings_cancel_and_apply','launcher_copy_controls','manual_invoice_check','history_search_tags_and_pin',
              'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',
              'handwriting_stroke_candidate_copy','removed_comparison_tools_absent',
              'tray_pause_and_quit_route','minimized_windows_restore','capture_cancel_restart_ignores_old_gesture',
              'shutdown_rejects_late_tool_entries','windows_and_workers_closed')))
         for r in records)
+    if value.get('probe') == 'resource_budget':
+        from scripts.benchmark_resource_budget import validate_resource_report, ResourceGateError
+        try:
+            validate_resource_report(value, version=VERSION,
+                executable_sha256=value.get('executable_sha256'), source_commit=value.get('source_commit'))
+        except (ResourceGateError, ValueError, TypeError, KeyError):
+            failed = True
+    if value.get('probe') == 'gui_feature_lifecycle':
+        native = value.get('platform') == 'win32'
+        failed |= (value.get('invoice_focus_native_required') is not native
+                   or value.get('invoice_focus_native_verified') is not native)
     if failed:
         return 'INCONSISTENT_AS_RECORDED' if value.get('passed') is True else 'FAIL_AS_RECORDED'
     if value.get('passed') is True: return 'PASS_AS_RECORDED_NOT_OVERALL_APPROVAL'
@@ -327,6 +352,7 @@ def sources():
         ('artifacts/security-audit.json', 'json', False),
         ('artifacts/windows-runtime-inventory.json', 'json', True),
         ('artifacts/native-payload-audit.json', 'json', True),
+        ('artifacts/resource-budget.json', 'json', True),
         ('artifacts/native-payload-inventory.json', 'hash', True),
         ('artifacts/runtime-network-audit.json', 'json', False),
         ('artifacts/document-validation/frozen-documents.json', 'json', True),
@@ -365,6 +391,7 @@ def source_step(relative):
         'artifacts/security-audit.json':'security_audit',
         'artifacts/windows-runtime-inventory.json':'runtime_preparation',
         'artifacts/native-payload-audit.json':'native_audit',
+        'artifacts/resource-budget.json':'resource_budget',
         'artifacts/native-payload-inventory.json':'native_audit',
         'artifacts/runtime-network-audit.json':'network_audit',
         'artifacts/document-validation/frozen-documents.json':'firewall',

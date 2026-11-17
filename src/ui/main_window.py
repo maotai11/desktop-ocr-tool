@@ -939,9 +939,13 @@ class MainWindow(QMainWindow):
             "圖片 (*.png *.jpg *.bmp);;所有檔案 (*)"
         )
         if dest and not self._shutting_down:
-            import shutil
-            shutil.copy2(src, dest)
-            self._status_lbl.setText(f"已匯出：{dest}")
+            from ..core.resource_budget import copy_file_with_budget
+            try:
+                copy_file_with_budget(src, dest)
+            except OSError as exc:
+                QMessageBox.warning(self, '無法儲存圖片', str(exc))
+            else:
+                self._status_lbl.setText(f"已匯出：{dest}")
 
     def _open_editor(self, item):
         if self._shutting_down:

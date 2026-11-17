@@ -533,9 +533,13 @@ class EditorWindow(QDialog):
             "圖片檔案 (*.png *.jpg *.bmp);;所有檔案 (*)"
         )
         if dest and not self._shutting_down:
-            import shutil
-            shutil.copy2(src, dest)
-            logger.info(f"圖片已匯出: {dest}")
+            from ..core.resource_budget import copy_file_with_budget
+            try:
+                copy_file_with_budget(src, dest)
+            except OSError as exc:
+                QMessageBox.warning(self, '無法儲存圖片', str(exc))
+            else:
+                logger.info(f"圖片已匯出: {dest}")
 
     def shutdown(self):
         """Preserve the draft in memory while application shutdown drains work."""

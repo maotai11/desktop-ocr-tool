@@ -43,6 +43,10 @@
   "documents": {
     "max_file_size_mb": 100
   },
+  "invoice_check": {
+    "overlay_on_top": true,
+    "overlay_transparency": 100
+  },
   "history": {
     "auto_archive_days": 90
   },

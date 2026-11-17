@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import json
 import os
-import shutil
 import sys
+from pathlib import Path
 from typing import Any
 import logging
 
@@ -87,6 +87,10 @@ DEFAULT_SETTINGS = {
     "documents": {
         "max_file_size_mb": 100
     },
+    "invoice_check": {
+        "overlay_on_top": True,
+        "overlay_transparency": 100
+    },
     "history": {
         "auto_archive_days": 90
     },
@@ -127,9 +131,13 @@ class ConfigManager:
         self._settings_path = os.path.join(self._config_dir, 'settings.json')
         self._data: dict = {}
         self.load()
+        self._register_data_root()
+
+    def _register_data_root(self):
+        from .resource_budget import register_managed_root
+        register_managed_root(self.get_data_directory(), owner=self)
 
     def load(self):
-        os.makedirs(self._config_dir, exist_ok=True)
         if not os.path.exists(self._settings_path):
             self._data = self._deep_copy(DEFAULT_SETTINGS)
             self.save()
@@ -138,35 +146,53 @@ class ConfigManager:
         try:
             with open(self._settings_path, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                raise ValueError('設定檔最外層必須是物件')
             self._data = self._merge(DEFAULT_SETTINGS, loaded)
-            # The previous UI allowed 2048 although the bounded pipeline stops at 1920.
-            # Keep the user's other settings and data intact.
-            short_side = self._data['ocr'].get('max_image_short_side')
-            if isinstance(short_side, (int, float)) and 1920 < short_side <= 2048:
-                self._data['ocr']['max_image_short_side'] = 1920
-                self.save()
-            logger.info("設定檔載入成功")
-        except Exception as e:
+        except (ValueError, TypeError, UnicodeError) as e:
+            from .resource_budget import copy_file_with_budget
             backup = self._settings_path + '.bak'
-            shutil.copy2(self._settings_path, backup)
+            copy_file_with_budget(self._settings_path, backup)
             logger.warning(f"設定檔格式錯誤，已備份至 {backup}，使用預設值: {e}")
             self._data = self._deep_copy(DEFAULT_SETTINGS)
             self.save()
+            return
+        # A write quota or permissions failure is not evidence of invalid JSON.
+        # Keep valid preferences and only apply the bounded value in memory.
+        short_side = self._data.get('ocr', {}).get('max_image_short_side') if isinstance(self._data.get('ocr'), dict) else None
+        if isinstance(short_side, (int, float)) and 1920 < short_side <= 2048:
+            self._data['ocr']['max_image_short_side'] = 1920
+            try:
+                self.save()
+            except OSError:
+                logger.warning('辨識尺寸已暫時調整；設定檔目前無法寫入，原設定保留')
+        logger.info("設定檔載入成功")
 
     def save(self):
-        os.makedirs(self._config_dir, exist_ok=True)
+        from .resource_budget import disk_quota_guard, disk_write_reservation
         tmp_path = self._settings_path + '.tmp'
-        try:
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, self._settings_path)
-        finally:
+        encoded = json.dumps(self._data, ensure_ascii=False, indent=2).encode('utf-8')
+        root, config_dir = Path(self._root), Path(self._config_dir)
+        # A portable home may be new, but never recursively create an unbounded
+        # hierarchy outside the roots included in storage accounting.
+        if not root.is_dir() and not root.parent.is_dir():
+            raise FileNotFoundError('請先建立指定資料位置的上層資料夾')
+        missing = int(not root.is_dir()) + int(not config_dir.is_dir())
+        reserve = disk_write_reservation(config_dir, len(encoded), new_directories=missing)
+        with disk_quota_guard(cfg=self, reserve_bytes=reserve):
+            os.makedirs(self._config_dir, exist_ok=True)
             try:
-                os.unlink(tmp_path)
-            except FileNotFoundError:
-                pass
-            except OSError:
-                logger.debug('無法清除未完成的設定暫存檔', exc_info=True)
+                with open(tmp_path, 'wb') as f:
+                    f.write(encoded)
+                os.replace(tmp_path, self._settings_path)
+                self._register_data_root()
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    logger.debug('無法清除未完成的設定暫存檔', exc_info=True)
 
     def update_section(self, section: str, values: dict):
         """Persist related preferences together, retaining live state on failure."""
@@ -195,11 +221,17 @@ class ConfigManager:
     def set(self, *keys_and_value):
         keys = keys_and_value[:-1]
         value = keys_and_value[-1]
-        d = self._data
-        for k in keys[:-1]:
-            d = d.setdefault(k, {})
-        d[keys[-1]] = value
-        self.save()
+        previous = self._data
+        self._data = self._deep_copy(previous)
+        try:
+            d = self._data
+            for k in keys[:-1]:
+                d = d.setdefault(k, {})
+            d[keys[-1]] = value
+            self.save()
+        except Exception:
+            self._data = previous
+            raise
 
     def get_data_directory(self) -> str:
         rel = self.get('general', 'data_directory', default='./data')

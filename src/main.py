@@ -13,6 +13,9 @@ if not getattr(sys, 'frozen', False):
 def _build_parser():
     parser = argparse.ArgumentParser(description="Desktop OCR Tool")
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--self-test-invoice-focus", metavar="REPORT", help="native invoice focus lifecycle probe")
+    mode.add_argument("--invoice-focus-source", metavar="REPORT", help=argparse.SUPPRESS)
+    mode.add_argument("--self-test-resources", metavar="REPORT", help="real-model bounded invoice resource workload")
     mode.add_argument("--self-test", metavar="REPORT", help="offline OCR and database probe")
     mode.add_argument("--smoke-app", metavar="REPORT", help="isolated application lifecycle probe")
     mode.add_argument("--stress-ocr", metavar="REPORT", help="repeated real-model payload probe")
@@ -26,6 +29,8 @@ def _build_parser():
 
 
 def run(argv=None):
+    from src.core.resource_budget import install_runtime_budget
+    install_runtime_budget()
     from src.runtime_policy import configure_runtime
     configure_runtime()
     # Child route precedes QApplication, single-instance lock and OCR workers.
@@ -37,6 +42,15 @@ def run(argv=None):
     os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     if args.wait_for_firewall and args.self_test_handwriting is None:
         parser.error('--wait-for-firewall requires --self-test-handwriting')
+    if args.self_test_invoice_focus is not None:
+        from src.invoice_focus_probe import run_focus_probe
+        return run_focus_probe(os.path.abspath(args.self_test_invoice_focus))
+    if args.invoice_focus_source is not None:
+        from src.invoice_focus_probe import run_source
+        return run_source(os.path.abspath(args.invoice_focus_source))
+    if args.self_test_resources is not None:
+        from src.resource_probe import run_resource_probe
+        return run_resource_probe(os.path.abspath(args.self_test_resources))
     if args.self_test_handwriting_image is not None:
         from src.handwriting_image_probe import run_image_probe
         return run_image_probe(os.path.abspath(args.self_test_handwriting_image))

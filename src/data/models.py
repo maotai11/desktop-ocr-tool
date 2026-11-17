@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
+import hashlib
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
+from weakref import WeakSet
 
 
 @dataclass
@@ -63,6 +66,7 @@ class ItemCreateDTO:
     capture_monitor: int = 0
     # Transient only, never persisted as user content or a schema change.
     clipboard_epoch: Optional[int] = None
+    transient_capture_files: tuple = field(default_factory=tuple, repr=False, compare=False)
 
 
 @dataclass
@@ -99,3 +103,56 @@ class StatsDTO:
     ocr_failed: int = 0
     pinned_count: int = 0
     archived_count: int = 0
+
+
+# These capabilities are process-local, never JSON/deserialized user metadata.
+# A dict or a lookalike dataclass is not authority to remove a file.
+_issued_capture_files = WeakSet()
+
+
+@dataclass(frozen=True, eq=False)
+class _CaptureFileOwnership:
+    relative_path: str
+    absolute_path: str
+    identity: tuple
+    digest: str
+
+
+def _file_identity(path):
+    stat = path.lstat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
+def issue_capture_file_ownership(file_manager, relative_path):
+    """Only call immediately after the exclusive fresh capture write succeeds."""
+    path = Path(file_manager.get_abs_path(relative_path))
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('Capture ownership requires a regular file')
+    identity = _file_identity(path)
+    with path.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if identity != _file_identity(path):
+        raise ValueError('Capture changed while recording ownership')
+    proof = _CaptureFileOwnership(relative_path, str(path), identity, digest)
+    _issued_capture_files.add(proof)
+    return proof
+
+
+def remove_owned_capture_file(file_manager, proof):
+    """False means preserve: changed/replaced/forged paths never get removed."""
+    if not isinstance(proof, _CaptureFileOwnership) or proof not in _issued_capture_files:
+        return False
+    path = Path(file_manager.get_abs_path(proof.relative_path))
+    if str(path) != proof.absolute_path or path.is_symlink():
+        return False
+    if not path.exists():
+        return True
+    if _file_identity(path) != proof.identity:
+        return False
+    with path.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if digest != proof.digest or _file_identity(path) != proof.identity:
+        return False
+    path.unlink()
+    _issued_capture_files.discard(proof)
+    return True

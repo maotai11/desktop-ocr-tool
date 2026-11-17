@@ -5,7 +5,7 @@
 import logging
 import os
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLineEdit, QTextEdit, QScrollArea, QLabel, QMessageBox,
     QFrame, QMenu, QApplication, QProgressBar, QComboBox, QGraphicsOpacityEffect, QStyle, QButtonGroup
 )
@@ -96,6 +96,9 @@ def _line_icon(kind: str, color: str) -> QIcon:
 class FloatingWidget(QWidget):
     settings_saved = Signal()
     clipboard_pause_changed = Signal(bool)
+    invoice_tool_requested = Signal()
+    invoice_region_requested = Signal(str)
+    invoice_selection_cancelled = Signal()
 
     def __init__(self, item_repo, file_mgr, db_worker, ocr_worker,
                  cfg, data_dir, parent=None, tag_repo=None):
@@ -117,6 +120,10 @@ class FloatingWidget(QWidget):
         self._documents = None
         self._document_controller = None
         self._documents_closing = False
+        self._invoice_window = None
+        self._invoice_controller = None
+        self._invoice_closing = False
+        self._invoice_launcher_visible = False
         self._clip_paused = False
         self._ocr_ready = False
         self._items = []
@@ -159,6 +166,7 @@ class FloatingWidget(QWidget):
         self._ui_closing = True
         self.setEnabled(False)
         self._close_copy_cleanup()
+        self.shutdown_invoice_check()
         self._capture_ocr_callback = self._capture_image_callback = None
         self._list_reveal.stop()
         for menu in self.findChildren(QMenu):
@@ -181,6 +189,7 @@ class FloatingWidget(QWidget):
             Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMinimumSize(320, 480)
         self.resize(348, 560)
 
@@ -311,7 +320,7 @@ class FloatingWidget(QWidget):
         capture_layout.addWidget(self._copy_settings_notice)
         vbox.addWidget(capture_card)
 
-        actions = QHBoxLayout()
+        actions = QGridLayout()
         actions.setSpacing(8)
         self._btn_screenshot = QPushButton("截圖")
         self._btn_screenshot.setIcon(_line_icon('image', _TEXT_SEC))
@@ -323,15 +332,21 @@ class FloatingWidget(QWidget):
         self._btn_handwriting.setFixedHeight(32)
         self._btn_handwriting.setToolTip("寫一個字，點選候選即可複製")
         self._btn_handwriting.clicked.connect(self.open_handwriting)
-        actions.addWidget(self._btn_screenshot)
-        actions.addWidget(self._btn_handwriting)
+        actions.addWidget(self._btn_screenshot, 0, 0)
+        actions.addWidget(self._btn_handwriting, 0, 1)
 
         self._btn_documents = QPushButton("文件套版")
         self._btn_documents.setIcon(_line_icon('folder', _TEXT_SEC))
         self._btn_documents.setFixedHeight(32)
         self._btn_documents.setToolTip("匯入 PDF／圖片，框選欄位後套用文字模板")
         self._btn_documents.clicked.connect(self.open_document_template)
-        actions.addWidget(self._btn_documents)
+        actions.addWidget(self._btn_documents, 1, 0)
+        self._btn_invoice_check = QPushButton('發票核對')
+        self._btn_invoice_check.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton))
+        self._btn_invoice_check.setFixedHeight(32)
+        self._btn_invoice_check.setToolTip('手動辨識發票，核對目前停留的同行資料')
+        self._btn_invoice_check.clicked.connect(self.open_invoice_check)
+        actions.addWidget(self._btn_invoice_check, 1, 1)
         vbox.addLayout(actions)
 
         self._ocr_progress_bar = QProgressBar()
@@ -612,6 +627,7 @@ class FloatingWidget(QWidget):
     def open_handwriting(self):
         if self._ui_closing:
             return
+        self.hide_invoice_check()
         self._close_copy_cleanup()
         if self._handwriting is None:
             from .handwriting_window import HandwritingWindow
@@ -630,6 +646,7 @@ class FloatingWidget(QWidget):
     def open_document_template(self):
         if self._ui_closing or self._documents_closing:
             return
+        self.hide_invoice_check()
         self._close_copy_cleanup()
         if self._documents is None:
             from ..workers.document_worker import DocumentController
@@ -664,6 +681,68 @@ class FloatingWidget(QWidget):
 
     def documents_is_stopped(self):
         return self._document_controller is None or self._document_controller.is_stopped
+
+    def open_invoice_check(self):
+        if self._ui_closing or self._invoice_closing:
+            return
+        self._close_copy_cleanup()
+        self.invoice_tool_requested.emit()
+        if self._ui_closing or self._invoice_closing:
+            return
+        if self._invoice_window is None:
+            from ..invoice_check.controller import InvoiceCheckController
+            from .invoice_check_window import InvoiceCheckWindow
+            controller = InvoiceCheckController(self._ocr_worker, parent=self)
+            window = InvoiceCheckWindow(controller, cfg=self._cfg, parent=self)
+            self._invoice_controller, self._invoice_window = controller, window
+            window.region_requested.connect(self._request_invoice_region)
+            window.closed.connect(self._invoice_window_closed)
+            controller.capture_started.connect(self._hide_launcher_for_invoice_capture)
+            controller.capture_finished.connect(self._restore_launcher_after_invoice_capture)
+        self._invoice_window.set_ocr_ready(self._ocr_ready)
+        self._invoice_window.open()
+
+    def _request_invoice_region(self, side):
+        if (not self._ui_closing and not self._invoice_closing
+                and self._invoice_window is not None and self._invoice_window.isVisible()
+                and side in ('invoice', 'table')):
+            self.invoice_region_requested.emit(side)
+
+    def _invoice_window_closed(self):
+        self._invoice_launcher_visible = False
+        self.invoice_selection_cancelled.emit()
+
+    def _hide_launcher_for_invoice_capture(self):
+        if self._ui_closing or self._invoice_closing:
+            return
+        self._invoice_launcher_visible = self.isVisible() and not self.isMinimized()
+        self.hide()
+
+    def _restore_launcher_after_invoice_capture(self):
+        restore, self._invoice_launcher_visible = self._invoice_launcher_visible, False
+        if (restore and not self._ui_closing and not self._invoice_closing
+                and self._invoice_window is not None and self._invoice_window.isVisible()):
+            self.show()
+
+    def hide_invoice_check(self):
+        self._invoice_launcher_visible = False
+        self.invoice_selection_cancelled.emit()
+        if self._invoice_controller is not None:
+            self._invoice_controller.cancel()
+        if self._invoice_window is not None:
+            self._invoice_window.hide()
+
+    def shutdown_invoice_check(self):
+        self._invoice_closing = True
+        self._invoice_launcher_visible = False
+        self.invoice_selection_cancelled.emit()
+        if self._invoice_window is not None:
+            self._invoice_window.shutdown()
+        if self._invoice_controller is not None:
+            self._invoice_controller.shutdown()
+
+    def invoice_check_is_stopped(self):
+        return self._invoice_controller is None or self._invoice_controller.is_stopped
 
     def _position_widget(self):
         pos_mode = self._cfg.get('ui', 'widget_position', default='remember')
@@ -1051,8 +1130,11 @@ class FloatingWidget(QWidget):
             "圖片 (*.png *.jpg *.bmp);;所有檔案 (*)"
         )
         if dest and not self._ui_closing:
-            import shutil
-            shutil.copy2(src, dest)
+            from ..core.resource_budget import copy_file_with_budget
+            try:
+                copy_file_with_budget(src, dest)
+            except OSError as exc:
+                QMessageBox.warning(self, '無法儲存圖片', str(exc))
 
     def _open_editor(self, item):
         if self._ui_closing:
@@ -1247,6 +1329,8 @@ class FloatingWidget(QWidget):
             return
         self._ocr_ready = True
         self._btn_ocr.setEnabled(True)
+        if self._invoice_window is not None:
+            self._invoice_window.set_ocr_ready(True)
         self._ocr_status_lbl.setText("可擷取文字")
         self._ocr_status_lbl.setToolTip("離線辨識已就緒")
         self._ocr_status_lbl.setStyleSheet(
@@ -1261,6 +1345,8 @@ class FloatingWidget(QWidget):
             return
         self._ocr_ready = False
         self._btn_ocr.setEnabled(False)
+        if self._invoice_window is not None:
+            self._invoice_window.set_ocr_ready(False)
         self._ocr_status_lbl.setText("暫時無法辨識")
         self._ocr_status_lbl.setStyleSheet(
             f"font-size: 11px; color: {_ERROR}; background: transparent;"

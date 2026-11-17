@@ -2,33 +2,33 @@
 
 Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可框選螢幕辨識文字、手寫單字找候選，也能匯入 PDF／圖片，把固定位置的欄位逐頁填入文字模板，最後複製或匯出 TXT。
 
-本版為 **1.8.0-rc.18 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
+本版為 **1.8.0-rc.19 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
 
 保留前版對連續操作的修正：最小化後重新開啟仍看不到視窗、取消框選後沿用舊座標，以及退出期間仍收到舊對話框的儲存操作。手寫視窗隱藏後會停止延遲辨識，重新開啟也不會自動送出舊筆畫。具體觸發步驟與回歸測試見 [浮窗狀態檢查](docs/FLOATING_STATE_AUDIT.md)。
 
-本版重新整理主浮窗，直接提供 **「複製全部／選字複製」** 切換與四項複製清理，不必反覆開啟完整設定。同時移除 **A／B 核對與整列搜尋**，包含相關標示、換列跟隨、專用預覽、入口及工作者。一般框選 OCR、截圖、手寫、文件套版、歷史與設定保留。
+本版新增 **手動發票核對**：框選發票與含欄名的表格，按一次核對目前反藍所在資料列的五個欄位，結果標在發票對應位置。一般 OCR 保留原本整張影像的重試流程，另提供既有重試得到的逐行候選供人工確認。主浮窗的複製模式與四項清理保留；已退休的 A／B 核對及整列搜尋不會重新啟用。
 
 沿用前版的套件修補與背景工作回收：手寫完成後結束輔助程序，OCR 閒置時停用 CPU 忙等。移除的功能不再提供背景辨識入口。GUI、PE 原生元件、套件與防毒的檢查項目及尚未證明的範圍見 [本版驗證範圍](docs/VALIDATION_COVERAGE.md)。套件掃描及網路觀察方法見 [資安與背景工作檢查](docs/SECURITY_REVIEW.md)，設定、旁支與停用節點的掃描範圍見 [設定接線與節點稽核](docs/CONFIG_WIRING_MATRIX.md)。
 
 ## 下載與第一次執行
 
-從 [v1.8.0-rc.18 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.18) 下載：
+從 [v1.8.0-rc.19 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.19) 下載：
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.18.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.18/InkPick-v1.8.0-rc.18.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
-| [InkPick-v1.8.0-rc.18.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.18/InkPick-v1.8.0-rc.18.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
-| [InkPick-v1.8.0-rc.18-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.18/InkPick-v1.8.0-rc.18-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
-| InkPick-v1.8.0-rc.18-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
-| InkPick-v1.8.0-rc.18-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
+| [InkPick-v1.8.0-rc.19.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.19/InkPick-v1.8.0-rc.19.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.19.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.19/InkPick-v1.8.0-rc.19.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.19-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.19/InkPick-v1.8.0-rc.19-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
+| InkPick-v1.8.0-rc.19-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
+| InkPick-v1.8.0-rc.19-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 
 1. 在可上網的電腦下載 ZIP，再用隨身碟帶到離線電腦。
 2. 解壓到自己有寫入權限的資料夾，例如 `D:\Tools\InkPick`。不要直接從 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 `InkPick-v1.8.0-rc.18.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
+3. 執行 `InkPick-v1.8.0-rc.19.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
 4. 首次開啟會解開內含資源並載入模型。浮動窗顯示「可擷取文字」後，即可使用。
 5. 結束程式請用系統匣的結束選項，讓尚未完成的辨識與儲存先結束。
 
-核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.18.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.19.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
 
 ## 主浮窗的複製控制
 
@@ -39,6 +39,17 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 ![主浮窗的複製方式與清理入口](docs/ui/floating-window.png)
 
 上圖為合成介面示意，不含使用者文件。
+
+## 手動發票核對
+
+1. 點主浮窗「發票核對」，左側框選「發票位置」，右側框選含欄名的「目前資料列」表格範圍。
+2. 按「收起」，回來源軟體選中要核對列的一個儲存格；反藍只定位整列，不讀剪貼簿。
+3. 點小工具「辨識核對」才重新擷取兩邊。預設核對未稅金額、稅額、開立日期、發票號碼、賣方統編；進階選項可改總金額／買方統編。
+4. 發票對應文字旁顯示相符／不同／待確認。缺欄、低信心或日期歧義不會靠相似度變成相符；換列或換發票後再手動按一次。
+
+標示及小工具預設置頂，背景透明度可調；設定面板可正常編輯。只支援主要螢幕，合併擷取最多 600 萬像素。核對畫面與結果只在記憶體，不新增歷史或檔案、不自動複製。框選、校正、民國／西元日期及資源限制詳見 [發票核對說明](docs/MANUAL_INVOICE_CHECK.md)。
+
+![發票核對的五個欄位](docs/ui/invoice-check.png)
 
 ## 文件套版：PDF／圖片逐頁填入文字
 
@@ -87,7 +98,7 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 3. 下方「複製內容」可修正文字，或反白其中一小段。按「複製」或 Ctrl+Enter，才會寫入剪貼簿。
 4. 「全選」可複製整份結果；「稍後再選」、Esc 或關閉視窗都不複製。
 
-只複製一段不會刪掉歷史中的其餘內容。取消後可從歷史開啟編輯器，再反白／複製需要的文字；沒有原圖時仍可勾選文字。選取與預覽修改不會將整份結果標為已核對。
+只複製一段不會刪掉歷史中的其餘內容。一般 OCR 如有重試得到的其他逐行讀法，可在選字窗檢查影像候選；預設保留原讀字，選候選才更新該次待複製內容，不新增模型或暗中改成別的全文。取消後可從歷史開啟編輯器，再反白／複製需要的文字；沒有原圖時仍可勾選文字。選取與預覽修改不會將整份結果標為已核對。
 
 要恢復原操作，在主浮窗點 **「複製全部」**；完整設定中的對應選項是「自動複製全部文字」。新安裝與沒有這個設定的舊設定檔，預設皆為全文自動複製。
 

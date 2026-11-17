@@ -222,11 +222,11 @@ def test_export_failure_keeps_previous_txt_and_removes_partial(window, tmp_path,
     destination.write_text('舊結果', encoding='utf-8')
     def fail_replace(*_):
         raise PermissionError('synthetic write refusal')
-    monkeypatch.setattr('src.ui.document_template_window.os.replace', fail_replace)
+    monkeypatch.setattr('src.core.resource_budget.os.replace', fail_replace)
     with pytest.raises(PermissionError):
         window.export_to_path(destination)
     assert destination.read_text(encoding='utf-8') == '舊結果'
-    assert not list(tmp_path.glob('.inkpick-txt-*.tmp'))
+    assert not list(tmp_path.glob('.ocr-output-*.tmp'))
 
 
 def test_old_page_preview_is_cleared_and_stale_image_is_closed(window):

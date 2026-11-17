@@ -49,6 +49,9 @@ class TrayManager:
         act_documents = menu.addAction('文件套版（PDF／圖片）')
         act_documents.triggered.connect(self._widget.open_document_template)
 
+        act_invoice = menu.addAction('發票核對')
+        act_invoice.triggered.connect(self._widget.open_invoice_check)
+
         menu.addSeparator()
 
         self._act_pause = menu.addAction("暫停剪貼簿監聽")

@@ -14,6 +14,7 @@ from src import gui_probe, main
 
 def gui_report(frozen=True):
     return dict(schema=1, probe='gui_feature_lifecycle', passed=True,
+        invoice_focus_native_required=True, invoice_focus_native_verified=True,
         version=publisher.VERSION, frozen=frozen, platform='win32', qt_platform='windows',
         executable_sha256='a' * 64 if frozen else None, clean_machine_verified=False,
         fixture_kind='SYNTHETIC_GUI_CONTROLS', ocr_accuracy_tested=False,
@@ -34,7 +35,8 @@ def test_every_gui_control_effect_is_mandatory(name, defect):
         assert public.observed_result(public.safe_fields(report)) == 'INCONSISTENT_AS_RECORDED'
 
 
-@pytest.mark.parametrize('key,value', [('schema', True), ('passed', 1), ('version', '0.0.0'),
+@pytest.mark.parametrize('key,value', [('invoice_focus_native_required', False), ('invoice_focus_native_verified', False),
+    ('invoice_focus_native_verified', 1), ('schema', True), ('passed', 1), ('version', '0.0.0'),
     ('frozen', False), ('executable_sha256', 'b' * 64), ('platform', 'linux'),
     ('qt_platform', 'offscreen'), ('model_inference_tested', True), ('clean_machine_verified', True)])
 def test_gui_report_is_bound_to_candidate_and_limited_claims(key, value):
@@ -45,6 +47,8 @@ def test_gui_report_is_bound_to_candidate_and_limited_claims(key, value):
 
 
 def test_gui_dispatch_occurs_before_regular_app_start(tmp_path, monkeypatch):
+    from src.core import resource_budget
+    monkeypatch.setattr(resource_budget, 'install_runtime_budget', lambda: None)
     called = []
     monkeypatch.setattr(gui_probe, 'run_gui_probe', lambda path: called.append(path) or 0)
     report = str(tmp_path / 'gui.json')
@@ -61,7 +65,7 @@ def test_gui_routes_are_mandatory_and_public_metadata_drops_content():
     assert not steps['source_gui'].get('continue-on-error')
     assert '--self-test-gui' in MODES and len(MODES) == 6
     assert {'removed_comparison_tools_absent', 'launcher_copy_controls'} <= set(gui_probe.GUI_CHECK_NAMES)
-    assert len(gui_probe.GUI_CHECK_NAMES) == 15
+    assert len(gui_probe.GUI_CHECK_NAMES) == 16
     for path in ('scripts/build.py', 'scripts/validate_windows_bundle.ps1', 'scripts/validate_portable_profile.ps1'):
         assert '--self-test-gui' in (root / path).read_text(encoding='utf-8')
     guard = (root / 'scripts/assert_gui_probe.ps1').read_text(encoding='utf-8')
