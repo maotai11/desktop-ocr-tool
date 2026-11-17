@@ -636,7 +636,12 @@ def active_extraction_roots():
                     continue
                 raise ResourceInspectionError()
             while True:
-                module_path = Path(item.path)
+                try:
+                    module_path = Path(_windows_module_path(pid, item.base))
+                except ResourceInspectionError:
+                    if pid not in _windows_processes():
+                        break
+                    raise
                 for parent in module_path.parents:
                     if parent.name.startswith('_MEI'):
                         roots.add(parent.resolve())
@@ -734,3 +739,74 @@ def _windows_allocated_bytes(path):
         return max(int(value.allocation), int(value.end))
     finally:
         kernel.CloseHandle(handle)
+
+
+def _windows_module_path(pid, base):
+    """Resolve a mapped module through Unicode kernel handles, never Toolhelp text."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    class UnicodeString(ctypes.Structure):
+        _fields_ = [('length', ctypes.c_ushort), ('maximum_length', ctypes.c_ushort),
+                    ('buffer', ctypes.c_void_p)]
+    native = ctypes.WinDLL('ntdll', use_last_error=True)
+    native.NtQueryVirtualMemory.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_int,
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    native.NtQueryVirtualMemory.restype = ctypes.c_int32
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR,
+                                              wintypes.DWORD, wintypes.DWORD]
+    kernel.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    process = kernel.OpenProcess(0x410, False, pid)
+    if not process:
+        raise ResourceInspectionError(native_error=ctypes.get_last_error())
+    try:
+        # Query the section's physical name directly: PSAPI can reject mapped
+        # image names beyond MAX_PATH even with a sufficiently large buffer.
+        mapped = ctypes.create_string_buffer(65534 + ctypes.sizeof(UnicodeString))
+        returned = ctypes.c_size_t()
+        status = native.NtQueryVirtualMemory(process, base, 2, mapped, len(mapped), ctypes.byref(returned))
+        if status != 0:
+            error = ResourceInspectionError()
+            error.ntstatus = ctypes.c_uint32(status).value
+            raise error
+        if not ctypes.sizeof(UnicodeString) <= returned.value <= len(mapped):
+            raise ResourceInspectionError()
+        name = UnicodeString.from_buffer(mapped)
+        lower = ctypes.addressof(mapped) + ctypes.sizeof(UnicodeString)
+        upper = ctypes.addressof(mapped) + len(mapped)
+        returned_end = ctypes.addressof(mapped) + returned.value
+        if (not name.length or name.length % 2 or name.maximum_length % 2
+                or name.maximum_length < name.length or not name.buffer
+                or not lower <= name.buffer <= upper
+                or name.buffer + name.maximum_length > upper
+                or name.buffer + name.length > returned_end):
+            raise ResourceInspectionError()
+        try:
+            device = ctypes.string_at(name.buffer, name.length).decode('utf-16-le')
+        except UnicodeError:
+            raise ResourceInspectionError() from None
+        if '\x00' in device or not device.startswith('\\Device\\'):
+            raise ResourceInspectionError()
+        handle = kernel.CreateFileW('\\\\?\\GLOBALROOT' + device, 0, 7, None, 3, 0x02000000, None)
+        if handle == ctypes.c_void_p(-1).value:
+            raise ResourceInspectionError(native_error=ctypes.get_last_error())
+        try:
+            final = ctypes.create_unicode_buffer(32768)
+            length = kernel.GetFinalPathNameByHandleW(handle, final, len(final), 0)
+            if not 0 < length < len(final):
+                raise ResourceInspectionError(native_error=ctypes.get_last_error())
+            value = final.value
+            if len(value.encode('utf-16-le', errors='surrogatepass')) // 2 != length or not value.startswith('\\\\?\\'):
+                raise ResourceInspectionError()
+            return value
+        finally:
+            kernel.CloseHandle(handle)
+    finally:
+        kernel.CloseHandle(process)

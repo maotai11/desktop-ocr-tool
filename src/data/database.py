@@ -154,13 +154,23 @@ class Database:
         self._db_path = os.path.abspath(db_path)
         self._local = threading.local()
         self._connections = []
+        self._failed_connections = []
         self._lock = threading.RLock()
         self._write_lock = threading.RLock()
         self._closed = False
         self.read_only = False
         for suffix in ('', '-journal', '-wal', '-shm'):
             register_managed_root(self._db_path + suffix, owner=self)
-        self._initialize()
+        try:
+            self._initialize()
+        except BaseException:
+            try:
+                self.close()
+            except BaseException:
+                # Preserve the initialization failure; failed handles remain
+                # owned by this instance so explicit cleanup can retry them.
+                pass
+            raise
 
     def _initialize(self):
         try:
@@ -255,18 +265,26 @@ class Database:
                     from pathlib import Path
                     conn = sqlite3.connect(Path(self._db_path).as_uri() + '?mode=ro',
                                            uri=True, check_same_thread=False)
-                    conn.execute('PRAGMA query_only = ON')
                 else:
                     conn = sqlite3.connect(self._db_path, check_same_thread=False)
                     # DELETE journals have a calculable full old-page bound;
                     # journal_size_limit alone would not bound an active WAL.
-                    conn.execute('PRAGMA journal_mode = DELETE')
-                conn.row_factory = sqlite3.Row
-                conn.execute('PRAGMA foreign_keys = ON')
-                conn.execute('PRAGMA temp_store = MEMORY')
-                conn.execute('PRAGMA cache_size = -4096')
-                conn.execute('PRAGMA synchronous = FULL')
-                conn.execute('PRAGMA busy_timeout = 5000')
+                try:
+                    conn.execute('PRAGMA query_only = ON' if self.read_only else 'PRAGMA journal_mode = DELETE')
+                    conn.row_factory = sqlite3.Row
+                    conn.execute('PRAGMA foreign_keys = ON')
+                    conn.execute('PRAGMA temp_store = MEMORY')
+                    conn.execute('PRAGMA cache_size = -4096')
+                    conn.execute('PRAGMA synchronous = FULL')
+                    conn.execute('PRAGMA busy_timeout = 5000')
+                except BaseException:
+                    try:
+                        conn.close()
+                    except BaseException:
+                        # An unpublished handle must never become usable via
+                        # thread-local state, even if its cleanup needs retry.
+                        self._failed_connections.append(conn)
+                    raise
                 self._local.connection = conn
                 self._connections.append(conn)
             return conn
@@ -296,7 +314,17 @@ class Database:
     def close(self):
         with self._write_lock, self._lock:
             self._closed = True
-            for conn in self._connections:
-                conn.close()
+            failed = []
+            first_error = None
+            for conn in self._connections + self._failed_connections:
+                try:
+                    conn.close()
+                except BaseException as exc:
+                    failed.append(conn)
+                    if first_error is None:
+                        first_error = exc
             self._connections.clear()
+            self._failed_connections = failed
             self._conn = None
+            if first_error is not None:
+                raise first_error
