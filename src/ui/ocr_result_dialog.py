@@ -1,6 +1,7 @@
 """Choose OCR text explicitly; the owner performs the clipboard write."""
 import json
 import math
+from html import escape
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QSplitter,
     QStyle,
@@ -79,8 +81,17 @@ def _entries(text, detail_json):
             if not row['text'].strip():
                 continue
             polygon = _polygon(row.get('box'))
+            alternatives = []
+            for item in row.get('alternatives', []) if isinstance(row.get('alternatives'), list) else []:
+                text = item.get('text') if isinstance(item, dict) else None
+                if (isinstance(text, str) and text.strip() and len(text) <= 2048
+                        and text != row['text'] and text not in alternatives):
+                    alternatives.append(text)
+                if len(alternatives) >= 8:
+                    break
             rows.append({'text': row['text'], 'polygon': polygon,
-                         'box': [[p.x(), p.y()] for p in polygon] if polygon else None})
+                         'box': [[p.x(), p.y()] for p in polygon] if polygon else None,
+                         'original_text': row['text'], 'alternatives': alternatives})
     if rows:
         # Native detail order may differ from the visible reading order.
         rows.sort(key=lambda row: (
@@ -212,6 +223,8 @@ class OcrResultDialog(QDialog):
         self._text = text or ''
         self._entries = _entries(self._text, detail_json)
         self._syncing = False
+        self._review_closed = False
+        self._candidate_edits = set()
         self._animate = animate
         self._entrance_shown = False
         self._entrance_animation = None
@@ -284,10 +297,16 @@ class OcrResultDialog(QDialog):
         selection_bar.addWidget(self._count, 1)
         self._select_all = QPushButton('全選')
         self._clear = QPushButton('清除選取')
+        self._candidate_button = QPushButton('候選文字')
+        self._candidate_button.setToolTip('先點選一段文字，再對照影像辨識候選；不會自動替換。')
+        self._candidate_button.setVisible(any(entry.get('alternatives') for entry in self._entries))
+        self._candidate_button.setEnabled(False)
+        self._candidate_button.clicked.connect(self._show_candidate_menu)
         self._select_all.clicked.connect(lambda: self.select_indexes(range(len(self._entries))))
         self._clear.clicked.connect(lambda: self.select_indexes([]))
         selection_bar.addWidget(self._select_all)
         selection_bar.addWidget(self._clear)
+        selection_bar.addWidget(self._candidate_button)
         text_layout.addLayout(selection_bar)
         self._list = QListWidget()
         self._list.setAccessibleName('可複製的文字區塊')
@@ -296,8 +315,12 @@ class OcrResultDialog(QDialog):
             row = QListWidgetItem(entry['text'])
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)
+            if entry.get('alternatives'):
+                row.setToolTip('<p>影像辨識候選：' + escape('／'.join(entry['alternatives']))
+                               + '<br>請對照原圖，點「候選文字」才能套用至本次複製內容。</p>')
             self._list.addItem(row)
         self._list.itemChanged.connect(self._on_selection_changed)
+        self._list.currentRowChanged.connect(self._update_candidate_action)
         text_layout.addWidget(self._list, 1)
         preview_label = QLabel('複製內容')
         preview_label.setStyleSheet(f'color: {_TEXT_SEC}; font-size: 12px;')
@@ -430,7 +453,7 @@ class OcrResultDialog(QDialog):
         self._count.setText(f'已選 {len(indexes)} 段' if indexes else '尚未選取')
         self._image.set_selected(indexes)
         if indexes and len(indexes) == len(self._entries):
-            text = self._text
+            text = self._full_selection_text()
         else:
             entries = [entry for i, entry in enumerate(self._entries) if i in indexes]
             if entries and all(entry['box'] is not None for entry in entries):
@@ -441,12 +464,81 @@ class OcrResultDialog(QDialog):
         self._preview.setPlainText(text)
         self._update_copy_action()
 
+    def _full_selection_text(self):
+        if not self._candidate_edits:
+            return self._text
+        # Preserve original whitespace when box text can be aligned in reading
+        # order. Duplicate words are consumed once, never globally replaced.
+        cursor, parts = 0, []
+        for entry in self._entries:
+            original = entry.get('original_text', entry['text'])
+            at = self._text.find(original, cursor)
+            if at < 0:
+                from ..ocr.postprocessor import sort_boxes_and_merge
+                if all(e.get('box') is not None for e in self._entries):
+                    return sort_boxes_and_merge(self._entries)
+                return '\n'.join(e['text'] for e in self._entries)
+            parts.extend((self._text[cursor:at], entry['text']))
+            cursor = at + len(original)
+        parts.append(self._text[cursor:])
+        return ''.join(parts)
+
+    def _update_candidate_action(self, *_):
+        index = self._list.currentRow()
+        self._candidate_button.setEnabled(not self._review_closed and
+            0 <= index < len(self._entries) and bool(self._entries[index].get('alternatives')))
+
+    def _show_candidate_menu(self):
+        if self._review_closed or not self.isVisible():
+            return
+        index = self._list.currentRow()
+        if not 0 <= index < len(self._entries):
+            return
+        entry = self._entries[index]
+        if not entry.get('alternatives'):
+            return
+        menu = QMenu(self)
+        original = entry.get('original_text', entry['text'])
+        for label, text in [('保留原讀字：' + original, original),
+                            *[('影像候選：' + value, value) for value in entry['alternatives']]]:
+            action = menu.addAction(label)
+            action.triggered.connect(lambda checked=False, i=index, value=text: self._apply_alternative(i, value))
+        try:
+            menu.exec(self._candidate_button.mapToGlobal(self._candidate_button.rect().bottomLeft()))
+        finally:
+            menu.deleteLater()
+
+    def _apply_alternative(self, index, text):
+        if self._review_closed or not self.isVisible() or not 0 <= index < len(self._entries):
+            return
+        entry = self._entries[index]
+        original = entry.get('original_text', entry['text'])
+        if text not in [original, *entry.get('alternatives', [])]:
+            return
+        entry['text'] = text
+        if text == original:
+            self._candidate_edits.discard(index)
+        else:
+            self._candidate_edits.add(index)
+        self._list.item(index).setText(text)
+        self._on_selection_changed()
+
+    def done(self, result):
+        if self._review_closed:
+            return
+        self._review_closed = True
+        for menu in self.findChildren(QMenu):
+            menu.close()
+        super().done(result)
+
     def _update_copy_action(self):
         if hasattr(self, '_copy'):
             self._copy.setEnabled(bool(self.selected_text.strip()))
             self._copy.setText('複製反白文字' if self._preview.textCursor().hasSelection() else '複製')
 
     def _request_copy(self):
+        if self._review_closed:
+            return
         text = self.selected_text
         if text.strip():
             self.copy_requested.emit(text)

@@ -1,6 +1,6 @@
 # 版本驗證範圍與結果判讀
 
-目前版本：1.8.0-rc.18。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
+目前版本：1.8.0-rc.19。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
 
 每版實際結果以該版 Release 的 `validation-metadata.zip` 為準，必須同時對上來源 commit 與 EXE SHA256。缺少、跳過、取消、逾時、不支援或未完成的必需報告不能當成通過；不能拿前版的綠燈替代新版。這份操作範圍表不是預先宣告尚未執行的發布檢查已成功。
 
@@ -17,12 +17,13 @@
 | rc.16 | 整區多列取值、B 位置排他、近似候選可見、目前列箭頭、同位置換發票與預覽調整；shared 27、GUI 16 項 | 不把行級 OCR 框當字元／儲存格，不宣稱任意版型、數字或純文字自動分欄皆可正確辨識 |
 | rc.17 | 設定分區及四種移除／替換規則；既有 GUI 16 項加入取消、持久化、動作切換及文件套版複製不受清理影響 | 不以合成設定字串推論任意剪貼簿內容、所有原生對話或全部設定排列已覆蓋 |
 | rc.18 | 重整主浮窗並加入複製模式／四項清理快捷入口；移除 A／B、整列搜尋及專用預覽；GUI 15 項包含快捷操作與舊功能不存在契約，網路 6 組，metadata 33 份 | 刪除功能與調整證據清單不等於新版已通過；仍須取得同版完整測試、EXE、安全及隔離結果 |
+| rc.19 | 新增手動發票核對與人工影像候選；GUI16項含Windows200%核對按鈕保留來源焦點；新增雙階段真模型／helper資源報告，metadata34份 | 不以模型大小代替RAM，不以合成匹配代替任意發票辨識準確率；仍須同版完整EXE報告 |
 
 ## GUI 要驗證到哪裡
 
 GUI 探針使用測試自己建立的文字、圖片、PDF、資料庫及視窗，實際開啟 Qt 元件、觸發指定控制與檢查狀態變化。原生 OCR、滑鼠／作業系統互動及檔案內容有各自的探針；合成操作不代表所有真人操作、任意文件或所有外部軟體都已覆蓋。
 
-本版 GUI 探針有下列 **15 個具名檢查**，不是「任意操作都測過」。發布須分別核對同版 `source-gui.json`、`frozen-gui.json`、防火牆及隔離 profile 的 GUI 結果；本地 offscreen 通過不代替 Windows 成品證據。
+本版 GUI 探針有下列 **16 個具名檢查**，不是「任意操作都測過」。發布須分別核對同版 `source-gui.json`、`frozen-gui.json`、防火牆及隔離 profile 的 GUI 結果；本地 offscreen 通過不代替 Windows 成品證據。
 
 | 報告 check | 實際操作／副作用 | 本版結果依據 |
 | --- | --- | --- |
@@ -35,6 +36,7 @@ GUI 探針使用測試自己建立的文字、圖片、PDF、資料庫及視窗�
 | `document_import_template_zoom_clear` | 真 PNG／PDF 匯入與 renderer；縮放／拖曳／滑鼠框選；可控辨識後填模板、清理設定開啟時複製及預覽仍保持模板原文、清框／清文件 | 同版 GUI 報告 |
 | `handwriting_stroke_candidate_copy` | 真 pad 滑鼠筆畫 → 可控候選 → 點字複製；續寫座標不變、撤銷／清除；隱藏超過 debounce 不再送出，明確重新開啟才恢復 | 同版 GUI 報告 |
 | `removed_comparison_tools_absent` | 真浮窗／系統匣沒有退休入口、專用視窗／工作者／模組不存在，舊 CLI 參數實際被拒絕 | 同版 GUI 報告 |
+| `manual_invoice_check` | 真核對視窗／控制器、合成擷取與可控OCR驗證目前列、五欄、標示、取消、不存歷史或剪貼簿；Windows另跑200%原生點擊及來源失焦負對照 | 同版GUI報告及原生required/verified兩個真布林 |
 | `tray_pause_and_quit_route` | 系統匣／浮窗的暫停同步；退出走 Pipeline 關閉 | 同版 GUI 報告 |
 | `minimized_windows_restore` | 最小化後重新開啟工具／編輯窗，檢查已還原 | 同版 GUI 報告 |
 | `capture_cancel_restart_ignores_old_gesture` | 真框選拖曳取消／重開，舊 release 不產生擷取；一般 OCR／截圖使用實際 Pipeline 入口 | 同版 GUI 報告 |
@@ -42,11 +44,11 @@ GUI 探針使用測試自己建立的文字、圖片、PDF、資料庫及視窗�
 | `windows_and_workers_closed` | 本次視窗、OCR／DB／文件／手寫工作者完成關閉 | 同版 GUI 報告 |
 | `temporary_files_cleaned` | 刪除探針自己建立的暫存，不動既有 profile | 同版 GUI 報告 |
 
-此 GUI 探針明列 `model_inference_tested=false`、`ocr_accuracy_tested=false`、`clean_machine_verified=false`。原生檔案挑選器只回傳測試自己建立的檔案；自動啟動的 OS 寫入使用替身，未在這個探針修改開機項目。真 OCR 模型、原生手寫 helper、真桌面擷取結果、任意 GUI 狀態、實體滑鼠及多 DPI 不由這 15 項代證，須讀各自功能探針或人工驗收。
+此 GUI 探針明列 `model_inference_tested=false`、`ocr_accuracy_tested=false`、`clean_machine_verified=false`。原生檔案挑選器只回傳測試自己建立的檔案；自動啟動的 OS 寫入使用替身，未在這個探針修改開機項目。真 OCR 模型、原生手寫 helper、真桌面擷取結果、任意 GUI 狀態、實體滑鼠及多 DPI 不由這 16 項代證，須讀各自功能探針或人工驗收。
 
 rc.18 不再執行固定位置核對、整列搜尋或專用範圍預覽的功能探針，也不接受舊報告冒充本版證據。現行 GUI 的移除確認檢查應在 source、frozen、防火牆及隔離 profile 四種模式分別通過；有殘留入口、模組或工作者即不能通過這個檢查。
 
-發布 metadata 契約為 33 份；其中 candidate probe 由 6 份改為 5 份，隔離 profile probe 由 8 份改為 6 份。Linux 網路觀察保留六組現行合成路徑。這些數量只描述驗證範圍，實際通過數、略過項目與所有雜湊均讀同版報告。
+發布 metadata 契約為 34 份（新增實際資源報告）；其中 candidate probe 由 6 份改為 5 份，隔離 profile probe 由 8 份改為 6 份。Linux 網路觀察保留六組現行合成路徑。這些數量只描述驗證範圍，實際通過數、略過項目與所有雜湊均讀同版報告。
 
 ## 原生元件不是一個「無毒」勾選
 
@@ -98,3 +100,11 @@ Astral 是該 Windows 發行包供應者，並非 python.org 官方安裝器；�
 - 防毒誤報、SmartScreen 信譽、閉源或靜態嵌入庫的完整 SBOM／全部已知與未知漏洞，以及所有動態程式路徑。
 
 上述限制保留為限制，不以「全部通過」蓋過。完成新增檢查後，仍只對同版雜湊、同一報告範圍及檢查當時負責。
+
+## rc.19 實際資源門檻
+
+`artifacts/resource-budget.json` 是額外必需證據，不代替任何既有安全／封網／500次模型推論門檻。外部host在onefile啟動前以suspended程序加入Windows Job，量cold_application及manual_invoice_and_helpers兩階段。後者跑三輪真Small模型核對、目前列、600萬像素有界輸入及影像helper；檢查收尾後無子程序、臨時檔已清。
+
+四項峰值各自嚴格小於1,000,000,000 bytes：process-tree RSS、採樣private、原生Job peak private、EXE＋活動_MEI解壓＋管理profile磁碟。20ms是目標採樣間隔，不當作連續任意時刻RSS證明；原生Job峰值另列，模型檔大小不取代實際用量。OS可能將配置上限向下按頁對齊；故意觸發拒絕的大額配置負例可能增加Job會計峰值，不是正常工作量通過證據。正式正常workload的原生峰值仍必須低於1GB。
+
+公開報告只保留型別已驗證的峰值、計數、固定旗標、來源／EXE／同run雜湊，不公開逐樣本trace、路徑、文件影像或OCR文字。GUI原生focus報告在探針暫存中驗證後回收，公開只保留required/verified。

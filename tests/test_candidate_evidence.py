@@ -403,3 +403,37 @@ def test_removed_tools_cannot_reappear_in_current_candidate_evidence(candidate, 
             gate_path.write_bytes(encoded(gate))
     with pytest.raises(ValueError):
         verify_candidate(root, 'a' * 40)
+
+
+@pytest.mark.parametrize('defect', ['missing', 'wrong_exe', 'wrong_source', 'missing_stage',
+                                   'rss_equal', 'disk_equal', 'private_equal', 'native_peak_equal',
+                                   'orphan', 'cleanup_false', 'fake_capture', 'checks_missing'])
+def test_actual_resource_evidence_is_mandatory_for_candidate(candidate, defect):
+    root, _, _, _ = candidate
+    path = root / 'artifacts/resource-budget.json'
+    report = json.loads(path.read_text())
+    manual = report['stages']['manual_invoice_and_helpers']
+    if defect == 'missing':
+        path.unlink()
+    else:
+        if defect == 'wrong_exe': report['executable_sha256'] = 'f' * 64
+        elif defect == 'wrong_source': report['source_commit'] = 'f' * 40
+        elif defect == 'missing_stage': del report['stages']['cold_application']
+        elif defect == 'rss_equal': manual['peak_rss_bytes'] = 1_000_000_000
+        elif defect == 'disk_equal': manual['peak_disk_bytes'] = 1_000_000_000
+        elif defect == 'private_equal': manual['peak_sampled_private_bytes'] = 1_000_000_000
+        elif defect == 'native_peak_equal': manual['peak_job_private_bytes'] = 1_000_000_000
+        elif defect == 'orphan': manual['active_processes'] = 1
+        elif defect == 'cleanup_false': manual['temporary_cleaned'] = False
+        elif defect == 'fake_capture': manual['native_capture_used'] = False
+        elif defect == 'checks_missing': del manual['workload_checks']['helper_inference_and_reap']
+        path.write_text(json.dumps(report))
+    with pytest.raises((ValueError, OSError)):
+        verify_candidate(root, 'a' * 40)
+
+
+@pytest.mark.parametrize('run,attempt', [('different-run', '1'), ('1234', '2')])
+def test_cli_candidate_context_rejects_resource_from_other_run(candidate, run, attempt):
+    root, _, _, _ = candidate
+    with pytest.raises(ValueError, match='resource budget'):
+        verify_candidate(root, 'a' * 40, expected_run_id=run, expected_run_attempt=attempt)

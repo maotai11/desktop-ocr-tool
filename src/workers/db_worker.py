@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import logging
+
 from PySide6.QtCore import QObject, QThread, Signal, Slot
-from ..data.repository import ItemRepository
-from ..data.models import ItemCreateDTO, OcrResultDTO
+
 from ..data.file_manager import FileManager
+from ..data.models import ItemCreateDTO, OcrResultDTO, remove_owned_capture_file
+from ..data.repository import ItemRepository
 
 logger = logging.getLogger(__name__)
 
@@ -63,25 +65,55 @@ class DbWorker(QObject):
 
     @Slot(object)
     def save_item(self, dto: ItemCreateDTO):
+        committed_id = None
         try:
             if self._enable_dedup and dto.source_mode not in ('import',):
                 if self._repo.should_deduplicate(
                     dto.source_mode, dto.content_hash, dto.image_hash
                 ):
                     logger.debug(f"去重跳過: source_mode={dto.source_mode}")
-                    self._file_manager.delete_item_files(dto)
+                    self._cleanup_transient_capture(dto)
                     return
 
             item_id = self._repo.insert(dto)
             if item_id:
+                committed_id = item_id  # Commit ownership before any notification callback.
+                dto.transient_capture_files = ()
                 logger.info(f"已儲存 item #{item_id}")
                 self.item_saved_with_context.emit(item_id, dto.clipboard_epoch)
                 self.item_saved.emit(item_id)
             else:
+                self._cleanup_transient_capture(dto)
                 self.save_failed.emit("儲存失敗")
         except Exception as e:
+            if committed_id is None:
+                self._cleanup_transient_capture(dto)
             logger.error(f"DbWorker save_item 失敗: {e}", exc_info=True)
             self.save_failed.emit(str(e))
+
+    def _cleanup_transient_capture(self, dto):
+        if dto.source_mode == 'import':
+            return
+        proofs = getattr(dto, 'transient_capture_files', ())
+        if not isinstance(proofs, tuple):
+            return
+        for proof in proofs:
+            try:
+                if not hasattr(proof, 'relative_path'):
+                    continue
+                # Proof must refer to this DTO's actual new files, not another item.
+                if proof.relative_path not in (dto.raw_image_path, dto.thumbnail_path):
+                    continue
+                removed = self._repo.cleanup_unreferenced_capture(
+                    proof.relative_path, self._file_manager,
+                    lambda proof=proof: remove_owned_capture_file(self._file_manager, proof))
+                if not removed:
+                    logger.warning('未移除暫存截圖：來源已變更或仍被引用')
+            except (OSError, ValueError, RuntimeError, TypeError, AttributeError):
+                logger.warning('未移除暫存截圖：無法確認安全所有權')
+            except Exception:  # noqa: BLE001 — preserve on any failed reference query
+                # A broken database reference check must preserve the file.
+                logger.warning('未移除暫存截圖：資料庫引用檢查未完成')
 
     @Slot()
     def reconcile_image_cleanup(self):

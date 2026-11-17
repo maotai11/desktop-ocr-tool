@@ -1,8 +1,6 @@
 """Local document regions, reusable text templates and explicit TXT output."""
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
@@ -1167,16 +1165,8 @@ class DocumentTemplateWindow(QWidget):
                 raise ValueError('不能覆寫匯入的原始文件，請選擇其他 TXT 檔案。')
         if destination.suffix.lower() != '.txt':
             raise ValueError('請使用 .txt 副檔名儲存文字結果。')
-        descriptor, temporary = tempfile.mkstemp(prefix='.inkpick-txt-', suffix='.tmp', dir=destination.parent)
-        try:
-            with os.fdopen(descriptor, 'w', encoding='utf-8-sig', newline='') as stream:
-                stream.write(self._output.toPlainText())
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, destination)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+        from ..core.resource_budget import write_bytes_with_budget
+        write_bytes_with_budget(destination, self._output.toPlainText().encode('utf-8-sig'))
         self._status.setStyleSheet(f'color: {_SUCCESS}; font-size: 12px;')
         self._status.setText('已匯出 TXT。')
         return True

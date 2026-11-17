@@ -368,3 +368,23 @@ def test_runtime_partial_checks_cannot_appear_as_success_in_public_summary(flag)
     assert public.observed_result(public.safe_fields(data))=='INCONSISTENT_AS_RECORDED'
     del data[flag]
     assert public.observed_result(public.safe_fields(data))=='INCONSISTENT_AS_RECORDED'
+
+
+def test_resource_public_metadata_retains_strict_gate_and_drops_private_traces():
+    from resource_release_fixtures import receipt
+    from scripts import prepare_public_validation as public
+    from scripts.benchmark_resource_budget import validate_resource_report
+    value = receipt(public.VERSION, 'c' * 64, 'a' * 40)
+    value.update(path='PRIVATE_PATH', text='PRIVATE_OCR', samples=[{'raw': 'PRIVATE_TRACE'}])
+    value['stages']['manual_invoice_and_helpers']['screenshot'] = 'PRIVATE_IMAGE'
+    clean = public.safe_fields(value)
+    assert 'PRIVATE_' not in json.dumps(clean)
+    # A wrongly typed known field is rejected instead of silently accepted.
+    assert public.observed_result(clean) == 'INVALID_FIELDS'
+    del value['samples']
+    clean = public.safe_fields(value)
+    validate_resource_report(clean, version=public.VERSION, executable_sha256='c' * 64,
+                             source_commit='a' * 40, run_id='1234', run_attempt='1')
+    assert public.observed_result(clean) == 'PASS_AS_RECORDED_NOT_OVERALL_APPROVAL'
+    clean['stages']['cold_application']['peak_rss_bytes'] = 1_000_000_000
+    assert public.observed_result(clean) == 'INCONSISTENT_AS_RECORDED'

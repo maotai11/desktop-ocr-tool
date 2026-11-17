@@ -43,10 +43,12 @@ def main(smoke_report=None) -> int:
         app.setWindowIcon(application_icon())
         app.setQuitOnLastWindowClosed(False)
         smoke['qt_platform'] = app.platformName()
-        setup_logger()
-        logger.info(f"===== {APP_DISPLAY_NAME} v{APP_VERSION} 啟動 =====")
         from src.core.config import get_config
         cfg = get_config()
+        # Register the configured data root before the first file log write.
+        # An existing external profile must count even before FileManager opens.
+        setup_logger()
+        logger.info(f"===== {APP_DISPLAY_NAME} v{APP_VERSION} 啟動 =====")
         # 1. Single instance
         from src.core.single_instance import (
             acquire_instance_lock,
@@ -77,7 +79,8 @@ def main(smoke_report=None) -> int:
             raise PermissionError(
                 f"無法寫入資料目錄：{data_dir}。請將程式移至可寫入的目錄，"
                 "請勿以系統管理員身份執行可攜版本。")
-        os.makedirs(data_dir, exist_ok=True)
+        from src.core.resource_budget import create_managed_directory
+        create_managed_directory(data_dir, cfg=cfg)
 
         # 5. Database
         from src.data.database import Database

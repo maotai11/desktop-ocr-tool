@@ -5,8 +5,8 @@ import logging
 import threading
 from contextlib import contextmanager
 from functools import wraps
-from typing import Optional
 from ..core.constants import SCHEMA_VERSION
+from ..core.resource_budget import disk_quota_guard, register_managed_root, ResourceBudgetExceeded, disk_write_reservation
 
 logger = logging.getLogger(__name__)
 
@@ -157,13 +157,49 @@ class Database:
         self._lock = threading.RLock()
         self._write_lock = threading.RLock()
         self._closed = False
+        self.read_only = False
+        for suffix in ('', '-journal', '-wal', '-shm'):
+            register_managed_root(self._db_path + suffix, owner=self)
         self._initialize()
 
     def _initialize(self):
-        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        self._conn = self.get_connection()
-        self._run_migrations()
-        logger.info(f"資料庫初始化完成: {self._db_path}")
+        try:
+            with disk_quota_guard(reserve_bytes=self._write_reservation()):
+                directory = os.path.dirname(self._db_path)
+                if not os.path.isdir(os.path.dirname(directory)):
+                    raise FileNotFoundError('請先選擇已存在的資料上層資料夾')
+                os.makedirs(directory, exist_ok=True)
+                self._conn = self.get_connection()
+                self._bound_growth(self._conn)
+                self._run_migrations()
+        except ResourceBudgetExceeded:
+            if not os.path.isfile(self._db_path):
+                raise
+            self.read_only = True
+            # Read-only WAL can create a missing shared-memory file. Do not let
+            # opening an over-quota legacy profile write that unreserved file.
+            if os.path.exists(self._db_path + '-wal') and not os.path.exists(self._db_path + '-shm'):
+                raise
+            self._conn = self.get_connection()
+        logger.info('資料庫已開啟' if not self.read_only else '資料用量已達上限，歷史資料以唯讀開啟')
+
+    _MAX_TRANSACTION_GROWTH = 8 * 1024 * 1024
+
+    def _write_reservation(self):
+        size = os.path.getsize(self._db_path) if os.path.isfile(self._db_path) else 0
+        wal = self._db_path + '-wal'
+        wal_size = os.path.getsize(wal) if os.path.isfile(wal) else 0
+        # A rollback journal can contain every old page plus per-page headers.
+        # Multiple commits within one repository operation retain this reserve;
+        # allow a journal of the grown database too, and a legacy WAL checkpoint.
+        return disk_write_reservation(self._db_path, size + size // 128 + 3 * self._MAX_TRANSACTION_GROWTH + wal_size,
+                                      new_files=4, new_directories=1)
+
+    def _bound_growth(self, conn):
+        page_size = int(conn.execute('PRAGMA page_size').fetchone()[0])
+        page_count = int(conn.execute('PRAGMA page_count').fetchone()[0])
+        maximum = page_count + self._MAX_TRANSACTION_GROWTH // page_size
+        conn.execute(f'PRAGMA max_page_count={maximum}')
 
     def _run_migrations(self):
         for stmt in _CREATE_TABLES:
@@ -215,11 +251,21 @@ class Database:
             if conn is None:
                 # Each calling thread owns a distinct transaction. Cross-thread
                 # close is allowed only after lifecycle shutdown has joined workers.
-                conn = sqlite3.connect(self._db_path, check_same_thread=False)
+                if self.read_only:
+                    from pathlib import Path
+                    conn = sqlite3.connect(Path(self._db_path).as_uri() + '?mode=ro',
+                                           uri=True, check_same_thread=False)
+                    conn.execute('PRAGMA query_only = ON')
+                else:
+                    conn = sqlite3.connect(self._db_path, check_same_thread=False)
+                    # DELETE journals have a calculable full old-page bound;
+                    # journal_size_limit alone would not bound an active WAL.
+                    conn.execute('PRAGMA journal_mode = DELETE')
                 conn.row_factory = sqlite3.Row
                 conn.execute('PRAGMA foreign_keys = ON')
-                conn.execute('PRAGMA journal_mode = WAL')
-                conn.execute('PRAGMA synchronous = NORMAL')
+                conn.execute('PRAGMA temp_store = MEMORY')
+                conn.execute('PRAGMA cache_size = -4096')
+                conn.execute('PRAGMA synchronous = FULL')
                 conn.execute('PRAGMA busy_timeout = 5000')
                 self._local.connection = conn
                 self._connections.append(conn)
@@ -228,8 +274,24 @@ class Database:
     @contextmanager
     def transaction(self):
         with self._write_lock:
-            with self.get_connection() as conn:
-                yield conn
+            if self.read_only:
+                raise ResourceBudgetExceeded('disk')
+            # Nested repository methods share one transaction admission, rather
+            # than reserving the complete rollback journal multiple times.
+            depth = getattr(self._local, 'write_depth', 0)
+            if depth:
+                with self.get_connection() as conn:
+                    yield conn
+                return
+            with disk_quota_guard(reserve_bytes=self._write_reservation()):
+                conn = self.get_connection()
+                self._bound_growth(conn)
+                self._local.write_depth = 1
+                try:
+                    with conn:
+                        yield conn
+                finally:
+                    self._local.write_depth = 0
 
     def close(self):
         with self._write_lock, self._lock:

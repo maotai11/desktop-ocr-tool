@@ -16,12 +16,15 @@ def test_launcher_and_tray_have_no_comparison_entry_or_hidden_tool_state(qtbot, 
     qtbot.addWidget(widget)
     assert not any('comparison' in name or 'shared_search' in name for name in dir(widget))
     buttons = {button.text() for button in widget.findChildren(QPushButton)}
-    assert {'擷取文字', '截圖', '手寫', '文件套版', '歷史紀錄', '檔案位置'} <= buttons
-    assert not any('核對' in text or '整列搜尋' in text for text in buttons)
+    assert {'擷取文字', '截圖', '手寫', '文件套版', '發票核對', '歷史紀錄', '檔案位置'} <= buttons
+    assert not any(marker in text for text in buttons
+                   for marker in ('A/B', 'A／B', 'AB核對', '整列搜尋'))
     tray = TrayManager(widget)
     actions = {action.text() for action in tray._tray.contextMenu().actions() if not action.isSeparator()}
     assert {'手寫', '文件套版（PDF／圖片）', '設定', '退出', '暫停剪貼簿監聽'} <= actions
-    assert not any('核對' in text or '整列搜尋' in text for text in actions)
+    assert '發票核對' in actions
+    assert not any(marker in text for text in actions
+                   for marker in ('A/B', 'A／B', 'AB核對', '整列搜尋'))
     assert not hasattr(tray, 'set_comparison_status')
     assert not hasattr(tray, 'set_shared_search_status')
 

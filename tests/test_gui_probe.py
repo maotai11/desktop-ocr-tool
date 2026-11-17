@@ -44,6 +44,7 @@ def test_real_gui_control_matrix_and_worker_shutdown(qapp, tmp_path, monkeypatch
     report = json.loads(destination.read_text(encoding='utf-8'))
     assert report['passed'] is True
     assert set(report['checks']) == set(gui_probe.GUI_CHECK_NAMES)
+    assert len(report['checks']) == 16 and report['checks']['manual_invoice_check'] is True
     assert all(value is True for value in report['checks'].values())
     assert report['probe'] == 'gui_feature_lifecycle'
     assert report['fixture_kind'] == 'SYNTHETIC_GUI_CONTROLS'
@@ -216,8 +217,8 @@ def test_launcher_copy_probe_rejects_controls_that_do_not_persist(qapp, tmp_path
 
 @pytest.mark.parametrize('defect', ['launcher', 'tray', 'worker_owner', 'packaged_module', 'cli'])
 def test_removed_comparison_contract_rejects_retained_entry_or_implementation(qapp, tmp_path, monkeypatch, defect):
-    from src.ui.widget import FloatingWidget
     from src.ui.tray_manager import TrayManager
+    from src.ui.widget import FloatingWidget
     if defect in ('launcher', 'worker_owner'):
         from PySide6.QtWidgets import QPushButton
         original = FloatingWidget.__init__
@@ -256,3 +257,40 @@ def test_removed_comparison_contract_rejects_retained_entry_or_implementation(qa
     assert checks['removed_comparison_tools_absent'] is False
     assert checks['windows_and_workers_closed'] is True
     assert checks['temporary_files_cleaned'] is True
+
+
+@pytest.mark.parametrize('defect', ['entry', 'start', 'stale_result', 'field_status'])
+def test_manual_invoice_probe_cannot_pass_missing_or_corrupt_real_path(qapp, tmp_path, monkeypatch, defect):
+    from src.invoice_check import controller
+    from src.ui.invoice_check_window import InvoiceCheckWindow
+    from src.ui.widget import FloatingWidget
+
+    invoked = []
+    if defect == 'entry':
+        monkeypatch.setattr(FloatingWidget, 'open_invoice_check', lambda self: invoked.append(True))
+    elif defect == 'start':
+        monkeypatch.setattr(controller.InvoiceCheckController, 'check_once', lambda self: invoked.append(True) or False)
+    elif defect == 'stale_result':
+        original = InvoiceCheckWindow._results_ready
+        def accept_stale(self, snapshot):
+            invoked.append(True)
+            original(self, snapshot)
+            self._snapshot = snapshot  # Defect: cancelled generation can reappear.
+        monkeypatch.setattr(InvoiceCheckWindow, '_results_ready', accept_stale)
+    else:
+        original = controller.compare_fields
+        def corrupt(*args, **kwargs):
+            invoked.append(True)
+            results = original(*args, **kwargs)
+            results[0]['status'] = 'corrupted'
+            return results
+        monkeypatch.setattr(controller, 'compare_fields', corrupt)
+    original_until = gui_probe._until
+    monkeypatch.setattr(gui_probe, '_until', lambda predicate, timeout_ms=5000: original_until(predicate, min(timeout_ms, 750)))
+    destination = tmp_path / 'fault.json'
+    assert gui_probe.run_gui_probe(destination) == 1
+    report = json.loads(destination.read_text(encoding='utf-8'))
+    assert invoked
+    assert report['checks']['manual_invoice_check'] is False
+    assert report['passed'] is False
+    assert report['checks']['temporary_files_cleaned'] is True

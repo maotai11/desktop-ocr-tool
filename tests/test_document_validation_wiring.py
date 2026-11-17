@@ -10,6 +10,8 @@ from scripts.prepare_public_validation import (
 
 
 def test_document_cli_probe_precedes_normal_application(tmp_path, monkeypatch):
+    from src.core import resource_budget
+    monkeypatch.setattr(resource_budget, 'install_runtime_budget', lambda: None)
     from src import document_probe, main
     calls = []
     monkeypatch.setattr(document_probe, 'run_document_probe', lambda path: calls.append(path) or 7)

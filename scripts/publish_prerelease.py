@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.18. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.19. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -25,7 +25,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.18"
+TAG = "v1.8.0-rc.19"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -134,22 +134,20 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版重整主浮窗，可直接切換複製模式與四項清理，並移除「A／B 核對」及「整列搜尋」。離線 OCR、框選後選字複製、文件套版、手寫、歷史與檔案位置功能保留。
+本版新增手動「發票核對」：框選發票與含欄名的表格，按一次核對目前反藍所在資料列的五個欄位，結果標在發票實際文字位置。一般 OCR 保留原整圖重試，提供其產生的逐行候選供人工確認；未導入大型模型或自動背景核對。
 
 ### 這次調整
-- 浮窗重新整理常用操作，可直接切換「複製全部」或「選字複製」。選擇後會記住下次使用的模式，重按目前模式不重寫設定。
-- 浮窗的「複製清理」可設定逗號、撇號、換行、所有標點與空白四類規則，分別移除或替換成自訂文字；按「套用」儲存，取消保留原設定，不改剪貼簿。這些快捷操作只更新相關偏好，不觸發歷史整理。
-- 浮窗與系統匣移除兩項工具入口，相關視窗、框選、結果標示、背景輪詢與辨識排程一併移除。
-- 移除對應的命令列模式、功能模組與專用工作程序。GUI 探針改為 15 項，其中一項實際確認已移除工具不再出現；入口、命令或工作程序殘留會阻擋發布。
-- 保留來源、EXE、封網、隔離資料模式的 GUI 操作測試，以及安全掃描、原生檔來源、模型推論與程序收尾檢查。公開 metadata 改為 33 份，移除 7 份已不適用的核對報告。
+- 五項欄位：預設未稅金額、稅額、開立日期、發票號碼、賣方統編，可改總金額／買方統編；支援已定義的民國／西元日期換算，缺字、低信心與歧義保留待確認。
+- 核對畫面及結果只在記憶體，不存歷史或截圖、不改剪貼簿。主要螢幕合併擷取最多 600 萬像素；範圍校正、透明底板、置頂及收起小工具皆可操作。
+- 每次核對均由使用者按下開始；來源畫面變動或停止後，舊結果不會套回。原生 GUI 門檻另外實測 200% 縮放下主按鈕／小工具核對按鈕保留來源焦點。
+- EXE 與輔助程序總用量採十進位 1 GB 門檻；同版實際資源報告分列 RSS、private allocation、Job 原生峰值及 EXE／解壓／管理資料磁碟用量。模型檔大小不作為 RAM 證據。
+- 寫入前預留設定、影像、SQLite journal及匯出空間；舊資料超限不自動刪除。Log 每份 512 KiB、三份備份；儲存失敗只清理本次確定新建且未被引用的檔案。
+- 保留既有 GUI、封網、隔離資料模式、全部原生元件來源及 Defender、套件漏洞、模型 500 次推論與收尾門檻；新增 resource-budget.json，公開 metadata 共 34 份。這些測試不等於任意文件辨識正確或所有電腦保證。
 
-### 本版沿用的發布檢查
-- GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
-- 對同一份 EXE 的所有內含 PE 檔建立雜湊、來源、相依匯入與簽章清單；以 Microsoft Defender 自訂掃描 EXE 及抽出的完整原生檔。工具不可用、來源無法對應、相依無法解析或掃描未完成都阻擋發布。公開 metadata 附相對路徑清單，沒有原始 runner 路徑或內容 Log。
-- Windows 執行環境固定為 CPython 3.12.16（Astral python-build-standalone 20261026）及其 OpenSSL 3.5.9，下載檔與原生檔逐一核對固定 SHA256；Qt 固定 6.11.3，排除未使用的 Qt TLS 外掛。必要的 SSL 相依檔隨執行環境一併更新。這些靜態清單與防毒掃描無法證明所有原生檔都沒有未知漏洞；範圍見 ZIP 的 `docs/VALIDATION_COVERAGE.md`，授權原文在 `licenses/`。
+螢幕 OCR、選字複製、四項複製清理、PDF／圖片套版、手寫及歷史功能保留。原本已退休的 A／B 核對與整列搜尋不重新啟用。
 
 ### 複製清理設定
-- 到「設定 → 剪貼簿 → 複製清理」，勾選項目，再選移除／替換；替換可輸入自己的字串，留空等同移除。例：逗號替換成「・」，甲,乙變成甲・乙；換行替換成「 / 」，兩行文字變成同一行。
+- 點主浮窗「複製清理」，勾選項目、選移除／替換後按「套用」；完整設定的剪貼簿分頁也可調整同一組規則。替換可輸入自己的字串，留空等同移除。例：逗號替換成「・」，甲,乙變成甲・乙；換行替換成「 / 」，兩行文字變成同一行。
 - 個別逗號／撇號／換行優先；替代字串原樣插入，不再次清理。單獨換行移除保留多筆紀錄間空行，明確換行替換會處理兩個分隔換行。
 - 一般 OCR／歷史複製及「貼上最後一筆」先套用清理。文件套版複製、手寫候選與匯出保持原樣。所有標點移除會讓 -1.23 變成 123，請按用途選擇。
 
@@ -581,6 +579,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-gui.json", "test-results.xml",
                       "artifacts/security-audit.json", "artifacts/dependency-inventory.json",
                       "artifacts/native-payload-audit.json", "artifacts/native-payload-inventory.json",
+                      "artifacts/resource-budget.json",
                       "artifacts/firewall-validation/candidate-gate.json",
                       "artifacts/firewall-validation/frozen-selftest.json",
                       "artifacts/firewall-validation/frozen-app-smoke.json",
@@ -656,6 +655,14 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     require(native_report.get('source_run_id') == context.run_id
             and native_report.get('source_run_attempt') == evidence_attempt,
             'Native payload audit belongs to another workflow run/attempt')
+    from scripts.benchmark_resource_budget import validate_resource_report, ResourceGateError
+    try:
+        validate_resource_report(json.loads(snapshots['artifacts/resource-budget.json']),
+            version=VERSION, executable_sha256=manifest['executable_sha256'],
+            source_commit=context.source_commit, repository=REPOSITORY,
+            run_id=context.run_id, run_attempt=evidence_attempt)
+    except (ResourceGateError, ValueError, KeyError, TypeError) as exc:
+        raise PublicationError('Invalid same-candidate actual resource budget evidence') from exc
     audit = json.loads(snapshots['artifacts/security-audit.json'])
     inventory_bytes = snapshots['artifacts/dependency-inventory.json']
     inventory_hash = hashlib.sha256(inventory_bytes).hexdigest()

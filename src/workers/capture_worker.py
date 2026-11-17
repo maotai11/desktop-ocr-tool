@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
-from .queue_worker import QueueWorker
-from typing import Optional
-import numpy as np
+
 from PIL import Image
 from PySide6.QtCore import Signal
+
 from ..capture.factory import get_capture_backend
+from ..core.constants import (
+    ITEM_TYPE_IMAGE,
+    SOURCE_MODE_FULLSCREEN,
+)
 from ..data.file_manager import FileManager
 from ..data.hasher import sha256_image
-from ..data.models import ItemCreateDTO
-from ..core.constants import (
-    SOURCE_MODE_REGION_IMAGE, SOURCE_MODE_REGION_OCR,
-    SOURCE_MODE_FULLSCREEN, ITEM_TYPE_IMAGE
+from ..data.models import (
+    ItemCreateDTO,
+    issue_capture_file_ownership,
+    remove_owned_capture_file,
 )
+from .queue_worker import QueueWorker
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +53,8 @@ class CaptureWorker(QueueWorker):
         backend = None
         for task in self.tasks():
             abs_path = thumb_abs = None
+            owned_files = []
+            handed_off = False
             try:
                 if backend is None:
                     backend = get_capture_backend()
@@ -74,7 +80,11 @@ class CaptureWorker(QueueWorker):
                 # Convert BGR→RGB for PIL
                 pil_img = Image.fromarray(img[:, :, ::-1])
                 abs_path, rel_path = self._file_manager.save_capture(pil_img)
+                owned_files.append(issue_capture_file_ownership(self._file_manager, rel_path))
                 thumb_abs, thumb_rel = self._file_manager.create_thumbnail(abs_path)
+
+                if thumb_abs and thumb_rel:
+                    owned_files.append(issue_capture_file_ownership(self._file_manager, thumb_rel))
 
                 h_img, w_img = img.shape[:2]
                 img_hash = sha256_image(abs_path)
@@ -91,15 +101,16 @@ class CaptureWorker(QueueWorker):
                     capture_region=region_json,
                     capture_monitor=monitor,
                     clipboard_epoch=clipboard_epoch,
+                    transient_capture_files=tuple(owned_files),
                 )
+                handed_off = True
                 self.capture_done.emit(abs_path, dto)
             except Exception as e:
                 logger.error(f"CaptureWorker 錯誤: {e}", exc_info=True)
-                for partial in (abs_path, thumb_abs):
-                    if partial:
-                        from pathlib import Path
+                if not handed_off:
+                    for proof in owned_files:
                         try:
-                            Path(partial).unlink(missing_ok=True)
-                        except OSError:
-                            logger.exception('無法移除未完成的截圖')
+                            remove_owned_capture_file(self._file_manager, proof)
+                        except (OSError, ValueError):
+                            logger.warning('未完成截圖的所有權無法確認，保留檔案')
                 self.capture_failed.emit(str(e))

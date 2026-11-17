@@ -509,7 +509,7 @@ def test_preparation_reverifies_actual_zip_exe_and_all_candidate_evidence(candid
     for asset in prepared.assets:
         if asset.name != publisher.CHECKSUM_NAME: assert f"{asset.sha256}  {asset.name}\n" in sums
     with zipfile.ZipFile(tmp_path / "upload" / publisher.METADATA_NAME) as archive:
-        assert len(archive.namelist()) == 33
+        assert len(archive.namelist()) == 34
         assert "verified-bundle.json" in archive.namelist()
         assert "artifacts/firewall-validation/candidate-gate.json" in archive.namelist()
         assert not any('comparison' in name or 'shared-search' in name for name in archive.namelist())
@@ -661,11 +661,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
         publisher.prepare_release(root, report, tmp_path / "upload", CONTEXT)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.19'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.18', '1.8.0-rc.20'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.18'
+    assert publisher.VERSION == '1.8.0-rc.19'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -673,7 +673,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.19'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.18', '1.8.0-rc.20'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())
@@ -981,3 +981,18 @@ def test_publisher_requires_complete_archive_coverage_from_windows_payload_inspe
     saved.write_text(json.dumps(report), encoding='utf-8')
     with pytest.raises(publisher.PublicationError):
         publisher.prepare_release(root, saved, tmp_path / 'missing-native-coverage', CONTEXT)
+
+
+@pytest.mark.parametrize('field,value', [('run_id', '7777'), ('run_attempt', '2'),
+                                       ('repository', 'other/repository')])
+def test_publication_rejects_resource_receipt_from_another_workflow(candidate, tmp_path, field, value):
+    root, report_path, _, _, save_report = candidate
+    path = root / 'artifacts/resource-budget.json'
+    report = json.loads(path.read_text())
+    report['workflow'][field] = value
+    path.write_text(json.dumps(report))
+    # The raw evidence hash changes, so either candidate re-verification or the
+    # same-run check must fail before an upload directory can be prepared.
+    with pytest.raises(publisher.PublicationError):
+        publisher.prepare_release(root, report_path, tmp_path / 'upload', CONTEXT)
+    assert not (tmp_path / 'upload').exists()

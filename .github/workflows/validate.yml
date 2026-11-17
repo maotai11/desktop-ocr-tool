@@ -110,6 +110,18 @@ jobs:
       - if: runner.os == 'Windows'
         id: build
         run: python scripts/build.py
+      - name: Measure real candidate aggregate memory and managed disk
+        if: runner.os == 'Windows'
+        id: resource_budget
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $bundles = @(Get-ChildItem artifacts/release-* -Directory)
+          if ($bundles.Count -ne 1) { throw 'Expected exactly one resource candidate' }
+          $manifest = Get-Content (Join-Path $bundles[0].FullName 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          $exe = Join-Path $bundles[0].FullName $manifest.executable_name
+          & ./scripts/validate_resource_budget.ps1 -Executable $exe -Report artifacts/resource-budget.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual process-tree memory or managed disk limit failed' }
       - name: Audit all bundled native files and scan with Microsoft Defender
         if: runner.os == 'Windows'
         id: native_audit
@@ -237,7 +249,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       github.repository == 'maotai11/desktop-ocr-tool' &&
-      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.18'
+      github.event.head_commit.message == 'publish-prerelease: v1.8.0-rc.19'
     runs-on: ubuntu-latest
     permissions:
       contents: write
