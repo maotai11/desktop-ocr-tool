@@ -8,7 +8,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-. (Join-Path $PSScriptRoot 'assert_shared_search_probe.ps1')
 . (Join-Path $PSScriptRoot 'assert_gui_probe.ps1')
 $scratch = $null
 $ruleName = 'InkPick-portable-' + [guid]::NewGuid().ToString()
@@ -26,8 +25,8 @@ try {
     $bundle = (Resolve-Path -LiteralPath $BundleDirectory).Path
     $manifest = Get-Content -LiteralPath (Join-Path $bundle 'BUILD_MANIFEST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.schema -ne 2 -or $manifest.platform -cne 'win32' -or
-        $manifest.version -cne '1.8.0-rc.17' -or
-        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.17.exe') {
+        $manifest.version -cne '1.8.0-rc.18' -or
+        $manifest.executable_name -cne 'InkPick-v1.8.0-rc.18.exe') {
         throw 'Unexpected portable candidate identity'
     }
     $original = Join-Path $bundle $manifest.executable_name
@@ -80,8 +79,6 @@ try {
         @{ mode = '--self-test-handwriting'; name = 'isolated-handwriting.json'; kind = 'handwriting_lifecycle' },
         @{ mode = '--self-test-handwriting-image'; name = 'isolated-handwriting-image.json'; kind = 'handwriting_image_lifecycle' },
         @{ mode = '--self-test-documents'; name = 'isolated-documents.json'; kind = 'document_template_lifecycle' },
-        @{ mode = '--self-test-comparison'; name = 'isolated-comparison.json'; kind = 'comparison_lifecycle' },
-        @{ mode = '--self-test-shared-search'; name = 'isolated-shared-search.json'; kind = 'shared_search_lifecycle' },
         @{ mode = '--self-test-gui'; name = 'isolated-gui.json'; kind = 'gui_feature_lifecycle' }
     )) {
         $report = Join-Path $reports $probe.name
@@ -131,8 +128,6 @@ try {
         }
         if ($probe.kind -ceq 'gui_feature_lifecycle') {
             Assert-GuiProbe $result $manifest.version $hash
-        } elseif ($probe.kind -ceq 'shared_search_lifecycle') {
-            Assert-SharedSearchProbe $result $manifest.version $hash
         } elseif ($probe.kind -ceq 'application_lifecycle') {
             if ($result.schema -ne 2 -or $result.database_integrity -cne 'ok' -or
                 $result.threads_stopped -isnot [System.Management.Automation.PSCustomObject]) {
@@ -143,7 +138,7 @@ try {
                     throw 'Portable application lifecycle did not finish'
                 }
             }
-            $threadNames = @('capture', 'ocr', 'database', 'hotkeys', 'history_maintenance', 'shared_search')
+            $threadNames = @('capture', 'ocr', 'database', 'hotkeys', 'history_maintenance')
             if ((@($result.threads_stopped.PSObject.Properties.Name | Sort-Object) -join '|') -cne
                 (@($threadNames | Sort-Object) -join '|')) { throw 'Incomplete portable worker shutdown report' }
             foreach ($name in $threadNames) {
@@ -180,38 +175,6 @@ try {
             foreach ($name in @('error', 'error_code', 'traceback')) {
                 if ($result.PSObject.Properties.Name -ccontains $name) {
                     throw 'Document probe includes a failure diagnostic'
-                }
-            }
-        } elseif ($probe.kind -ceq 'comparison_lifecycle') {
-            $checkNames = @('fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
-                'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
-                'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
-                'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
-                'mini_results_visible', 'mini_results_live_updated',
-                'all_groups_visible', 'all_groups_live_updated',
-                'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all')
-            if (($result.schema -isnot [int64] -and $result.schema -isnot [int]) -or
-                $result.schema -ne 1 -or $result.qt_platform -cne 'windows' -or
-                $result.fixture_kind -cne 'SYNTHETIC_COMPARISON_PAIRS' -or
-                $result.passed -isnot [bool] -or $result.frozen -isnot [bool] -or
-                $result.clean_machine_verified -isnot [bool] -or
-                $result.ocr_accuracy_tested -isnot [bool] -or $result.ocr_accuracy_tested -ne $false -or
-                $result.model_inference_tested -isnot [bool] -or $result.model_inference_tested -ne $false -or
-                $result.checks -isnot [System.Management.Automation.PSCustomObject]) {
-                throw 'Incomplete synthetic comparison probe contract'
-            }
-            $keys = @($result.checks.PSObject.Properties.Name | Sort-Object)
-            if (($keys -join '|') -cne (($checkNames | Sort-Object) -join '|')) {
-                throw 'Incomplete comparison lifecycle checks'
-            }
-            foreach ($name in $checkNames) {
-                if ($result.checks.$name -isnot [bool] -or $result.checks.$name -ne $true) {
-                    throw 'Comparison lifecycle check failed'
-                }
-            }
-            foreach ($name in @('error', 'error_code', 'traceback')) {
-                if ($result.PSObject.Properties.Name -ccontains $name) {
-                    throw 'Comparison probe includes a failure diagnostic'
                 }
             }
         } elseif ($result.qt_platform -cne 'windows') {

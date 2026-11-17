@@ -10,13 +10,7 @@ if not getattr(sys, 'frozen', False):
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
 
-def run(argv=None):
-    from src.runtime_policy import configure_runtime
-    configure_runtime()
-    # Child route precedes QApplication, single-instance lock and OCR workers.
-    if (sys.argv[1:] if argv is None else argv) == ['--handwriting-image-helper']:
-        from src.handwriting.image_helper import run
-        return run()
+def _build_parser():
     parser = argparse.ArgumentParser(description="Desktop OCR Tool")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--self-test", metavar="REPORT", help="offline OCR and database probe")
@@ -25,11 +19,20 @@ def run(argv=None):
     mode.add_argument("--self-test-handwriting-image", metavar="REPORT", help="bundled manual raster helper lifecycle probe")
     mode.add_argument("--self-test-handwriting", metavar="REPORT", help="bundled handwriting lifecycle probe")
     mode.add_argument("--self-test-documents", metavar="REPORT", help="offline PDF/image and template payload probe")
-    mode.add_argument("--self-test-comparison", metavar="REPORT", help="synthetic paired comparison lifecycle probe")
-    mode.add_argument("--self-test-shared-search", metavar="REPORT", help="synthetic shared-table search lifecycle probe")
     mode.add_argument("--self-test-gui", metavar="REPORT", help="synthetic Qt controls and effects lifecycle probe")
     parser.add_argument('--wait-for-firewall', action='store_true', help='handwriting probe runner handshake only')
     parser.add_argument("--stress-iterations", type=int, default=500)
+    return parser
+
+
+def run(argv=None):
+    from src.runtime_policy import configure_runtime
+    configure_runtime()
+    # Child route precedes QApplication, single-instance lock and OCR workers.
+    if (sys.argv[1:] if argv is None else argv) == ['--handwriting-image-helper']:
+        from src.handwriting.image_helper import run
+        return run()
+    parser = _build_parser()
     args = parser.parse_args(argv)
     os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     if args.wait_for_firewall and args.self_test_handwriting is None:
@@ -43,12 +46,6 @@ def run(argv=None):
     if args.self_test_documents is not None:
         from src.document_probe import run_document_probe
         return run_document_probe(os.path.abspath(args.self_test_documents))
-    if args.self_test_comparison is not None:
-        from src.comparison_probe import run_comparison_probe
-        return run_comparison_probe(os.path.abspath(args.self_test_comparison))
-    if args.self_test_shared_search is not None:
-        from src.shared_search_probe import run_shared_search_probe
-        return run_shared_search_probe(os.path.abspath(args.self_test_shared_search))
     if args.self_test_gui is not None:
         from src.gui_probe import run_gui_probe
         return run_gui_probe(os.path.abspath(args.self_test_gui))

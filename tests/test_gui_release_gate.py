@@ -59,7 +59,9 @@ def test_gui_routes_are_mandatory_and_public_metadata_drops_content():
     steps = {step.get('id'): step for step in workflow['jobs']['validate']['steps']}
     assert steps['source_gui']['run'] == 'python src/main.py --self-test-gui source-gui.json'
     assert not steps['source_gui'].get('continue-on-error')
-    assert '--self-test-gui' in MODES and len(MODES) == 8
+    assert '--self-test-gui' in MODES and len(MODES) == 6
+    assert {'removed_comparison_tools_absent', 'launcher_copy_controls'} <= set(gui_probe.GUI_CHECK_NAMES)
+    assert len(gui_probe.GUI_CHECK_NAMES) == 15
     for path in ('scripts/build.py', 'scripts/validate_windows_bundle.ps1', 'scripts/validate_portable_profile.ps1'):
         assert '--self-test-gui' in (root / path).read_text(encoding='utf-8')
     guard = (root / 'scripts/assert_gui_probe.ps1').read_text(encoding='utf-8')

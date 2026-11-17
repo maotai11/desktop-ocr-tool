@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.17. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.18. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -25,7 +25,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.17"
+TAG = "v1.8.0-rc.18"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -134,33 +134,24 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版整理設定視窗的分區、對齊與說明，複製清理可各自選擇移除或替換，直接輸入替代字串。原有整區核對發票、離線 OCR、文件套版、手寫、歷史及檔案位置功能保留。
+本版重整主浮窗，可直接切換複製模式與四項清理，並移除「A／B 核對」及「整列搜尋」。離線 OCR、框選後選字複製、文件套版、手寫、歷史與檔案位置功能保留。
 
 ### 這次調整
-- 設定以操作分區，較長說明放在項目旁的問號／提示；按「儲存」才套用，取消不寫入草稿。
-- 逗號、撇號、換行、所有標點與空白各自提供啟用、移除／替換及自訂字串。新安裝預設停用；舊設定保留原有勾選及移除行為。
-- 替代字串最多 64 個 Unicode 字元，留空可移除；不接受控制字元或換行，不當成正規表示式或程式執行。個別規則優先於所有標點規則，插入內容不再次處理，CRLF 算一次。
-- 清理套用一般 OCR／歷史複製及「貼上最後一筆」準備的文字。文件套版複製、手寫候選、原始結果與匯出維持原樣，A／B 比較規則獨立。
-- 既有 GUI 16 項探針擴充四列規則的取消、持久化、重新開啟、實際剪貼簿結果，並確認文件套版複製不受清理影響；失去替代文字、略過清理等反向案例會使報告失敗。仍需同版來源／EXE／封網／隔離 profile 各自通過。
+- 浮窗重新整理常用操作，可直接切換「複製全部」或「選字複製」。選擇後會記住下次使用的模式，重按目前模式不重寫設定。
+- 浮窗的「複製清理」可設定逗號、撇號、換行、所有標點與空白四類規則，分別移除或替換成自訂文字；按「套用」儲存，取消保留原設定，不改剪貼簿。這些快捷操作只更新相關偏好，不觸發歷史整理。
+- 浮窗與系統匣移除兩項工具入口，相關視窗、框選、結果標示、背景輪詢與辨識排程一併移除。
+- 移除對應的命令列模式、功能模組與專用工作程序。GUI 探針改為 15 項，其中一項實際確認已移除工具不再出現；入口、命令或工作程序殘留會阻擋發布。
+- 保留來源、EXE、封網、隔離資料模式的 GUI 操作測試，以及安全掃描、原生檔來源、模型推論與程序收尾檢查。公開 metadata 改為 33 份，移除 7 份已不適用的核對報告。
 
 ### 本版沿用的發布檢查
-- GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫、兩種核對與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
+- GUI 探針實際操作啟動、設定、歷史、編輯、選字複製、文件縮放／清除、手寫與關閉；OCR 使用合成替身，檢查控制項效果與工作停止，並在來源、EXE、封鎖連線及隔離資料模式重做。
 - 對同一份 EXE 的所有內含 PE 檔建立雜湊、來源、相依匯入與簽章清單；以 Microsoft Defender 自訂掃描 EXE 及抽出的完整原生檔。工具不可用、來源無法對應、相依無法解析或掃描未完成都阻擋發布。公開 metadata 附相對路徑清單，沒有原始 runner 路徑或內容 Log。
 - Windows 執行環境固定為 CPython 3.12.16（Astral python-build-standalone 20261026）及其 OpenSSL 3.5.9，下載檔與原生檔逐一核對固定 SHA256；Qt 固定 6.11.3，排除未使用的 Qt TLS 外掛。必要的 SSL 相依檔隨執行環境一併更新。這些靜態清單與防毒掃描無法證明所有原生檔都沒有未知漏洞；範圍見 ZIP 的 `docs/VALIDATION_COVERAGE.md`，授權原文在 `licenses/`。
-
-### 整列搜尋設定與停止
-- 從浮窗或系統匣「整列搜尋（數值核對發票）」開啟，預設圈整個輸入值範圍 A，再圈發票 B。可切回逐欄框選；兩區不可重疊。
-- 按「開始搜尋」收起控制窗。按「恢復介面」回來選候選、改位置或暫停。標示文字點擊穿透；擷取前隱藏文字與兩個小按鈕，避免讀到自己。
-- 整區模式上一列／下一列切換實際 OCR 列，A／B 框保持；逐欄模式依「列高／間距」（初始 30，1–500 螢幕像素）一起移動 A。自動跟隨需先「框選輸入表格（換列用）」並校正選取底色，新列連續兩次穩定才採用。不操作來源軟體的點列或捲頁。
-- 暫停／關閉停止後續輪次並清除標示；已進原生 OCR 的單次呼叫需返回。手動辨識只在搜尋中接受，晚到結果不恢復已關閉視窗。
-- 座標、結果與有界快取只留本次記憶體，不寫 A／B 截圖、歷史、剪貼簿、內容 Log，也不上傳。預覽單次完整主螢幕影像在關閉時釋放；來源需保持可見，未新增表格結構模型。
-
-原有多組 A／B 固定核對、一般 OCR、手寫、文件套版、複製清理與 90 天封存沿用既有操作。操作、日期格式與例子見 ZIP 的 `docs/SHARED_SEARCH.md` 及同版離線說明；示意圖為合成資料，沒有使用者發票。
 
 ### 複製清理設定
 - 到「設定 → 剪貼簿 → 複製清理」，勾選項目，再選移除／替換；替換可輸入自己的字串，留空等同移除。例：逗號替換成「・」，甲,乙變成甲・乙；換行替換成「 / 」，兩行文字變成同一行。
 - 個別逗號／撇號／換行優先；替代字串原樣插入，不再次清理。單獨換行移除保留多筆紀錄間空行，明確換行替換會處理兩個分隔換行。
-- 一般 OCR／歷史複製及「貼上最後一筆」先套用清理。文件套版複製、手寫候選與匯出保持原樣，A／B 比較獨立。所有標點移除會讓 -1.23 變成 123，請按用途選擇。
+- 一般 OCR／歷史複製及「貼上最後一筆」先套用清理。文件套版複製、手寫候選與匯出保持原樣。所有標點移除會讓 -1.23 變成 123，請按用途選擇。
 
 螢幕 OCR 仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。PDF／圖片套版、手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 
@@ -187,7 +178,7 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
 發布檢查綁定下列同一組檔案雜湊與來源版本：Windows 原生測試、EXE 內的 OCR／資料庫／手寫／啟閉測試，以及主程式和同次解壓的手寫引擎都被阻擋對外連線時的測試。
 發布關卡要求兩組 OCR 模型各完成 500 次 EXE 推論。手寫的 16 筆模型原始筆跡重播只驗證基本運作，不能當作未見過的真人筆跡準確率；這些檢查也不證明零連線嘗試或零錯誤。
 GitHub Windows 測試機不等於無安裝、無快取的乾淨電腦。獨立手寫程序有逾時終止與父程序退出檢查；既有 QThread 內的 OCR 卡住限制仍在。完整第三方授權審查尚未完成。
-另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫、文件套版、固定 A／B、整列搜尋及 GUI 控制探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
+另外以單獨 EXE、全新資料與暫存目錄、僅含 Windows 系統路徑的 PATH、清除 Python／Qt 外部環境且阻擋主程式連線，執行 OCR、啟閉、兩種手寫、文件套版及 GUI 控制探針。來源／frozen／隔離模式的文件探針使用合成 PDF 實際載入 PDFium，驗證圖片渲染、欄位繼承／覆寫、模板合併與原檔唯讀；不冒稱 OCR 準確率或模型推論測試。這是可攜性檢查，不宣稱已在實體乾淨電腦驗收。
 
 來源版本：`{context.source_commit}`
 套件與背景工作範圍見 [資安檢查](https://github.com/maotai11/desktop-ocr-tool/blob/{context.source_commit}/docs/SECURITY_REVIEW.md)。Linux 的合成探針會追蹤程序樹網路系統呼叫；這不代表所有 GUI 路徑或原生 DLL 已完成漏洞認證。
@@ -523,39 +514,11 @@ def _check_document_probe(report: dict, manifest: dict, frozen: bool) -> None:
             'Document lifecycle includes a failure diagnostic')
 
 
-def _check_comparison_probe(report: dict, manifest: dict, frozen: bool) -> None:
-    """Require fixed paired-capture/queue checks without claiming OCR accuracy."""
-    expected = {
-        'schema': 1, 'probe': 'comparison_lifecycle', 'passed': True,
-        'version': manifest['version'], 'frozen': frozen, 'platform': 'win32',
-        'qt_platform': 'windows',
-        'executable_sha256': manifest['executable_sha256'] if frozen else None,
-        'clean_machine_verified': False, 'fixture_kind': 'SYNTHETIC_COMPARISON_PAIRS',
-        'ocr_accuracy_tested': False, 'model_inference_tested': False,
-    }
-    require(type(report) is dict and all(type(report.get(key)) is type(value)
-            and report.get(key) == value for key, value in expected.items()),
-            'Incomplete comparison lifecycle identity')
-    required = {'fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
-                'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
-                'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
-                'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
-                'mini_results_visible', 'mini_results_live_updated',
-                'all_groups_visible', 'all_groups_live_updated',
-                'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'}
-    checks = report.get('checks')
-    require(type(checks) is dict and set(checks) == required
-            and all(value is True for value in checks.values()),
-            'Incomplete comparison lifecycle checks')
-    require(not any(key in report for key in ('error', 'error_code', 'traceback')),
-            'Comparison lifecycle includes a failure diagnostic')
-
-
 def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> None:
     """Bind standalone/empty-profile probes to the exact candidate EXE."""
     from scripts.prepare_public_validation import strict_json
     from scripts.verify_candidate_bundle import (
-        _check_probe, check_handwriting_image_probe, check_handwriting_probe, check_shared_search_probe, check_gui_probe,
+        _check_probe, check_handwriting_image_probe, check_handwriting_probe, check_gui_probe,
     )
     prefix = 'artifacts/portable-validation/'
     try:
@@ -577,8 +540,6 @@ def check_portable_profile(snapshots: Mapping[str, bytes], manifest: dict) -> No
             ('isolated-handwriting.json', check_handwriting_probe),
             ('isolated-handwriting-image.json', check_handwriting_image_probe),
             ('isolated-documents.json', _check_document_probe),
-            ('isolated-comparison.json', _check_comparison_probe),
-            ('isolated-shared-search.json', check_shared_search_probe),
             ('isolated-gui.json', check_gui_probe),
         ):
             raw = snapshots[prefix + name]
@@ -617,7 +578,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
             "Verified metadata must come from the same downloaded Windows artifact")
     require(output_dir.resolve() != root and root not in output_dir.resolve().parents,
             "Upload preparation directory must be outside the downloaded artifact")
-    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-comparison.json", "source-shared-search.json", "source-gui.json", "test-results.xml",
+    external_names = ["source-selftest.json", "source-app-smoke.json", "source-handwriting.json", "source-handwriting-image.json", "source-gui.json", "test-results.xml",
                       "artifacts/security-audit.json", "artifacts/dependency-inventory.json",
                       "artifacts/native-payload-audit.json", "artifacts/native-payload-inventory.json",
                       "artifacts/firewall-validation/candidate-gate.json",
@@ -627,8 +588,6 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/firewall-validation/frozen-handwriting-image.json",
                       "artifacts/firewall-validation/handwriting-firewall-gate.json",
                       "artifacts/firewall-validation/frozen-runtime-stress.json",
-                      "artifacts/firewall-validation/frozen-comparison.json",
-                      "artifacts/firewall-validation/frozen-shared-search.json",
                       "artifacts/firewall-validation/frozen-gui.json",
                       "artifacts/portable-validation/isolated-profile-gate.json",
                       "artifacts/portable-validation/isolated-selftest.json",
@@ -636,15 +595,12 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
                       "artifacts/portable-validation/isolated-handwriting.json",
                       "artifacts/portable-validation/isolated-handwriting-image.json",
                       "artifacts/portable-validation/isolated-documents.json",
-                      "artifacts/portable-validation/isolated-comparison.json",
-                      "artifacts/portable-validation/isolated-shared-search.json",
                       "artifacts/portable-validation/isolated-gui.json"]
     snapshot_names = ["artifacts/verified-bundle.json", *external_names,
                       "artifacts/candidate-validation/frozen-selftest.json",
                       "artifacts/candidate-validation/frozen-app-smoke.json",
                       "artifacts/candidate-validation/frozen-handwriting.json",
                       "artifacts/candidate-validation/frozen-handwriting-image.json",
-                      "artifacts/candidate-validation/frozen-shared-search.json",
                       "artifacts/candidate-validation/frozen-gui.json",
                       "artifacts/" + ZIP_NAME + ".sha256"]
     snapshots = {}
@@ -721,24 +677,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
     if 'dependency_inventory' in manifest:
         require(manifest['dependency_inventory'].get('sha256') == inventory_hash,
                 'Security audit inventory differs from candidate')
-    for name, frozen in (
-            ('source-comparison.json', False),
-            ('artifacts/firewall-validation/frozen-comparison.json', True)):
-        comparison = json.loads(snapshots[name])
-        _check_comparison_probe(comparison, manifest, frozen)
-        require(comparison.get('source_commit') == context.source_commit,
-                'Comparison probe source differs from candidate')
     check_portable_profile(snapshots, manifest)
-    from scripts.verify_candidate_bundle import check_shared_search_probe
-    for name, frozen in (('source-shared-search.json', False),
-                         ('artifacts/firewall-validation/frozen-shared-search.json', True)):
-        shared = json.loads(snapshots[name])
-        try:
-            check_shared_search_probe(shared, manifest, frozen)
-        except ValueError as exc:
-            raise PublicationError('Invalid shared-search lifecycle evidence') from exc
-        require(shared.get('source_commit') == context.source_commit,
-                'Shared-search probe source differs from candidate')
     from scripts.verify_candidate_bundle import check_gui_probe
     for name, frozen in (('source-gui.json', False),
                          ('artifacts/firewall-validation/frozen-gui.json', True)):
@@ -784,7 +723,7 @@ def prepare_release(artifact_root: Path, verified_bundle: Path, output_dir: Path
         for name in ["BUILD_MANIFEST.json", "SOURCE_MANIFEST.json",
                      "candidate-validation/frozen-selftest.json", "candidate-validation/frozen-app-smoke.json",
                      "candidate-validation/frozen-handwriting.json", "candidate-validation/frozen-handwriting-image.json",
-                     "candidate-validation/frozen-shared-search.json", "candidate-validation/frozen-gui.json"]:
+                     "candidate-validation/frozen-gui.json"]:
             require(archive.getinfo(prefix + name).file_size <= MAX_JSON_BYTES,
                     "Oversized embedded validation metadata")
             metadata_files[name] = archive.read(prefix + name)

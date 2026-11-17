@@ -9,11 +9,11 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 GUI_CHECK_NAMES = (
-    'launcher_actions_and_capture_cancel', 'settings_cancel_and_apply',
+    'launcher_actions_and_capture_cancel', 'settings_cancel_and_apply', 'launcher_copy_controls',
     'history_search_tags_and_pin', 'editor_save_and_history_refresh',
     'ocr_selection_copy_explicit', 'document_import_template_zoom_clear',
-    'handwriting_stroke_candidate_copy', 'paired_comparison_controls',
-    'shared_search_controls', 'region_preview_adjustment', 'tray_pause_and_quit_route',
+    'handwriting_stroke_candidate_copy', 'removed_comparison_tools_absent',
+    'tray_pause_and_quit_route',
     'minimized_windows_restore', 'capture_cancel_restart_ignores_old_gesture',
     'shutdown_rejects_late_tool_entries',
     'windows_and_workers_closed', 'temporary_files_cleaned',
@@ -23,6 +23,59 @@ GUI_CHECK_NAMES = (
 def _require(condition):
     if not condition:
         raise ValueError('GUI control evidence did not satisfy its invariant')
+
+
+def _removed_tools_absent(app, shell, tray, pipeline):
+    """Reject retired entry points, code and objects in source and frozen builds."""
+    import importlib.util
+    import io
+    import threading
+    from contextlib import redirect_stderr
+    from PySide6.QtWidgets import QPushButton
+    from .main import _build_parser
+
+    retired_modules = (
+        'src.comparison', 'src.comparison_probe', 'src.shared_search_probe',
+        'src.shared_search_windows_probe', 'src.ui.comparison_window',
+        'src.ui.shared_search_window', 'src.ui.search_highlight_overlay',
+        'src.ui.region_preview_dialog',
+    )
+    for name in retired_modules:
+        try:
+            spec = importlib.util.find_spec(name)
+        except ModuleNotFoundError:
+            spec = None
+        _require(spec is None)
+    _require(not any(name == retired or name.startswith(retired + '.')
+                     for name in sys.modules for retired in retired_modules))
+    for owner in (shell, tray, pipeline):
+        _require(not any('comparison' in name or 'shared_search' in name
+                         for name in dir(owner)))
+    labels = [button.text() for button in shell.findChildren(QPushButton)]
+
+    def menu_labels(menu):
+        for action in menu.actions():
+            yield action.text()
+            if action.menu() is not None:
+                yield from menu_labels(action.menu())
+
+    labels.extend(menu_labels(tray._tray.contextMenu()))
+    _require(not any(any(marker in label.replace(' ', '').upper()
+                         for marker in ('A/B', 'A／B', 'AB核對', '整列搜尋'))
+                     for label in labels))
+    for instance in (*app.topLevelWidgets(), *threading.enumerate()):
+        module = type(instance).__module__
+        _require(not any(module == name or module.startswith(name + '.')
+                         for name in retired_modules))
+    for flag in ('--self-test-comparison', '--self-test-shared-search'):
+        with redirect_stderr(io.StringIO()):
+            try:
+                _build_parser().parse_args([flag, 'retired-probe.json'])
+            except SystemExit as exc:
+                _require(exc.code == 2)
+            else:
+                _require(False)
+    return True
 
 
 def _require_owned_fixture(path, owned_root):
@@ -170,7 +223,6 @@ def _exercise_gui(app, directory, checks):
         Signal,
     )
     from PySide6.QtWidgets import QDialogButtonBox, QFileDialog, QMessageBox
-    from PySide6.QtGui import QColor, QImage, QPixmap
 
     from .clipboard.monitoring import ClipboardMonitoringController
     from .clipboard.writer import copy_text
@@ -315,7 +367,8 @@ def _exercise_gui(app, directory, checks):
             cleanup_expected = "甲[C]乙[C]丙'Q'丁'Q'戊 / 己···庚"
 
             def choose_cleanup(dialog, action, *, enabled=True):
-                dialog._tabs.setCurrentIndex(3)
+                if hasattr(dialog, '_tabs'):
+                    dialog._tabs.setCurrentIndex(3)
                 for suffix, literal in cleanup_literals.items():
                     key = 'copy_remove_' + suffix
                     checkbox = dialog._copy_cleanup_checks[key]
@@ -373,6 +426,69 @@ def _exercise_gui(app, directory, checks):
             checks['settings_cancel_and_apply'] = (saved_settings == [True] * 3 and autostart_calls == [True, False]
                 and ConfigManager().get('clipboard', 'ocr_copy_mode') == 'select'
                 and maintenance.days == 0 and not watcher.active)
+
+            # The launcher changes only copy preferences. It must neither open
+            # the full settings dialog nor restart unrelated background work.
+            import json
+            from .ui.copy_preferences import CopyCleanupDialog
+            before_quick = json.loads(Path(cfg._settings_path).read_text(encoding='utf-8'))
+            quick_writes, original_save = [], cfg.save
+
+            def save_quick():
+                quick_writes.append(True)
+                return original_save()
+
+            with _replace(cfg, 'save', save_quick):
+                for expected in ('all', 'select'):
+                    shell._copy_mode_buttons[expected].click()
+                    _require(ConfigManager().get('clipboard', 'ocr_copy_mode') == expected
+                             and shell._copy_mode_buttons[expected].isChecked())
+                    writes = len(quick_writes)
+                    shell._copy_mode_buttons[expected].click()
+                    _require(len(quick_writes) == writes and app.activeModalWidget() is None)
+                _require(len(quick_writes) == 2)
+
+            def open_quick_cleanup():
+                shell._btn_copy_cleanup.click()
+                popup = shell._copy_cleanup_popup
+                _require(isinstance(popup, CopyCleanupDialog) and popup.isVisible())
+                shell._btn_copy_cleanup.click()
+                _require(shell._copy_cleanup_popup is popup)
+                return popup
+
+            quick_bytes, quick_clipboard = Path(cfg._settings_path).read_bytes(), app.clipboard().text()
+            popup = open_quick_cleanup()
+            choose_cleanup(popup, 'replace')
+            popup.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel).click()
+            popup._save()  # A queued Apply after cancellation must not revive the draft.
+            _require(shell._copy_cleanup_popup is None and Path(cfg._settings_path).read_bytes() == quick_bytes
+                     and app.clipboard().text() == quick_clipboard)
+
+            popup = open_quick_cleanup()
+            choose_cleanup(popup, 'replace')
+            popup._apply_button.click()
+            _require(shell._copy_cleanup_popup is None)
+            persisted = ConfigManager()
+            _require(all(persisted.get('clipboard', 'copy_remove_' + suffix) is True
+                         and persisted.get('clipboard', 'copy_cleanup_mode_' + suffix) == 'replace'
+                         and persisted.get('clipboard', 'copy_replace_' + suffix) == literal
+                         for suffix, literal in cleanup_literals.items()))
+            copy_text(cleanup_sample, cfg)
+            _require(app.clipboard().text() == cleanup_expected)
+            popup = open_quick_cleanup()
+            choose_cleanup(popup, 'remove')
+            popup._apply_button.click()
+            copy_text(cleanup_sample, cfg)
+            _require(app.clipboard().text() == '甲乙丙丁戊己庚')
+            popup = open_quick_cleanup()
+            choose_cleanup(popup, 'remove', enabled=False)
+            popup._apply_button.click()
+            copy_text(cleanup_sample, cfg)
+            after_quick = json.loads(Path(cfg._settings_path).read_text(encoding='utf-8'))
+            checks['launcher_copy_controls'] = (
+                after_quick == before_quick and app.clipboard().text() == cleanup_sample
+                and shell._copy_cleanup_popup is None and saved_settings == [True] * 3
+                and autostart_calls == [True, False] and maintenance.days == 0 and not watcher.active)
 
             for value in ('GUI searchable alpha', 'GUI secondary beta'):
                 pipeline.save_requested.emit(ItemCreateDTO(item_type='text', source_mode='clipboard_text', text_content=value))
@@ -511,142 +627,7 @@ def _exercise_gui(app, directory, checks):
             checks['handwriting_stroke_candidate_copy'] = not ink.pad.buffer.strokes and not ink._buttons
             ink.close()
 
-            shell._btn_comparison.click()
-            comparison, comparison_controller = shell._comparison, shell._comparison_controller
-            comparison._add_group_button.click()
-            comparison._mode.setCurrentIndex(comparison._mode.findData('exact'))
-            comparison._mini_button.click()
-            comparison._pin_button.click()
-            _require(len(comparison_controller.groups) == 2 and comparison._mini_mode
-                     and comparison_controller.mode == 'exact'
-                     and not comparison.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
-            comparison._mini_button.click()
-            comparison._setup_buttons['A'].click()
-            _require(shell._comparison_overlay.isVisible())
-            pipeline.start_region_capture('region_ocr')
-            _require(overlay.isVisible() and not shell._comparison_overlay.isVisible()
-                     and not comparison._selection_active and not comparison.isVisible())
-            shell.open_comparison()
-            _require(not overlay.isVisible())
-            comparison._setup_buttons['A'].click()
-            _escape(shell._comparison_overlay)
-            _require(not comparison._selection_active and not comparison_controller.regions)
-            comparison._close_button.click()
-            checks['paired_comparison_controls'] = not comparison.isVisible() and not comparison_controller.running
-
-            shell._btn_shared_search.click()
-            search, search_controller = shell._shared_search, shell._shared_search_controller
-            search._source_mode.setCurrentIndex(search._source_mode.findData('fields'))
-            search._add.click()
-            search._row_pitch.setValue(24)
-            search._mode.setCurrentIndex(search._mode.findData('exact'))
-            search._pin.setChecked(False)
-            search._pin.setChecked(True)
-            search._background_transparency.setValue(40)
-            _require(search.highlight_overlay.background_opacity == 60
-                     and search.highlight_overlay.windowOpacity() == 1.)
-            search._background_transparency.setValue(100)
-            _require(search.highlight_overlay.background_opacity == 0)
-            # Exact mode keeps literal date comparison and disables the option;
-            # return to normalized mode to exercise the real settings route.
-            search._mode.setCurrentIndex(search._mode.findData('normalized'))
-            search._date_equivalence.setChecked(False)
-            _require(not search_controller.date_equivalence)
-            search._date_equivalence.setChecked(True)
-            _require(search_controller.date_equivalence)
-            search._mode.setCurrentIndex(search._mode.findData('exact'))
-            search._manual_button.click()
-            _require(not search_controller.running and not search.manual_button.isVisible())
-            search._select_b.click()
-            _require(shell._shared_search_selector.isVisible())
-            pipeline.start_region_capture('region_image')
-            _require(overlay.isVisible() and not shell._shared_search_selector.isVisible()
-                     and not search._selection_active and not search.isVisible())
-            shell.open_shared_search()
-            _require(not overlay.isVisible())
-            search._select_b.click()
-            _escape(shell._shared_search_selector)
-            _require(len(search_controller.fields) == 2 and search_controller.row_pitch == 24
-                     and search_controller.mode == 'exact' and search._pin.isChecked()
-                     and not search_controller.b_region)
-            search.close()
-            checks['shared_search_controls'] = (not search.isVisible() and not search_controller.running
-                                               and not search.manual_button.isVisible())
-
-            # The actual launcher route opens a real modal preview from one
-            # explicit synthetic frame. Never read this runner's desktop.
-            from .ui.region_preview_dialog import RegionPreviewDialog
-            screen_size, scale = screen.geometry().size(), screen.devicePixelRatio()
-            picture = QImage(round(screen_size.width() * scale), round(screen_size.height() * scale),
-                             QImage.Format.Format_RGB32)
-            picture.fill(QColor('#e8f0fc'))
-            preview_captures, preview_dialogs = [], []
-
-            def preview_frame(window_id):
-                _require(window_id == 0 and search._selection_active and not search_controller.running)
-                _require(not search.highlight_overlay.isVisible() and not search.resume_button.isVisible()
-                         and not search.manual_button.isVisible())
-                preview_captures.append(True)
-                return QPixmap.fromImage(picture)
-
-            def open_preview(button):
-                button.click()
-                _until(lambda: not search._selection_active)
-
-            def adjust_preview(dialog):
-                _require(isinstance(dialog, RegionPreviewDialog))
-                preview_dialogs.append(dialog)
-                _require(dialog._image.pixelColor(0, 0) == QColor('#e8f0fc'))
-                _button(dialog, '放大').click()
-                _button(dialog, '縮小').click()
-                _button(dialog, '顯示全畫面').click()
-                _button(dialog, '→').click()
-                _require(dialog.selected_region == (201, 60, 100, 50, 1))
-                view = dialog._view
-                corner = view.mapFromScene(view.rectangle.bottomRight())
-                finish = corner + type(corner)(12, 8)
-                for kind, point, buttons in (
-                    (QEvent.Type.MouseButtonPress, corner, Qt.MouseButton.LeftButton),
-                    (QEvent.Type.MouseMove, finish, Qt.MouseButton.LeftButton),
-                    (QEvent.Type.MouseButtonRelease, finish, Qt.MouseButton.NoButton),
-                ):
-                    _pointer(view.viewport(), kind, point, buttons)
-                _require(dialog.selected_region[:2] == (201, 60)
-                         and dialog.selected_region[2] > 100 and dialog.selected_region[3] > 50)
-                _button(dialog, '套用位置').click()
-
-            def cancel_preview(dialog):
-                _require(isinstance(dialog, RegionPreviewDialog))
-                preview_dialogs.append(dialog)
-                _button(dialog, '↓').click()
-                _button(dialog, '取消').click()
-
-            def close_preview(dialog):
-                _require(isinstance(dialog, RegionPreviewDialog))
-                preview_dialogs.append(dialog)
-                _button(dialog, '→').click()
-                search.close()
-
-            search.open()
-            search._source_mode.setCurrentIndex(search._source_mode.findData('rows'))
-            _require(search.set_region('SOURCE', (20, 20, 100, 60, 1))
-                     and search.set_region('B', (200, 60, 100, 50, 1)))
-            with _replace(screen, 'grabWindow', preview_frame):
-                _modal(lambda: open_preview(search._preview_b), [adjust_preview])
-                accepted_region = search_controller.b_region
-                _require(accepted_region[:2] == (201, 60) and accepted_region[2] > 100)
-                _modal(lambda: open_preview(search._preview_b), [cancel_preview])
-                _require(search_controller.b_region == accepted_region)
-                source_region = search_controller.source_region
-                _modal(lambda: open_preview(search._preview_source), [close_preview])
-                _require(search_controller.source_region == source_region and not search.isVisible())
-            checks['region_preview_adjustment'] = (
-                len(preview_captures) == len(preview_dialogs) == 3
-                and all(dialog._image.isNull() and not dialog._view.scene().items()
-                        for dialog in preview_dialogs)
-                and shell._shared_search_preview is None and not search._selection_active
-                and not search_controller.running and not search_controller._poll.isActive())
-            picture = QImage()
+            checks['removed_comparison_tools_absent'] = _removed_tools_absent(app, shell, tray, pipeline)
 
             shell.show()
             shell._btn_pause.click()
@@ -659,8 +640,9 @@ def _exercise_gui(app, directory, checks):
             _until(lambda: pipeline.closed)
             checks['tray_pause_and_quit_route'] = pipeline.closing and pipeline.closed and watcher._stopped
             _require(not overlay.isVisible())
-            tool_names = ('_console', '_handwriting', '_documents', '_comparison', '_shared_search')
+            tool_names = ('_console', '_handwriting', '_documents', '_copy_cleanup_popup')
             owned_tools = tuple(getattr(shell, name) for name in tool_names)
+            terminal_settings = Path(cfg._settings_path).read_bytes()
             unexpected_modals = []
             modal_guard = QTimer()
             modal_guard.setInterval(5)
@@ -678,20 +660,22 @@ def _exercise_gui(app, directory, checks):
                     if not action.isSeparator():
                         action.trigger()
                 for entry in (shell.toggle_visibility, shell.open_console, shell.open_handwriting,
-                              shell.open_document_template, shell.open_comparison, shell.open_shared_search,
-                              shell.open_settings, shell.trigger_capture_ocr, shell.trigger_capture_image):
+                              shell.open_document_template,
+                              shell.open_settings, shell._open_copy_cleanup,
+                              shell.trigger_capture_ocr, shell.trigger_capture_image):
                     entry()
+                shell._set_quick_copy_mode('all')
                 pipeline.start_region_capture('region_image')
                 app.processEvents()
             finally:
                 modal_guard.stop()
             checks['shutdown_rejects_late_tool_entries'] = (
                 not unexpected_modals and tuple(getattr(shell, name) for name in tool_names) == owned_tools
+                and Path(cfg._settings_path).read_bytes() == terminal_settings
                 and not selected and not watcher.active and maintenance.is_stopped
                 and not any(window.isVisible() for window in app.topLevelWidgets()
                             if id(window) not in before_windows)
-                and shell.handwriting_is_stopped() and shell.documents_is_stopped()
-                and shell.comparison_is_stopped() and shell.shared_search_is_stopped())
+                and shell.handwriting_is_stopped() and shell.documents_is_stopped())
             _require(not forbidden_captures)
         finally:
             if pipeline is not None:
@@ -719,7 +703,6 @@ def _exercise_gui(app, directory, checks):
                 pipeline is not None and pipeline.closed and database._closed
                 and not thread.isRunning() and not ocr.isRunning() and not capture.isRunning()
                 and shell.handwriting_is_stopped() and shell.documents_is_stopped()
-                and shell.comparison_is_stopped() and shell.shared_search_is_stopped()
                 and not any(window.isVisible() for window in owned_windows))
             for window in owned_windows:
                 window.deleteLater()

@@ -156,9 +156,32 @@ class ConfigManager:
     def save(self):
         os.makedirs(self._config_dir, exist_ok=True)
         tmp_path = self._settings_path + '.tmp'
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(self._data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, self._settings_path)
+        try:
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump(self._data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self._settings_path)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.debug('無法清除未完成的設定暫存檔', exc_info=True)
+
+    def update_section(self, section: str, values: dict):
+        """Persist related preferences together, retaining live state on failure."""
+        current = self._data.get(section, {})
+        if not isinstance(current, dict):
+            raise ValueError('設定區段必須是物件')
+        updated = dict(current)
+        updated.update(values)
+        previous = self._data
+        self._data = dict(previous, **{section: updated})
+        try:
+            self.save()
+        except Exception:
+            self._data = previous
+            raise
 
     def get(self, *keys, default=None) -> Any:
         d = self._data

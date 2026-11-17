@@ -8,7 +8,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-. (Join-Path $PSScriptRoot 'assert_shared_search_probe.ps1')
 . (Join-Path $PSScriptRoot 'assert_gui_probe.ps1')
 # Both offline profiles must agree with the build manifest, including decoder identity.
 $requiredProfiles = @('v6-small', 'v6-medium')
@@ -191,8 +190,14 @@ try {
             if ($result.phase_a -ne $true -or $result.engine_ready -ne $true -or $result.shutdown_clean -ne $true) {
                 throw 'Application lifecycle incomplete'
             }
-            foreach ($key in @('capture', 'ocr', 'database', 'hotkeys', 'history_maintenance', 'shared_search')) {
-                if ($result.threads_stopped.$key -ne $true) { throw "Thread still running: $key" }
+            $threadNames = @('capture', 'ocr', 'database', 'hotkeys', 'history_maintenance')
+            if ($result.threads_stopped -isnot [System.Management.Automation.PSCustomObject] -or
+                (@($result.threads_stopped.PSObject.Properties.Name | Sort-Object) -join '|') -cne
+                (@($threadNames | Sort-Object) -join '|')) { throw 'Unexpected lifecycle worker set' }
+            foreach ($key in $threadNames) {
+                if ($result.threads_stopped.$key -isnot [bool] -or $result.threads_stopped.$key -ne $true) {
+                    throw "Thread still running: $key"
+                }
             }
         }
         $summary.probes[$probe.name] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $report -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -225,22 +230,6 @@ try {
     }
     if (@($image.candidates) -cnotcontains '一') { throw 'Image single-character control missing' }
     $summary.probes[$imageName] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant() }
-    $sharedName = 'frozen-shared-search.json'
-    $sharedPath = Join-Path $reports.FullName $sharedName
-    if (Test-Path -LiteralPath $sharedPath) { Remove-Item -LiteralPath $sharedPath }
-    $sharedProcess = Start-Process -FilePath $exe -ArgumentList @('--self-test-shared-search', "`"$sharedPath`"") -PassThru
-    try {
-        if (-not $sharedProcess.WaitForExit($TimeoutSeconds * 1000)) {
-            $sharedProcess.Kill($true)
-            throw 'Shared-search probe timed out'
-        }
-        if ($sharedProcess.ExitCode -ne 0) { throw 'Shared-search probe failed' }
-        $shared = Get-Content -LiteralPath $sharedPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        Assert-SharedSearchProbe $shared $manifest.version $hash
-        $summary.probes[$sharedName] = @{ status = 'PASSED'; sha256 = (Get-FileHash -LiteralPath $sharedPath -Algorithm SHA256).Hash.ToLowerInvariant() }
-    } finally {
-        $sharedProcess.Dispose()
-    }
     $guiName = 'frozen-gui.json'
     $guiPath = Join-Path $reports.FullName $guiName
     if (Test-Path -LiteralPath $guiPath) { Remove-Item -LiteralPath $guiPath }

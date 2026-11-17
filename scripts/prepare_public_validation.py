@@ -17,42 +17,36 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.17'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.18'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
     'install', 'dependency_check', 'installed_inventory', 'models', 'handwriting_model',
     'helper_build', 'helper_probe', 'security_environment', 'security_tool', 'security_audit', 'tests', 'source_selftest', 'source_app',
-    'source_handwriting', 'source_image', 'source_documents', 'source_comparison', 'source_shared_search', 'source_gui', 'network_audit', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify')
+    'source_handwriting', 'source_image', 'source_documents', 'source_gui', 'network_audit', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify')
 WINDOWS_ONLY = {'runtime_preparation', 'build', 'native_audit', 'firewall', 'portable_profile', 'bundle_verify'}
 LINUX_ONLY = {'linux_dependencies', 'network_audit'}
 OUTCOMES = {'success', 'failure', 'cancelled', 'skipped'}
-BOOLS = frozenset(('passed frozen clean_machine_verified inference_completed worker_pid_verified '
-    'job_assigned cancelled_and_reaped children_reaped queue_latest_only clipboard_roundtrip '
-    'history_maintenance shared_search download_verified extraction_verified runtime_version_verified '
-    'openssl_verified hashlib_verified ensurepip_completed environment_exported '
-    'self_mime_preserved helper_stopped firewall_gate_acknowledged helper_outbound_blocked '
-    'executable_outbound_blocked firewall_service_running firewall_profiles_enabled started '
-    'timed_out output_limit_exceeded direct_child_reaped owned_tree_exited '
-    'implicit_pytest_addopts_cleared qt models ocr database dirty verified phase_a engine_ready shutdown_clean capture hotkeys '
-    'profile_empty copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
+BOOLS = frozenset((
+    'passed frozen clean_machine_verified inference_completed worker_pid_verified job_assigned '
+    'cancelled_and_reaped children_reaped queue_latest_only clipboard_roundtrip history_maintenance '
+    'download_verified extraction_verified runtime_version_verified openssl_verified '
+    'hashlib_verified ensurepip_completed environment_exported self_mime_preserved helper_stopped '
+    'firewall_gate_acknowledged helper_outbound_blocked executable_outbound_blocked '
+    'firewall_service_running firewall_profiles_enabled started timed_out output_limit_exceeded '
+    'direct_child_reaped owned_tree_exited implicit_pytest_addopts_cleared qt models ocr database '
+    'dirty verified phase_a engine_ready shutdown_clean capture hotkeys profile_empty '
+    'copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
     'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
-    'fixed_regions_reused same_snapshot_pairs normalized_match mismatch_detected uncertain_not_match '
-    'clipboard_unchanged cancelled_results_ignored workers_stopped '
-    'unchanged_frames_skipped changed_frames_resumed close_stops_polling pin_toggle_available '
-    'mini_results_visible mini_results_live_updated all_groups_visible all_groups_live_updated '
-    'batch_groups_isolated batch_serialized batch_unchanged_skipped batch_cancel_stops_all '
-    'shared_b_reused multiple_a_rows one_b_match_per_a strict_numbers ambiguous_requires_selection '
-    'manual_selection_applied manual_row_shift blue_calibration blue_follow_stable same_y_scroll_refreshed '
-    'stale_rows_discarded capture_overlay_hidden clipboard_history_untouched overlay_capture_verified '
-    'invoice_match_annotation annotation_pin_persistence numeric_similarity_review roc_gregorian_date_equivalence '
-    'manual_refresh_rechecks_unchanged_invoice annotation_background_opacity source_region_rows_extracted row_values_exclusive_invoice_positions near_candidates_visible_for_review source_row_arrow_navigation changed_invoice_refreshes_matches native_archive_coverage_verified native_security_policy_passed '
-    'launcher_actions_and_capture_cancel settings_cancel_and_apply history_search_tags_and_pin '
+    'native_archive_coverage_verified native_security_policy_passed '
+    'launcher_actions_and_capture_cancel settings_cancel_and_apply launcher_copy_controls history_search_tags_and_pin '
     'editor_save_and_history_refresh ocr_selection_copy_explicit document_import_template_zoom_clear '
-    'handwriting_stroke_candidate_copy paired_comparison_controls shared_search_controls region_preview_adjustment '
-    'tray_pause_and_quit_route minimized_windows_restore capture_cancel_restart_ignores_old_gesture '
-    'shutdown_rejects_late_tool_entries windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
-    'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published').split())
+    'handwriting_stroke_candidate_copy tray_pause_and_quit_route minimized_windows_restore '
+    'capture_cancel_restart_ignores_old_gesture shutdown_rejects_late_tool_entries '
+    'windows_and_workers_closed antivirus_scan_completed real_time_protection_enabled '
+    'temporary_files_cleaned ocr_accuracy_tested model_inference_tested raw_traces_published '
+    'removed_comparison_tools_absent '
+).split())
 NUMBERS = frozenset(('schema helper_protocol iterations_per_profile iterations_completed '
     'exit_code generation kind status expected_status training_rank rank elapsed_seconds '
     'wall_seconds timeout_seconds memory_limit_mib peak_sampled_direct_child_rss_kib '
@@ -69,13 +63,13 @@ ENUMS = {
     'platform': {'linux', 'win32'}, 'qt_platform': {'offscreen', 'windows'},
     'probe': {'ocr_database', 'application_lifecycle', 'handwriting_lifecycle',
               'handwriting_image_lifecycle', 'handwriting_native_helper', 'model_runtime_stress', 'isolated_profile',
-              'document_template_lifecycle', 'comparison_lifecycle', 'shared_search_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'windows_runtime_preparation', 'dependency_vulnerabilities', 'runtime_network'},
+              'document_template_lifecycle', 'gui_feature_lifecycle', 'native_payload_audit', 'windows_runtime_preparation', 'dependency_vulnerabilities', 'runtime_network'},
     'scope': {'PYTHON_INSTALLED_DISTRIBUTIONS', 'SYNTHETIC_APP_PROCESS_TREE_SYSCALLS'},
     'python_version': {'3.12.16'}, 'openssl_version': {'3.5.9'},
     'provider': {'astral-sh/python-build-standalone'},
     'scanner': {'pip-audit', 'Microsoft Defender Antivirus'},
     'scanner_version': {'2.10.1'},
-    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_COMPARISON_PAIRS', 'SYNTHETIC_SHARED_SEARCH', 'SYNTHETIC_GUI_CONTROLS'},
+    'fixture_kind': {'SYNTHETIC_SOLID_RECTANGLES', 'SYNTHETIC_GUI_CONTROLS'},
     'phase': {'completed', 'waiting_firewall', 'starting', 'shutdown'},
     'status': {'PASSED', 'FAILED', 'NOT_RUN', 'RECORDED_NOT_A_TRUSTED_LOCK'},
     'source_probes': {'PASSED', 'FAILED', 'NOT_RUN'},
@@ -93,8 +87,8 @@ CONTAINERS = {'checks', 'phases', 'collection', 'execution', 'model_profiles', '
     'v6-small', 'v6-medium', 'source_manifest', 'build_manifest', 'handwriting', 'helper',
     'source', 'model_identity', 'identity', 'recognition', 'det', 'rec', 'cls', 'frozen_runtime_stress', 'handwriting_probes', 'frozen_probes',
     'frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json',
-    'frozen-handwriting-image.json', 'frozen-shared-search.json', 'frozen-gui.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json', 'isolated-gui.json', 'probes', 'candidate_probes',
+    'frozen-handwriting-image.json', 'frozen-gui.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
+    'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-gui.json', 'probes', 'candidate_probes',
     'threads_stopped', 'dependency_inventory', 'native_payload_audit', 'job_before_cleanup', 'job_after_cleanup'}
 STATUSES = {'PASSED', 'FAILED', 'NOT_RUN'}
 
@@ -302,9 +296,7 @@ def observed_result(value):
             for child in item: visit(child)
     visit(value)
     if any(r.get('invalid_allowlisted_fields') for r in records): return 'INVALID_FIELDS'
-    failed = any(r.get('passed') is False or (r.get('probe') == 'shared_search_lifecycle'
-        and r.get('platform') == 'win32' and r.get('overlay_capture_verified') is False)
-        or (r.get('probe') == 'native_payload_audit' and (r.get('antivirus_scan_completed') is not True or r.get('native_security_policy_passed') is not True))
+    failed = any(r.get('passed') is False or (r.get('probe') == 'native_payload_audit' and (r.get('antivirus_scan_completed') is not True or r.get('native_security_policy_passed') is not True))
         or (r.get('probe') == 'windows_runtime_preparation' and any(r.get(key) is not True for key in
             ('download_verified','extraction_verified','runtime_version_verified','openssl_verified',
              'hashlib_verified','ensurepip_completed','environment_exported')))
@@ -314,19 +306,9 @@ def observed_result(value):
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
             ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
              'page_override','template_merge','source_unchanged','temporary_files_cleaned',
-             'fixed_regions_reused','same_snapshot_pairs','normalized_match','mismatch_detected',
-             'uncertain_not_match','clipboard_unchanged','cancelled_results_ignored','workers_stopped',
-             'unchanged_frames_skipped','changed_frames_resumed','close_stops_polling','pin_toggle_available',
-             'mini_results_visible','mini_results_live_updated','all_groups_visible','all_groups_live_updated',
-             'batch_groups_isolated','batch_serialized','batch_unchanged_skipped','batch_cancel_stops_all',
-             'shared_b_reused','multiple_a_rows','one_b_match_per_a','strict_numbers','ambiguous_requires_selection',
-             'manual_selection_applied','manual_row_shift','blue_calibration','blue_follow_stable','same_y_scroll_refreshed',
-             'stale_rows_discarded','capture_overlay_hidden','clipboard_history_untouched','invoice_match_annotation','annotation_pin_persistence',
-             'numeric_similarity_review','roc_gregorian_date_equivalence','manual_refresh_rechecks_unchanged_invoice','annotation_background_opacity',
-             'source_region_rows_extracted','row_values_exclusive_invoice_positions','near_candidates_visible_for_review','source_row_arrow_navigation','changed_invoice_refreshes_matches',
-             'launcher_actions_and_capture_cancel','settings_cancel_and_apply','history_search_tags_and_pin',
+             'launcher_actions_and_capture_cancel','settings_cancel_and_apply','launcher_copy_controls','history_search_tags_and_pin',
              'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',
-             'handwriting_stroke_candidate_copy','paired_comparison_controls','shared_search_controls','region_preview_adjustment',
+             'handwriting_stroke_candidate_copy','removed_comparison_tools_absent',
              'tray_pause_and_quit_route','minimized_windows_restore','capture_cancel_restart_ignores_old_gesture',
              'shutdown_rejects_late_tool_entries','windows_and_workers_closed')))
         for r in records)
@@ -341,10 +323,7 @@ def sources():
         ('source-selftest.json', 'json', False), ('source-app-smoke.json', 'json', False),
         ('source-handwriting.json', 'json', False), ('source-handwriting-image.json', 'json', False),
         ('artifacts/source-documents.json', 'json', False),
-        ('source-comparison.json', 'json', False),
-        ('source-shared-search.json', 'json', False),
         ('source-gui.json', 'json', False),
-        ('artifacts/firewall-validation/frozen-comparison.json', 'json', True),
         ('artifacts/security-audit.json', 'json', False),
         ('artifacts/windows-runtime-inventory.json', 'json', True),
         ('artifacts/native-payload-audit.json', 'json', True),
@@ -360,12 +339,12 @@ def sources():
         ('artifacts/handwriting-native-probe.json', 'json', False),
         ('artifacts/verified-bundle.json', 'json', True)]
     for directory in ('candidate-validation', 'firewall-validation'):
-        for name in ('frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-shared-search.json', 'frozen-gui.json'):
+        for name in ('frozen-selftest.json', 'frozen-app-smoke.json', 'frozen-handwriting.json', 'frozen-handwriting-image.json', 'frozen-gui.json'):
             result.append((f'artifacts/{directory}/{name}', 'json', True))
     for name in ('candidate-gate.json', 'handwriting-firewall-gate.json', 'frozen-runtime-stress.json'):
         result.append((f'artifacts/firewall-validation/{name}', 'json', True))
     for name in ('isolated-profile-gate.json', 'isolated-selftest.json', 'isolated-app-smoke.json',
-                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-comparison.json', 'isolated-shared-search.json', 'isolated-gui.json'):
+                 'isolated-handwriting.json', 'isolated-handwriting-image.json', 'isolated-documents.json', 'isolated-gui.json'):
         result.append((f'artifacts/portable-validation/{name}', 'json', True))
     result.extend([
         (f'artifacts/release-v{VERSION}/BUILD_MANIFEST.json', 'json', True),
@@ -382,8 +361,6 @@ def source_step(relative):
         'source-app-smoke.json':'source_app', 'source-handwriting.json':'source_handwriting',
         'source-handwriting-image.json':'source_image',
         'artifacts/source-documents.json':'source_documents',
-        'source-comparison.json':'source_comparison',
-        'source-shared-search.json':'source_shared_search',
         'source-gui.json':'source_gui',
         'artifacts/security-audit.json':'security_audit',
         'artifacts/windows-runtime-inventory.json':'runtime_preparation',

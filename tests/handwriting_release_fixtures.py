@@ -56,19 +56,6 @@ def document_probe(version, executable_hash, frozen=True):
                     temporary_files_cleaned=True))
 
 
-def comparison_probe(version, executable_hash, frozen=True):
-    return dict(schema=1, probe='comparison_lifecycle', version=version,
-        platform='win32', qt_platform='windows', frozen=frozen, passed=True,
-        executable_sha256=executable_hash if frozen else None, clean_machine_verified=False,
-        fixture_kind='SYNTHETIC_COMPARISON_PAIRS', ocr_accuracy_tested=False,
-        model_inference_tested=False,
-        checks=dict.fromkeys(('fixed_regions_reused', 'same_snapshot_pairs', 'normalized_match',
-            'mismatch_detected', 'uncertain_not_match', 'clipboard_unchanged',
-            'cancelled_results_ignored', 'workers_stopped', 'unchanged_frames_skipped',
-            'changed_frames_resumed', 'close_stops_polling', 'pin_toggle_available',
-            'mini_results_visible', 'mini_results_live_updated',
-                'all_groups_visible', 'all_groups_live_updated',
-            'batch_groups_isolated', 'batch_serialized', 'batch_unchanged_skipped', 'batch_cancel_stops_all'), True))
 
 
 def extra_evidence(root, manifest):
@@ -91,23 +78,6 @@ def extra_evidence(root, manifest):
         dependency_inventory_sha256=hashlib.sha256(inventory).hexdigest())
     (root / 'artifacts/security-audit.json').write_text(json.dumps(audit), encoding='utf-8')
     firewall = root / 'artifacts/firewall-validation'
-    for destination, frozen in ((root / 'source-comparison.json', False),
-                                (firewall / 'frozen-comparison.json', True)):
-        comparison = comparison_probe(manifest['version'], manifest['executable_sha256'], frozen)
-        comparison['source_commit'] = manifest['source']['commit']
-        destination.write_text(json.dumps(comparison), encoding='utf-8')
-    for destination, frozen in ((root / 'source-shared-search.json', False),
-                                (firewall / 'frozen-shared-search.json', True)):
-        shared = shared_search_probe(manifest['version'], manifest['executable_sha256'], frozen)
-        shared['source_commit'] = manifest['source']['commit']
-        destination.write_text(json.dumps(shared), encoding='utf-8')
-        if frozen:
-            candidate_gate = firewall / 'candidate-gate.json'
-            if candidate_gate.exists():
-                gate = json.loads(candidate_gate.read_text(encoding='utf-8'))
-                gate['probes'][destination.name] = {
-                    'status': 'PASSED', 'sha256': hashlib.sha256(destination.read_bytes()).hexdigest()}
-                candidate_gate.write_text(json.dumps(gate), encoding='utf-8')
     for destination, frozen in ((root / 'source-gui.json', False),
                                 (firewall / 'frozen-gui.json', True)):
         gui = gui_probe(manifest['version'], manifest['executable_sha256'], frozen)
@@ -169,12 +139,6 @@ def extra_evidence(root, manifest):
     raw = json.dumps(document_probe(manifest['version'], manifest['executable_sha256'])).encode()
     (portable / 'isolated-documents.json').write_bytes(raw)
     probes['isolated-documents.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
-    raw = json.dumps(comparison_probe(manifest['version'], manifest['executable_sha256'])).encode()
-    (portable / 'isolated-comparison.json').write_bytes(raw)
-    probes['isolated-comparison.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
-    raw = json.dumps(shared_search_probe(manifest['version'], manifest['executable_sha256'])).encode()
-    (portable / 'isolated-shared-search.json').write_bytes(raw)
-    probes['isolated-shared-search.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
     raw = json.dumps(gui_probe(manifest['version'], manifest['executable_sha256'])).encode()
     (portable / 'isolated-gui.json').write_bytes(raw)
     probes['isolated-gui.json'] = {'status': 'PASSED', 'sha256': hashlib.sha256(raw).hexdigest()}
@@ -186,14 +150,6 @@ def extra_evidence(root, manifest):
     (portable / 'isolated-profile-gate.json').write_text(json.dumps(summary))
 
 
-def shared_search_probe(version, executable_hash, frozen=True):
-    from src.shared_search_probe import CHECK_NAMES
-    return dict(schema=1, probe='shared_search_lifecycle', version=version,
-        platform='win32', qt_platform='windows', frozen=frozen, passed=True,
-        executable_sha256=executable_hash if frozen else None, clean_machine_verified=False,
-        fixture_kind='SYNTHETIC_SHARED_SEARCH', ocr_accuracy_tested=False,
-        model_inference_tested=False, overlay_capture_verified=True, source_commit='a' * 40,
-        checks=dict.fromkeys(CHECK_NAMES, True))
 
 
 def gui_probe(version, executable_hash, frozen=True):

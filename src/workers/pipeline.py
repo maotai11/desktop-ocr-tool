@@ -62,10 +62,9 @@ class Pipeline(QObject):
         controller.stopped.connect(self._maybe_stop_database)
 
     def set_capture_overlay(self, overlay):
-        """Own the normal selector just like the other cancellable UI tools."""
+        """Own and retire the ordinary OCR/image selector."""
         self._capture_overlay = overlay
         overlay.cancelled.connect(self._capture_cancelled)
-        self.widget.region_tool_requested.connect(self.cancel_region_capture)
 
     def _capture_cancelled(self):
         if not self.closing and not self._switching_capture:
@@ -94,7 +93,6 @@ class Pipeline(QObject):
         if mode not in ('region_ocr', 'region_image'):
             raise ValueError('Unsupported region capture mode')
         from ..clipboard.writer import get_clipboard_epoch
-        self.widget.prepare_region_capture()
         self.widget.hide()
         clipboard_epoch = get_clipboard_epoch()
 
@@ -270,10 +268,6 @@ class Pipeline(QObject):
             self.widget.shutdown_handwriting()
         if hasattr(self.widget, 'shutdown_documents'):
             self.widget.shutdown_documents()
-        if hasattr(self.widget, 'shutdown_comparison'):
-            self.widget.shutdown_comparison()
-        if hasattr(self.widget, 'shutdown_shared_search'):
-            self.widget.shutdown_shared_search()
         self.widget.set_ocr_status('正在完成已接受的工作並關閉…')
         if self.clipboard:
             stop = getattr(self.clipboard, 'stop', None)
@@ -346,14 +340,6 @@ class Pipeline(QObject):
             return
         if (hasattr(self.widget, 'documents_is_stopped') and
                 not self.widget.documents_is_stopped()):
-            self._tools_poll.start()
-            return
-        if (hasattr(self.widget, 'comparison_is_stopped') and
-                not self.widget.comparison_is_stopped()):
-            self._tools_poll.start()
-            return
-        if (hasattr(self.widget, 'shared_search_is_stopped') and
-                not self.widget.shared_search_is_stopped()):
             self._tools_poll.start()
             return
         self._tools_poll.stop()
