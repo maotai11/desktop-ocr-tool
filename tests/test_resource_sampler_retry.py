@@ -1,4 +1,8 @@
 """Live unpack observation retries only complete, freshly measured disk trees."""
+import errno
+import json
+from hashlib import sha256
+from itertools import pairwise
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,6 +10,10 @@ import pytest
 
 from scripts import benchmark_resource_budget as sampler
 from src.core import resource_budget as budget
+
+UNKNOWN_CONTEXT = {'inspection_operation': 'OTHER', 'inspection_context_type': 'OTHER',
+                   'inspection_context_operation': 'OTHER', 'inspection_filename_category': 'OTHER',
+                   'inspection_filename_status': 'OTHER'}
 
 
 @pytest.fixture
@@ -163,7 +171,8 @@ def test_failure_origin_distinguishes_real_node_change_from_scan_deadline(tmp_pa
         sampler.sample_managed_disk_usage([target])
     detail = sampler._inspection_failure_details(caught.value)
     assert detail == {'inspection_failure_site': 'NODE_CHANGED',
-                      'inspection_attempts': 50, 'inspection_elapsed_ms': 980}
+                      'inspection_attempts': 50, 'inspection_elapsed_ms': 980,
+                      **UNKNOWN_CONTEXT, 'inspection_operation': 'NODE_CHANGED'}
     clock.now = 0
     def slow_stable(roots):
         clock.now += 5.2
@@ -173,7 +182,7 @@ def test_failure_origin_distinguishes_real_node_change_from_scan_deadline(tmp_pa
         sampler.sample_managed_disk_usage([target])
     assert sampler._inspection_failure_details(caught.value) == {
         'inspection_failure_site': 'SCAN_DEADLINE', 'inspection_attempts': 1,
-        'inspection_elapsed_ms': 5200}
+        'inspection_elapsed_ms': 5200, **UNKNOWN_CONTEXT}
 
 
 def test_unknown_rethrown_origin_is_not_reported_as_stable_scan_deadline(monkeypatch, clock):
@@ -184,7 +193,8 @@ def test_unknown_rethrown_origin_is_not_reported_as_stable_scan_deadline(monkeyp
         sampler.sample_managed_disk_usage(['private-location'])
     detail = sampler._inspection_failure_details(caught.value)
     assert detail['inspection_failure_site'] == 'OTHER'
-    assert set(detail) == {'inspection_failure_site','inspection_attempts','inspection_elapsed_ms'}
+    assert set(detail) == {'inspection_failure_site','inspection_attempts','inspection_elapsed_ms',
+                           *UNKNOWN_CONTEXT}
 
 
 def test_stage_failure_retains_fixed_diagnostic_and_reaps_owner(tmp_path, monkeypatch, clock):
@@ -240,7 +250,7 @@ def test_canonical_inspection_failure_retains_native_code_and_cleans_up(tmp_path
 @pytest.mark.parametrize('native_error', [True, -1, 0x100000000, 'PRIVATE_NATIVE_ERROR'])
 def test_inspection_diagnostic_rejects_non_native_or_unbounded_codes(native_error):
     detail = sampler._inspection_failure_details(budget.ResourceInspectionError(native_error=native_error))
-    assert detail == {'inspection_failure_site': 'OTHER'}
+    assert detail == {'inspection_failure_site': 'OTHER', **UNKNOWN_CONTEXT}
 
 
 def test_real_walk_failure_has_fixed_origin_without_private_path(tmp_path, monkeypatch):
@@ -255,4 +265,206 @@ def test_real_walk_failure_has_fixed_origin_without_private_path(tmp_path, monke
         with pytest.raises(budget.ResourceInspectionError) as caught:
             budget.managed_disk_usage([target])
     detail = sampler._inspection_failure_details(caught.value)
-    assert detail == {'inspection_failure_site': 'STORAGE_WALK'}
+    assert detail == {'inspection_failure_site': 'STORAGE_WALK', **UNKNOWN_CONTEXT,
+                      'inspection_operation': 'INITIAL_LSTAT',
+                      'inspection_context_type': 'PermissionError',
+                      'inspection_context_operation': 'INITIAL_LSTAT'}
+
+
+def test_real_directory_list_conversion_keeps_native_context_and_exactly_one_fresh_stat(tmp_path, monkeypatch):
+    target = tmp_path/'inkpick-resource-private'/'temp'/'_MEI123'
+    target.mkdir(parents=True)
+    original = PermissionError(errno.EACCES, 'PRIVATE_MESSAGE', str(target))
+    original.winerror = 5
+    real_iterdir = Path.iterdir
+    def denied(path):
+        if path == target:
+            raise original
+        return real_iterdir(path)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'iterdir', denied)
+        with pytest.raises(budget.ResourceInspectionError) as caught:
+            budget.managed_disk_usage([target])
+    assert caught.value.__context__ is original and caught.value.__suppress_context__ is True
+    calls = []
+    real_lstat = sampler.os.lstat
+    def observed(filename):
+        calls.append(filename)
+        return real_lstat(filename)
+    with monkeypatch.context() as patch:
+        patch.setattr(sampler.os, 'lstat', observed)
+        details = sampler._inspection_failure_details(caught.value)
+    assert calls == [str(target)]
+    assert details == {'inspection_failure_site': 'STORAGE_WALK',
+                       'inspection_operation': 'MEASURE_OS_ERROR',
+                       'inspection_context_type': 'PermissionError',
+                       'inspection_context_operation': 'DIRECTORY_LIST',
+                       'inspection_context_winerror': 5, 'inspection_context_errno': errno.EACCES,
+                       'inspection_filename_category': 'ACTIVE_MEI',
+                       'inspection_filename_status': 'PRESENT_DIR'}
+    public = json.dumps(details)
+    assert all(value not in public for value in ('PRIVATE_MESSAGE', str(tmp_path), '_MEI123', 'private'))
+    assert caught.value.__context__ is original
+
+
+def test_real_verification_stat_failure_retains_distinct_operation_after_guard_changes(tmp_path, monkeypatch):
+    target = tmp_path/'private-verify.bin'; target.write_bytes(b'keep')
+    original = PermissionError(errno.EACCES, 'PRIVATE_VERIFY_MESSAGE', str(target))
+    original.winerror = 32
+    real_lstat, calls = Path.lstat, []
+    def verification_denied(path, *args, **kwargs):
+        if path == target:
+            calls.append(True)
+            if len(calls) == 2:
+                raise original
+        return real_lstat(path, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'lstat', verification_denied)
+        with pytest.raises(budget.ResourceInspectionError) as caught:
+            budget.managed_disk_usage([target])
+    assert len(calls) == 2 and caught.value.__context__ is original
+    detail = sampler._inspection_failure_details(caught.value)
+    assert detail['inspection_operation'] == 'MEASURE_OS_ERROR'
+    assert detail['inspection_context_operation'] == 'VERIFY_LSTAT'
+    assert detail['inspection_context_winerror'] == 32
+    assert detail['inspection_filename_status'] == 'PRESENT_FILE'
+    assert 'PRIVATE' not in json.dumps(detail) and str(tmp_path) not in json.dumps(detail)
+
+
+def test_real_link_rejection_cannot_be_misclassified_as_old_measure_line(tmp_path, monkeypatch):
+    target = tmp_path/'private-link-state.bin'; target.write_bytes(b'keep')
+    real_lstat = Path.lstat
+    def linked_mode(path, *args, **kwargs):
+        info = real_lstat(path, *args, **kwargs)
+        if path == target:
+            return SimpleNamespace(st_mode=0o120777, st_ino=info.st_ino, st_dev=info.st_dev)
+        return info
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'lstat', linked_mode)
+        with pytest.raises(budget.ResourceInspectionError) as caught:
+            budget.managed_disk_usage([target])
+    detail = sampler._inspection_failure_details(caught.value)
+    assert detail['inspection_failure_site'] == 'STORAGE_WALK'
+    assert detail['inspection_operation'] == 'LINK_REJECTED'
+    assert detail['inspection_context_type'] == 'OTHER'
+
+
+@pytest.mark.parametrize('winerror,os_errno', [(True, True), (-1, -1),
+    (0x100000000, 0x80000000), ('PRIVATE_WINERROR', 'PRIVATE_ERRNO')])
+def test_context_rejects_bool_unbounded_and_private_error_codes(winerror, os_errno):
+    original = OSError()
+    original.winerror, original.errno = winerror, os_errno
+    error = budget.ResourceInspectionError()
+    error.__context__ = original
+    details = sampler._inspection_failure_details(error)
+    assert details['inspection_context_type'] == 'OSError'
+    assert 'inspection_context_winerror' not in details and 'inspection_context_errno' not in details
+    assert 'PRIVATE' not in json.dumps(details)
+
+
+def test_context_cycle_and_eight_node_bound_do_not_query_unknown_filename(monkeypatch):
+    root = budget.ResourceInspectionError()
+    nodes = [RuntimeError('PRIVATE_CONTEXT') for _ in range(7)]
+    root.__cause__ = nodes[0]
+    for left, right in pairwise(nodes):
+        left.__cause__ = right
+    too_deep = PermissionError(errno.EACCES, 'PRIVATE_ERROR', 'PRIVATE_FILENAME')
+    too_deep.winerror = 5
+    nodes[-1].__cause__ = too_deep
+    nodes[-1].__context__ = root
+    def forbidden(*args, **kwargs):
+        pytest.fail('An exception beyond eight nodes must not trigger a stat')
+    with monkeypatch.context() as patch:
+        patch.setattr(sampler.os, 'lstat', forbidden)
+        detail = sampler._inspection_failure_details(root)
+    assert detail == {'inspection_failure_site': 'OTHER', **UNKNOWN_CONTEXT}
+    assert 'PRIVATE' not in json.dumps(detail)
+
+
+def test_context_cycle_does_not_hide_a_reachable_native_failure():
+    root = budget.ResourceInspectionError()
+    link = RuntimeError('PRIVATE_CHAIN')
+    original = PermissionError(errno.EACCES, 'PRIVATE')
+    original.winerror = 32
+    root.__cause__, link.__cause__, link.__context__ = link, root, original
+    detail = sampler._inspection_failure_details(root)
+    assert detail['inspection_context_type'] == 'PermissionError'
+    assert detail['inspection_context_winerror'] == 32
+    assert detail['inspection_context_errno'] == errno.EACCES
+    assert 'PRIVATE' not in json.dumps(detail)
+
+
+@pytest.mark.parametrize('filename', [None, '', 'x'*32769, Path('PRIVATE_PATH')],
+                         ids=['none', 'empty', 'too-long', 'path-object'])
+def test_fresh_stat_rejects_absent_nonstring_or_unbounded_filename(monkeypatch, filename):
+    original = PermissionError()
+    original.filename = filename
+    error = budget.ResourceInspectionError()
+    error.__context__ = original
+    calls = []
+    with monkeypatch.context() as patch:
+        patch.setattr(sampler.os, 'lstat', lambda value: calls.append(value))
+        detail = sampler._inspection_failure_details(error)
+    assert calls == [] and detail['inspection_filename_status'] == 'OTHER'
+    assert 'PRIVATE_PATH' not in json.dumps(detail)
+
+
+def test_fresh_stat_requires_exact_string_not_a_subclass(monkeypatch):
+    class Filename(str): pass
+    original = PermissionError()
+    original.filename = Filename('PRIVATE_FILENAME')
+    error = budget.ResourceInspectionError()
+    error.__context__ = original
+    calls = []
+    with monkeypatch.context() as patch:
+        patch.setattr(sampler.os, 'lstat', lambda value: calls.append(value))
+        detail = sampler._inspection_failure_details(error)
+    assert not calls and detail['inspection_filename_status'] == 'OTHER'
+
+
+@pytest.mark.parametrize('failure,status', [(FileNotFoundError(), 'ABSENT'),
+    (PermissionError(), 'ACCESS_DENIED'), (OSError(), 'OTHER'), (RuntimeError('PRIVATE'), 'OTHER')])
+def test_fresh_stat_failures_never_replace_original_inspection_or_leak(monkeypatch, failure, status):
+    original = PermissionError(errno.EACCES, 'PRIVATE_MESSAGE', 'PRIVATE_FILENAME')
+    error = budget.ResourceInspectionError()
+    error.__context__ = original
+    calls = []
+    def failed(filename):
+        calls.append(filename)
+        raise failure
+    with monkeypatch.context() as patch:
+        patch.setattr(sampler.os, 'lstat', failed)
+        details = sampler._inspection_failure_details(error)
+    assert calls == ['PRIVATE_FILENAME']
+    assert details['inspection_filename_status'] == status
+    assert error.__context__ is original
+    assert 'PRIVATE' not in json.dumps(details)
+
+
+def test_successful_stage_has_no_failure_projection_or_fresh_diagnostic_stat(tmp_path, monkeypatch, clock):
+    executable = tmp_path/'candidate.exe'; executable.write_bytes(b'fixture')
+    closed = []
+    class Process:
+        polls = 0
+        def __init__(self, exe, arguments, profile, temporary, source_commit):
+            Path(arguments[1]).write_text(json.dumps({'passed': True, 'frozen': True, 'platform': 'win32',
+                'version': sampler.APP_VERSION, 'executable_sha256': sha256(exe.read_bytes()).hexdigest(),
+                'probe': 'application_lifecycle', 'shutdown_clean': True}), encoding='utf-8')
+        def pids(self): return (1, 2)
+        def exited(self):
+            self.polls += 1
+            return self.polls == 2
+        def exit_code(self): return 0
+        def accounting(self):
+            return {'peak_job_private_bytes': 100, 'active_processes': 0,
+                    'total_processes': 2, 'job_limit_bytes': 999999999}
+        def close(self): closed.append(True)
+    def forbidden(error):
+        pytest.fail('Successful stages must not inspect exception filenames')
+    monkeypatch.setattr(sampler, 'NativeJobProcess', Process)
+    monkeypatch.setattr(sampler, '_windows_memory', lambda pid: (100, 100))
+    monkeypatch.setattr(sampler, 'sample_managed_disk_usage', lambda roots: budget.DiskUsage(100, 1, 1))
+    monkeypatch.setattr(sampler, '_inspection_context_details', forbidden)
+    record, samples = sampler.run_stage(executable, 'cold_application', '--smoke-app', timeout=120)
+    assert record['passed'] and len(samples) == 2 and record['temporary_cleaned']
+    assert not any(key.startswith('inspection_') for key in record) and closed == [True]
