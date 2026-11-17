@@ -16,6 +16,10 @@ import sys
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+# Direct script execution starts with scripts/ on sys.path.  Keep the same
+# validator imports available from a clean working directory without PYTHONPATH.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 OUTPUT = 'artifacts/public-validation'
 VERSION = '1.8.0-rc.19'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
