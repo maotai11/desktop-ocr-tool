@@ -66,6 +66,10 @@ class InvoiceCheckController(QObject):
         return dict(self._regions)
 
     @property
+    def capture_regions(self):
+        return dict(self._capture_intent[3]) if self._capture_intent is not None else {}
+
+    @property
     def generation(self):
         return self._generation
 

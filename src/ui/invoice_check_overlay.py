@@ -8,6 +8,11 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
+from .theme import _BG_SIDE
+
+_CALLOUT_COLORS = {'matched': '#9cf2b9', 'different': '#ffb5af',
+                   'review': '#ffe094', 'missing': '#ffb5af'}
+
 
 def pin_without_activation(widget, enabled=True, *, click_through=False):
     """Pin an owned tool HWND without taking focus from the source software."""
@@ -284,16 +289,16 @@ class InvoiceCheckOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         metrics = QFontMetricsF(self.font())
+        background = QColor(_BG_SIDE)
+        background.setAlpha(round(255 * (100 - self._transparency) / 100))
         for item in self.callouts:
             rectangle = QRectF(*item['rect'])
-            alpha = round(255 * (100 - self._transparency) / 100)
-            if alpha:
-                painter.fillRect(rectangle, QColor(255, 255, 255, alpha))
-            color = {'matched': '#087443', 'different': '#b42318', 'review': '#885000', 'missing': '#b42318'}[item['status']]
+            if background.alpha():
+                painter.fillRect(rectangle, background)
             path = QPainterPath()
             path.addText(QPointF(rectangle.left() + 3, rectangle.top() + 2 + metrics.ascent()), self.font(), item['text'])
-            painter.setPen(QPen(QColor('#ffffff'), 2))
-            painter.setBrush(QColor(color))
+            painter.setPen(QPen(QColor(_BG_SIDE), 2))
+            painter.setBrush(QColor(_CALLOUT_COLORS[item['status']]))
             painter.drawPath(path)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawPath(path)

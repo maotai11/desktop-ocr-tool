@@ -18,7 +18,7 @@ def test_history_setting_zero_and_days_are_saved(qtbot, monkeypatch):
     for days in (0, 90, 180):
         dialog = SettingsDialog(cfg)
         qtbot.addWidget(dialog)
-        dialog._sp_archive_days.setValue(days)
+        dialog._archive_days.setCurrentIndex(dialog._archive_days.findData(days))
         dialog._save()
         assert cfg.get('history', 'auto_archive_days') == days
 

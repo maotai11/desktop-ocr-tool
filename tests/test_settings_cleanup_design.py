@@ -90,7 +90,7 @@ def test_invalid_active_literal_blocks_before_any_other_setting_is_written(qtbot
     monkeypatch.setattr('src.ui.settings_dialog.QMessageBox.warning', lambda *args: warnings.append(args))
     dialog = SettingsDialog(cfg)
     qtbot.addWidget(dialog)
-    dialog._sp_archive_days.setValue(45)
+    dialog._archive_days.setCurrentIndex(dialog._archive_days.findData(45))
     dialog._save()
     assert warnings and not cfg.writes and not dialog._closed
     assert cfg.get('clipboard', 'copy_replace_newlines') == literal
@@ -100,10 +100,22 @@ def test_unrelated_save_preserves_invalid_dormant_literal(qtbot):
     cfg = Config(copy_cleanup_mode_newlines='remove', copy_replace_newlines=123)
     dialog = SettingsDialog(cfg)
     qtbot.addWidget(dialog)
-    dialog._sp_archive_days.setValue(45)
+    dialog._archive_days.setCurrentIndex(dialog._archive_days.findData(45))
     dialog._save()
     assert cfg.get('clipboard', 'copy_replace_newlines') == 123
     assert cfg.get('history', 'auto_archive_days') == 45
+
+
+def test_unrelated_save_preserves_old_numeric_settings_outside_presets(qtbot):
+    cfg = Config()
+    cfg.data['history']['auto_archive_days'] = 123
+    cfg.data['ocr']['max_image_short_side'] = 970
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+    assert dialog._archive_days.currentData() == 123 and not dialog._archive_days.isEditable()
+    assert dialog._short_side.currentData() == 970 and not dialog._short_side.isEditable()
+    dialog._save()
+    assert (cfg.get('history', 'auto_archive_days'), cfg.get('ocr', 'max_image_short_side')) == (123, 970)
 
 
 def test_late_annotation_click_after_close_does_not_reopen_tooltip(qtbot, monkeypatch):

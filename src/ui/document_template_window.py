@@ -16,9 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QAbstractSpinBox,
     QComboBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGraphicsItem,
@@ -39,7 +37,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QSpinBox,
+    QSlider,
     QSplitter,
     QStyle,
     QTableWidget,
@@ -56,6 +54,7 @@ from ..documents.template import (
     build_output,
     validate_template,
 )
+from .numeric_choices import numeric_choices
 from .theme import (
     _ACCENT,
     _ACCENT_18,
@@ -71,6 +70,7 @@ from .theme import (
     _TEAL,
     _TEXT_PRI,
     _TEXT_SEC,
+    apply_combo_box_theme,
 )
 
 _FIELD_COLORS = (_ACCENT, _TEAL, '#77a9ef', '#c995e8', '#ed9299', '#82c58b')
@@ -408,7 +408,7 @@ class DocumentTemplateWindow(QWidget):
             QPushButton#recognizeDocuments {{ background: {_ACCENT}; color: {_ACCENT_T}; font-weight: 600; border: none; }}
             QPushButton#recognizeDocuments:hover {{ background: {_ACCENT_H}; }}
             QPushButton#recognizeDocuments:disabled {{ background: {_BG_RAISE}; color: {_TEXT_SEC}; }}
-            QLineEdit, QPlainTextEdit, QListWidget, QTableWidget, QComboBox, QSpinBox, QDoubleSpinBox {{
+            QLineEdit, QPlainTextEdit, QListWidget, QTableWidget, QComboBox {{
                 background: {_BG_RAISE}; color: {_TEXT_PRI}; border: 1px solid {_BORDER};
                 border-radius: 6px; padding: 5px; selection-background-color: {_ACCENT_18}; }}
             QListWidget::item {{ padding: 6px; }}
@@ -451,14 +451,13 @@ class DocumentTemplateWindow(QWidget):
         self._clear_documents_button.clicked.connect(self._confirm_clear_documents)
         tools.addWidget(self._clear_documents_button)
         tools.addWidget(_plain_label('單檔上限'))
-        self._file_limit = QSpinBox()
-        self._file_limit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self._file_limit.setRange(1, 1024)
-        self._file_limit.setSuffix(' MB')
         limit = self._cfg.get('documents', 'max_file_size_mb', default=100) if self._cfg else 100
-        self._file_limit.setValue(limit if isinstance(limit, int) and not isinstance(limit, bool) else 100)
+        limit = max(1, min(1024, limit)) if type(limit) is int else 100
+        self._file_limit = numeric_choices((1, 10, 25, 50, 100, 200, 300, 500, 750, 1024),
+                                          limit, lambda value: f'{value} MB')
+        apply_combo_box_theme(self._file_limit)
         self._file_limit.setAccessibleName('每個匯入檔案的大小上限，MB')
-        self._file_limit.valueChanged.connect(self._save_file_limit)
+        self._file_limit.currentIndexChanged.connect(self._save_file_limit)
         tools.addWidget(self._file_limit)
         tools.addStretch()
         self._recognize_button = QPushButton('開始辨識')
@@ -588,17 +587,18 @@ class DocumentTemplateWindow(QWidget):
         field_layout.addWidget(self._scope)
         coordinates = QGridLayout()
         self._coordinates = []
-        for column, label in enumerate(('左 %', '上 %', '寬 %', '高 %')):
-            coordinates.addWidget(_plain_label(label), 0, column)
-            value = QDoubleSpinBox()
-            value.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-            value.setRange(0, 100)
-            value.setDecimals(1)
-            value.setSingleStep(.5)
-            value.setKeyboardTracking(False)
+        for row, label in enumerate(('左', '上', '寬', '高')):
+            value = QSlider(Qt.Orientation.Horizontal)
+            value.setRange(0, 1000)
+            value.setPageStep(50)
             value.setAccessibleName('欄位位置' + label)
+            percent = _plain_label('0.0%')
+            percent.setMinimumWidth(percent.fontMetrics().horizontalAdvance('100.0%'))
+            value.valueChanged.connect(lambda n, display=percent: display.setText(f'{n / 10:.1f}%'))
             self._coordinates.append(value)
-            coordinates.addWidget(value, 1, column)
+            coordinates.addWidget(_plain_label(label), row, 0)
+            coordinates.addWidget(value, row, 1)
+            coordinates.addWidget(percent, row, 2)
         field_layout.addLayout(coordinates)
         position_actions = QHBoxLayout()
         self._apply_position = QPushButton('套用位置')
@@ -688,10 +688,10 @@ class DocumentTemplateWindow(QWidget):
         self._edit_controls = (self._editor_tabs, self._page_combo, self._previous,
                                self._next, self._canvas, self._results_table)
 
-    def _save_file_limit(self, value):
+    def _save_file_limit(self):
         if self._cfg is not None:
             try:
-                self._cfg.set('documents', 'max_file_size_mb', value)
+                self._cfg.set('documents', 'max_file_size_mb', self._file_limit.currentData())
             except OSError:
                 self.show_error('無法保存檔案上限；這次匯入仍會使用畫面上的設定。')
 
@@ -707,7 +707,7 @@ class DocumentTemplateWindow(QWidget):
             return
         paths = [str(path) for path in paths]
         if paths:
-            self.import_requested.emit(paths, self._file_limit.value())
+            self.import_requested.emit(paths, self._file_limit.currentData())
 
     def _confirm_clear_documents(self):
         if not (self._pages or self._results or self._busy):
@@ -822,7 +822,7 @@ class DocumentTemplateWindow(QWidget):
         region = self._layout.region_for(name, max(0, self._current_page)) if name else None
         values = (region.x, region.y, region.width, region.height) if region else (.1, .1, .3, .1)
         for control, value in zip(self._coordinates, values):
-            control.setValue(value * 100)
+            control.setValue(round(value * 1000))
         if self._current_page > 0:
             self._region_note.setText('未調整的欄位會沿用第一頁；清除此頁後，需重新框選或套用第一頁。')
         else:
@@ -890,7 +890,7 @@ class DocumentTemplateWindow(QWidget):
 
     def _apply_coordinates(self):
         try:
-            self._set_region(Region(*(control.value() / 100 for control in self._coordinates)))
+            self._set_region(Region(*(control.value() / 1000 for control in self._coordinates)))
         except (TemplateError, ValueError) as exc:
             self.show_error(str(exc))
 
@@ -948,7 +948,10 @@ class DocumentTemplateWindow(QWidget):
         selected = name in self._layout.field_names
         for button in (self._rename_button, self._remove_field_button):
             button.setEnabled(selected and not self._busy)
-        self._apply_position.setEnabled(selected and not self._busy and bool(self._canvas.image_size[0]))
+        can_position = selected and not self._busy and bool(self._canvas.image_size[0])
+        self._apply_position.setEnabled(can_position)
+        for control in self._coordinates:
+            control.setEnabled(can_position)
         if selected and self._current_page >= 0:
             if self._scope.currentData() == 'all':
                 has_region = (self._layout.region_for(name, 0) is not None

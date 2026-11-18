@@ -310,8 +310,8 @@ def test_settings_persist_pass_limit_and_restart_contract(qtbot, monkeypatch):
 
     dialog = SettingsDialog(Config())
     qtbot.addWidget(dialog)
-    assert dialog._sp_max_passes.value() == 2
-    dialog._sp_max_passes.setValue(3)
+    assert dialog._max_passes.currentData() == 2
+    dialog._max_passes.setCurrentIndex(dialog._max_passes.findData(3))
     monkeypatch.setattr('src.core.autostart.set_autostart', lambda _: None)
     dialog._save()
     assert values['ocr']['max_ocr_passes'] == 3

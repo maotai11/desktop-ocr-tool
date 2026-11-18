@@ -5,11 +5,12 @@ import logging
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget,
-    QWidget, QLabel, QCheckBox, QSpinBox, QDoubleSpinBox,
+    QWidget, QLabel, QCheckBox,
     QLineEdit, QPushButton, QFormLayout,
     QDialogButtonBox, QComboBox, QGroupBox, QScrollArea, QFrame, QToolButton, QToolTip, QMessageBox
 )
 
+from .numeric_choices import numeric_choices
 from .theme import (
     _BG, _BG_RAISE, _BG_HOVER, _BORDER,
     _TEXT_PRI, _TEXT_SEC, _ACCENT, _ACCENT_H, _ACCENT_T,
@@ -78,21 +79,6 @@ _DIALOG_QSS = f"""
     }}
     QCheckBox::indicator:hover {{
         border: 1px solid {_ACCENT};
-    }}
-    QSpinBox {{
-        background: {_BG_RAISE};
-        color: {_TEXT_PRI};
-        border: 1px solid {_BORDER};
-        border-radius: 4px;
-        padding: 3px 6px;
-    }}
-    QSpinBox:focus {{
-        border: 1px solid {_ACCENT};
-    }}
-    QSpinBox::up-button, QSpinBox::down-button {{
-        background: {_BG_HOVER};
-        border: none;
-        width: 16px;
     }}
     QLineEdit {{
         background: {_BG_RAISE};
@@ -182,14 +168,13 @@ class SettingsDialog(QDialog):
         )
         gf.addRow("", self._cb_start_min)
         gf = self._section(gv, "歷史整理")
-        self._sp_archive_days = QSpinBox()
-        self._sp_archive_days.setRange(0, 36500)
-        self._sp_archive_days.setSpecialValueText('停用')
-        self._sp_archive_days.setSuffix(' 天')
         archive_days = self._cfg.get('history', 'auto_archive_days', default=90)
-        self._sp_archive_days.setValue(archive_days if type(archive_days) is int and 0 <= archive_days <= 36500 else 90)
-        gf.addRow('自動封存：', self._sp_archive_days)
-        self._sp_archive_days.setToolTip('最後修改滿設定天數後封存；釘選、辨識中紀錄保留。封存可還原，文字與附件仍在；0 為停用。')
+        if type(archive_days) is not int or not 0 <= archive_days <= 36500:
+            archive_days = 90
+        self._archive_days = numeric_choices((0, 7, 14, 30, 45, 60, 90, 180, 365), archive_days,
+                                             lambda value: f'{value} 天' if value else '停用')
+        gf.addRow('自動封存：', self._archive_days)
+        self._archive_days.setToolTip('最後修改滿設定天數後封存。釘選與辨識中的紀錄保留，已封存的文字與附件可還原。')
         gv.addStretch()
         tabs.addTab(self._scroll_page(gen), "一般")
 
@@ -217,14 +202,14 @@ class SettingsDialog(QDialog):
             self._cfg.get('ocr', 'enable_second_pass', default=True)
         )
         of.addRow("自動重試：", self._cb_second_pass)
-        self._sp_max_passes = QSpinBox()
-        self._sp_max_passes.setRange(1, 3)
-        self._sp_max_passes.setValue(self._cfg.get('ocr', 'max_ocr_passes', default=2))
-        self._sp_max_passes.setSuffix(" 次（含首次）")
-        self._sp_max_passes.setEnabled(self._cb_second_pass.isChecked())
-        self._cb_second_pass.toggled.connect(self._sp_max_passes.setEnabled)
-        of.addRow("每區辨識上限：", self._sp_max_passes)
-        self._sp_max_passes.setToolTip('預設最多 2 次，含首次；第 3 次僅用於低信心、空白或候選衝突。重試採不同影像處理，分數仍需人工確認。')
+        passes = self._cfg.get('ocr', 'max_ocr_passes', default=2)
+        if type(passes) is not int or not 1 <= passes <= 3:
+            passes = 2
+        self._max_passes = numeric_choices((1, 2, 3), passes, lambda value: f'{value} 次（含首次）')
+        self._max_passes.setEnabled(self._cb_second_pass.isChecked())
+        self._cb_second_pass.toggled.connect(self._max_passes.setEnabled)
+        of.addRow("每區辨識上限：", self._max_passes)
+        self._max_passes.setToolTip('預設最多 2 次，含首次；第 3 次僅用於低信心、空白或候選衝突。')
         of = self._section(ov, '影像處理')
         self._cb_handwriting = QCheckBox("手寫友善模式")
         self._cb_handwriting.setChecked(
@@ -232,14 +217,11 @@ class SettingsDialog(QDialog):
         )
         of.addRow("手寫模式：", self._cb_handwriting)
 
-        self._sp_short_side = QSpinBox()
-        self._sp_short_side.setRange(64, 1920)
-        self._sp_short_side.setSingleStep(64)
-        self._sp_short_side.setSuffix(" px")
-        self._sp_short_side.setValue(
-            self._cfg.get('ocr', 'max_image_short_side', default=960)
-        )
-        of.addRow("小圖放大門檻：", self._sp_short_side)
+        short_side = self._cfg.get('ocr', 'max_image_short_side', default=960)
+        if type(short_side) is not int or not 64 <= short_side <= 1920:
+            short_side = 960
+        self._short_side = numeric_choices(range(64, 1921, 64), short_side, lambda value: f'{value} px')
+        of.addRow("小圖放大門檻：", self._short_side)
 
         of = self._section(ov, '離線模型')
         self._model_profile = QComboBox()
@@ -253,7 +235,7 @@ class SettingsDialog(QDialog):
         of.addRow('辨識模型：', self._model_profile)
         self._model_profile.setToolTip('兩種模式都用 Small 找字，再選 Small／Medium 辨字。模型已內含；Medium 較耗記憶體，不保證每字更準。OCR 設定儲存後重啟生效。')
         self._cb_handwriting.setToolTip('對手寫影像採用較積極的前處理；儲存後重啟生效。')
-        self._sp_short_side.setToolTip('短邊小於門檻時放大影像；儲存後重啟生效。')
+        self._short_side.setToolTip('短邊小於門檻時放大影像；儲存後重啟生效。')
         ov.addStretch()
         tabs.addTab(self._scroll_page(ocr_tab), "OCR")
 
@@ -344,14 +326,15 @@ class SettingsDialog(QDialog):
             self._cb_theme.setCurrentIndex(idx)
         uf.addRow("佈景主題：", self._cb_theme)
 
-        self._sp_font_size = QSpinBox()
-        self._sp_font_size.setRange(9, 24)
-        self._sp_font_size.setValue(self._cfg.get('ui', 'font_size', default=13))
-        uf.addRow("字型大小：", self._sp_font_size)
+        font_size = self._cfg.get('ui', 'font_size', default=13)
+        if type(font_size) is not int or not 9 <= font_size <= 24:
+            font_size = 13
+        self._font_size = numeric_choices(range(9, 25), font_size, str)
+        uf.addRow("字型大小：", self._font_size)
         self._cb_theme.setEnabled(False)
-        self._sp_font_size.setEnabled(False)
+        self._font_size.setEnabled(False)
         self._cb_theme.setToolTip('佈景尚未接入完整介面，本版停用調整。')
-        self._sp_font_size.setToolTip('字級尚未接入完整介面，本版停用調整。')
+        self._font_size.setToolTip('字級尚未接入完整介面，本版停用調整。')
         tabs.addTab(self._scroll_page(ui_tab), "介面")
 
         # ---- 標籤管理 ----
@@ -414,12 +397,12 @@ class SettingsDialog(QDialog):
             return
         self._cfg.set('general', 'start_with_windows', self._cb_autostart.isChecked())
         self._cfg.set('general', 'start_minimized', self._cb_start_min.isChecked())
-        self._cfg.set('history', 'auto_archive_days', self._sp_archive_days.value())
+        self._cfg.set('history', 'auto_archive_days', self._archive_days.currentData())
         self._cfg.set('capture', 'auto_ocr_on_capture', self._cb_auto_ocr.isChecked())
         self._cfg.set('ocr', 'enable_second_pass', self._cb_second_pass.isChecked())
-        self._cfg.set('ocr', 'max_ocr_passes', self._sp_max_passes.value())
+        self._cfg.set('ocr', 'max_ocr_passes', self._max_passes.currentData())
         self._cfg.set('ocr', 'enable_handwriting_mode', self._cb_handwriting.isChecked())
-        self._cfg.set('ocr', 'max_image_short_side', self._sp_short_side.value())
+        self._cfg.set('ocr', 'max_image_short_side', self._short_side.currentData())
         if self._model_profile.currentData() is not None:
             self._cfg.set('ocr', 'model_profile', self._model_profile.currentData())
         self._cfg.set('clipboard', 'ocr_copy_mode', self._ocr_copy_mode.currentData())

@@ -52,7 +52,7 @@ def test_import_requests_local_files_and_default_limit_can_change(window):
     window.import_requested.connect(lambda paths, limit: requests.append((paths, limit)))
     window.import_paths(['/tmp/名稱.pdf', '/tmp/第二張.png'])
     assert requests == [(['/tmp/名稱.pdf', '/tmp/第二張.png'], 100)]
-    window._file_limit.setValue(25)
+    window._file_limit.setCurrentIndex(window._file_limit.findData(25))
     assert window._cfg.get('documents', 'max_file_size_mb') == 25
     window.import_paths(['/tmp/其他.pdf'])
     assert requests[-1][1] == 25
@@ -77,8 +77,9 @@ def test_first_page_region_inherits_and_later_page_can_override(window):
 
 def test_keyboard_position_controls_define_region_without_drag(window, qtbot):
     imported(window, 1)
-    for control, value in zip(window._coordinates, (15, 25, 30, 10)):
-        control.setValue(value)
+    for control, value in zip(window._coordinates, (150, 250, 300, 100)):
+        control.setValue(value - 1)
+        qtbot.keyClick(control, Qt.Key.Key_Right)
     qtbot.mouseClick(window._apply_position, Qt.MouseButton.LeftButton)
     assert window._layout.region_for('辨識1', 0) == Region(.15, .25, .3, .1)
     assert window._recognize_button.isEnabled()

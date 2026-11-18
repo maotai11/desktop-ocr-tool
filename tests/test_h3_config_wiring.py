@@ -223,7 +223,7 @@ def test_settings_restart_contract(qapp, tmp_path, monkeypatch):
     cfg=ConfigManager(); engine=MagicMock()
     dialog=SettingsDialog(cfg,ocr_engine=engine)
     dialog._cb_monitor.setChecked(True)
-    dialog._sp_short_side.setValue(512)
+    dialog._short_side.setCurrentIndex(dialog._short_side.findData(512))
     dialog._save()
     loaded=ConfigManager()
     assert loaded.get('clipboard','monitor_clipboard') is True
