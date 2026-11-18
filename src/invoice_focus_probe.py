@@ -337,6 +337,8 @@ def _exercise(app, path):
         if not _pump(app, lambda: _read(fixture).get('armed') is True):
             raise RuntimeError('Fixture arm failed')
         for index, button in enumerate((window._check_button, window.action_bar.check), 1):
+            if index == 2:
+                window._compact_button.click()
             if not _pump(app, lambda: button.isVisible() and button.isEnabled()):
                 raise RuntimeError('Check action unavailable')
             rect = wintypes.RECT()
@@ -362,11 +364,13 @@ def _exercise(app, path):
         # A real non-check editor click must still activate and accept a key.
         # Do not use open()/activateWindow(): that would make this negative
         # control pass before any user-input path was exercised.
+        window.action_bar.hide()
         window.show()
         app.processEvents()
         if user.GetForegroundWindow() != hwnd:
             raise RuntimeError('Passive setup reveal changed foreground')
         editor = window._transparency
+        previous_index = editor.currentIndex()
         _fit_probe_button(window, editor, user, ctypes, wintypes, available)
         rect = wintypes.RECT()
         if not user.GetWindowRect(int(editor.winId()), ctypes.byref(rect)):
@@ -376,15 +380,17 @@ def _exercise(app, path):
         user.mouse_event(0x0002, 0, 0, 0, 0)
         try:
             user.mouse_event(0x0004, 0, 0, 0, 0)
-            editing = _pump(app, lambda: user.GetForegroundWindow() == int(window.winId())
-                            and editor.hasFocus())
-            previous_value = editor.value()
-            user.keybd_event(0x28, 0, 0, 0)  # Down: actual focused spin editor.
-            user.keybd_event(0x28, 0, 0x2, 0)
-            changed = _pump(app, lambda: editor.value() == previous_value - 1)
+            editing = _pump(app, editor.view().isVisible)
+            if editing:
+                for key in (0x26, 0x0D):  # Up and Enter in the open numeric choices.
+                    user.keybd_event(key, 0, 0, 0)
+                    user.keybd_event(key, 0, 0x2, 0)
+            changed = _pump(app, lambda: editor.currentIndex() == previous_index - 1
+                            and not editor.view().isVisible())
         finally:
             user.mouse_event(0x0004, 0, 0, 0, 0)
-            user.keybd_event(0x28, 0, 0x2, 0)
+            for key in (0x26, 0x0D):
+                user.keybd_event(key, 0, 0x2, 0)
         result['noncheck_native_edit_verified'] = bool(editing and changed)
         result['deactivation_detector_verified'] = _pump(
             app, lambda: _read(fixture).get('deactivations', 0) > 0

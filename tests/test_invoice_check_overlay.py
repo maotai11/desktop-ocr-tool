@@ -51,9 +51,12 @@ def test_only_background_fades_and_capture_clear_cannot_restore_old_labels(overl
         assert not image.isNull()
         rect = QRectF(*overlay.callouts[0]['rect'])
         scale = image.devicePixelRatio()
-        assert image.pixelColor(round((rect.left() + 1) * scale), round((rect.top() + 1) * scale)).alpha() == round(255 * (100 - transparency) / 100)
+        background = image.pixelColor(round((rect.left() + 1) * scale), round((rect.top() + 1) * scale))
+        assert background.alpha() == round(255 * (100 - transparency) / 100)
+        if transparency == 0:
+            assert background.lightness() < 45  # Visible over white invoice paper.
         opaque_text.append(sum(image.pixelColor(x, y).alpha() == 255
-                               and image.pixelColor(x, y).name() == '#087443'
+                               and image.pixelColor(x, y).name() == '#9cf2b9'
                                for y in range(round(rect.top() * scale), round(rect.bottom() * scale))
                                for x in range(round(rect.left() * scale), round(rect.right() * scale))))
     assert min(opaque_text) > 0 and len(set(opaque_text)) == 1

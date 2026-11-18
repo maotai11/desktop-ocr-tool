@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.19. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.20. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -25,7 +25,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.19"
+TAG = "v1.8.0-rc.20"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -134,9 +134,11 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版新增手動「發票核對」：框選發票與含欄名的表格，按一次核對目前反藍所在資料列的五個欄位，結果標在發票實際文字位置。一般 OCR 保留原整圖重試，提供其產生的逐行候選供人工確認；未導入大型模型或自動背景核對。
+按「辨識核對」會留在原本的面板或小工具。介面擋住來源時會在取圖期間短暫讓開，取圖後回到原位置。
 
 ### 這次調整
+- 發票標示使用深色底板，背景透明度可選 0%、25%、50%、75% 或 100%。100% 時只顯示結果文字。
+- 封存天數、OCR 次數、圖像門檻、文件上限與匯出筆數改用選單，文件欄位位置可用滑桿及方向鍵微調。有效的既有設定值可繼續使用。
 - 五項欄位：預設未稅金額、稅額、開立日期、發票號碼、賣方統編，可改總金額／買方統編；支援已定義的民國／西元日期換算，缺字、低信心與歧義保留待確認。
 - 核對畫面及結果只在記憶體，不存歷史或截圖、不改剪貼簿。主要螢幕合併擷取最多 600 萬像素；範圍校正、透明底板、置頂及收起小工具皆可操作。
 - 每次核對均由使用者按下開始；來源畫面變動或停止後，舊結果不會套回。原生 GUI 門檻另外實測 200% 縮放下主按鈕／小工具核對按鈕保留來源焦點。

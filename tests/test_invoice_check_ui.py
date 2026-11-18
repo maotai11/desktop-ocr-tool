@@ -118,26 +118,46 @@ def test_open_and_preview_never_start_ocr_or_write_settings(setup, qtbot):
     assert window._preview_labels['invoice'].pixmap() is not None
     assert controller.checks == 0 and cfg.values == {}
     assert not window._amount.isVisible()
-    assert window._pin.isChecked() and window._transparency.value() == 100
+    assert window._pin.isChecked() and window._transparency.currentData() == 100
 
 
-def test_manual_check_hides_itself_for_both_captures_and_keeps_one_snapshot(setup):
-    window, controller, cfg = setup
+def test_overlapping_panel_returns_in_full_mode_after_each_grab(setup):
+    window, controller, _ = setup
+    window.move(0, 0)
     window._check_button.click()
     assert controller.checks == 1 and not window.isVisible() and not window.action_bar.isVisible()
     controller.reading()
-    assert window.action_bar.isVisible() and not window.action_bar.check.isEnabled()
+    assert window.isVisible() and not window.action_bar.isVisible() and not window._check_button.isEnabled()
     controller.state = 'verifying'
     controller.capture_started.emit()
-    assert not window.action_bar.isVisible() and not window.overlay.isVisible()
+    assert not window.isVisible() and not window.overlay.isVisible()
     controller.capture_finished.emit()
     controller.complete(snapshot())
-    assert controller.checks == 1 and window.action_bar.isVisible()
+    assert controller.checks == 1 and window.isVisible() and not window.action_bar.isVisible()
     assert len(window.overlay.marks) == 5 and window.overlay.isVisible()
     assert window._result_rows[1][1].text() == '不同'
     assert window._result_rows[0][1].text() == '相符'
     assert window._snapshot_label.text().startswith('本次截圖')
     assert window.action_bar.check.focusPolicy() == Qt.FocusPolicy.NoFocus
+
+
+@pytest.mark.parametrize('compact', [False, True])
+def test_unobstructing_invoice_controls_remain_visible_for_capture_and_failure(setup, compact):
+    window, controller, _ = setup
+    window.move(80, 80)
+    controller.regions = {'invoice': (5, 5, 15, 15, 1), 'table': (25, 5, 15, 15, 1)}
+    controller.regions_changed.emit(controller.regions)
+    if compact:
+        window._compact_button.click()
+    surface = window.action_bar if compact else window
+    check = window.action_bar.check if compact else window._check_button
+    check.click()
+    assert surface.isVisible() and not check.isEnabled()
+    assert window.isVisible() != compact and window.action_bar.isVisible() == compact
+    controller.reading()
+    controller.cancel()
+    controller.failed.emit('請確認畫面')
+    assert surface.isVisible() and check.isEnabled() and window._snapshot is None
 
 
 @pytest.mark.parametrize('retire', ['hide', 'close', 'shutdown'])
@@ -216,9 +236,10 @@ def test_background_transparency_never_changes_text_opacity_or_restarts_work(set
     controller.reading()
     controller.complete(snapshot())
     window.open()
-    window._transparency.setValue(30)
-    assert window.overlay.background_transparency == 30 and window.overlay.windowOpacity() == 1
-    assert cfg.get('invoice_check', 'overlay_transparency') == 30 and controller.checks == 1
+    assert window.overlay.isVisible() and not window._transparency.isEditable()
+    window._transparency.setCurrentIndex(window._transparency.findData(25))
+    assert window.overlay.background_transparency == 25 and window.overlay.windowOpacity() == 1
+    assert cfg.get('invoice_check', 'overlay_transparency') == 25 and controller.checks == 1
     window._show_compact()
     assert window.overlay.isVisible()
     window._clear_button.click()

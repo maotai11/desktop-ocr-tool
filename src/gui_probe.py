@@ -389,14 +389,16 @@ def _exercise_manual_invoice_check(app, shell, cfg, repo):
         _require(window.overlay.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating))
         expected = [(regions['invoice'][0]+item['invoice']['box'][0],regions['invoice'][1]+item['invoice']['box'][1],item['invoice']['box'][2],item['invoice']['box'][3]) for item in snapshot['checks']]
         _require([mark['anchor'] for mark in window.overlay.marks] == expected)
-        window._transparency.setValue(35)
-        _require(window.overlay.background_transparency == 35)
-        window._transparency.setValue(100)
+        _require(window.isVisible() and not window.action_bar.isVisible())
+        window._transparency.setCurrentIndex(window._transparency.findData(25))
+        _require(window.overlay.background_transparency == 25)
+        window._transparency.setCurrentIndex(window._transparency.findData(100))
         _require(window.overlay.background_transparency == 100)
         _invoice_native_overlay_check(window.overlay)
         count = len(capture.requests)
         _dispatch_for(75)
         _require(len(capture.requests) == count and len(ocr.requests) == 3)
+        window._compact_button.click()
         window.action_bar.check.click()
         _until(lambda: len(capture.requests) == count+1)
         capture.finish(deepcopy(payload))
@@ -677,7 +679,7 @@ def _exercise_gui(app, directory, checks):
 
             before_settings = Path(cfg._settings_path).read_bytes()
             def settings_cancel(dialog):
-                dialog._sp_archive_days.setValue(0)
+                dialog._archive_days.setCurrentIndex(dialog._archive_days.findData(0))
                 dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
                 dialog._cb_autostart.setChecked(True)
                 choose_cleanup(dialog, 'replace')
@@ -688,7 +690,7 @@ def _exercise_gui(app, directory, checks):
                      and all(cfg.get('clipboard', 'copy_remove_' + suffix) is False
                              for suffix in cleanup_literals))
             def settings_accept(dialog):
-                dialog._sp_archive_days.setValue(0)
+                dialog._archive_days.setCurrentIndex(dialog._archive_days.findData(0))
                 dialog._ocr_copy_mode.setCurrentIndex(dialog._ocr_copy_mode.findData('select'))
                 dialog._cb_autostart.setChecked(True)
                 choose_cleanup(dialog, 'replace')

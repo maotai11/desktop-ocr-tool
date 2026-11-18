@@ -715,13 +715,15 @@ class FloatingWidget(QWidget):
     def _hide_launcher_for_invoice_capture(self):
         if self._ui_closing or self._invoice_closing:
             return
-        self._invoice_launcher_visible = self.isVisible() and not self.isMinimized()
-        self.hide()
+        window = self._invoice_window
+        self._invoice_launcher_visible = window is not None and window.capture_overlaps(self)
+        if self._invoice_launcher_visible:
+            self.hide()
 
     def _restore_launcher_after_invoice_capture(self):
         restore, self._invoice_launcher_visible = self._invoice_launcher_visible, False
         if (restore and not self._ui_closing and not self._invoice_closing
-                and self._invoice_window is not None and self._invoice_window.isVisible()):
+                and self._invoice_window is not None):
             self.show()
 
     def hide_invoice_check(self):

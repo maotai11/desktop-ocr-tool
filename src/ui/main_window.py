@@ -14,10 +14,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, Signal, QSignalBlocker, QItemSelectionModel
 from PySide6.QtGui import QPixmap, QKeyEvent
 
+from .numeric_choices import numeric_choices
 from .theme import (
     _BG, _BG_SIDE, _BG_RAISE, _BG_HOVER, _BORDER,
     _TEXT_PRI, _TEXT_SEC, _ACCENT, _ACCENT_H, _ACCENT_T, _ERROR,
-    _ACCENT_15, _ERROR_15, _ERROR_25, _ERROR_30,
+    _ACCENT_15, _ERROR_15, _ERROR_25, _ERROR_30, apply_combo_box_theme,
 )
 
 logger = logging.getLogger(__name__)
@@ -701,7 +702,7 @@ class MainWindow(QMainWindow):
             return
 
         # 匯出對話框
-        from PySide6.QtWidgets import QDialog, QComboBox, QLabel, QSpinBox
+        from PySide6.QtWidgets import QDialog, QComboBox, QLabel
         from PySide6.QtWidgets import QDialogButtonBox
         
         dlg = QDialog(self)
@@ -730,13 +731,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(range_combo)
         
         # 數量限制
-        limit_spin = QSpinBox()
-        limit_spin.setRange(0, 100000)
-        limit_spin.setValue(0)
-        limit_spin.setSpecialValueText("無限制")
-        limit_spin.setSuffix(" 筆" if limit_spin.value() > 0 else "")
-        layout.addWidget(QLabel("最大匯出數量（0=無限制）："))
-        layout.addWidget(limit_spin)
+        limit = numeric_choices((0, 50, 100, 250, 500, 1000, 5000, 10000, 100000), 0,
+                                lambda value: f'{value:,} 筆' if value else '無限制')
+        apply_combo_box_theme(limit)
+        layout.addWidget(QLabel("最大匯出數量："))
+        layout.addWidget(limit)
         
         # 按鈕
         btns = QDialogButtonBox(
@@ -752,7 +751,7 @@ class MainWindow(QMainWindow):
 
         # 決定匯出資料
         range_mode = range_combo.currentData()
-        max_count = limit_spin.value()
+        max_count = limit.currentData()
         
         if range_mode == 'current':
             items_to_export = list(self._current_items)

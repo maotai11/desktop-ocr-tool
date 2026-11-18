@@ -9,9 +9,10 @@ from PySide6.QtCore import QPoint, QRectF, Qt, Signal, QSignalBlocker
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QSpinBox, QVBoxLayout, QWidget)
+    QScrollArea, QVBoxLayout, QWidget)
 
 from .invoice_check_overlay import InvoiceCheckOverlay, pin_without_activation, prevent_button_activation, set_native_noactivate, is_native_mouse_activation, activate_native_editor
+from .numeric_choices import numeric_choices
 from .theme import (_BG, _BG_RAISE, _BG_HOVER, _BORDER_L, _TEXT_PRI, _TEXT_SEC,
                     _ACCENT, _ACCENT_T, _SUCCESS, _ERROR, _WARNING, apply_combo_box_theme)
 
@@ -21,7 +22,7 @@ _LABELS = {'net_amount': '未稅金額', 'total_amount': '總金額', 'tax_amoun
 _COLORS = {'matched': _SUCCESS, 'different': _ERROR, 'review': _WARNING, 'missing': _WARNING}
 _STATES = {'matched': '相符', 'different': '不同', 'review': '待確認', 'missing': '缺欄'}
 _STYLE = f'''QWidget {{ background:{_BG}; color:{_TEXT_PRI}; font-size:12px; }}
-QPushButton,QComboBox,QSpinBox {{ background:{_BG_RAISE}; color:{_TEXT_PRI}; border:1px solid {_BORDER_L}; border-radius:5px; padding:4px 7px; }}
+QPushButton,QComboBox {{ background:{_BG_RAISE}; color:{_TEXT_PRI}; border:1px solid {_BORDER_L}; border-radius:5px; padding:4px 7px; }}
 QPushButton:hover {{ background:{_BG_HOVER}; }} QPushButton:disabled {{ color:{_TEXT_SEC}; }}
 QLabel {{ background:transparent; }} QScrollArea {{ border:0; }}
 QFrame#sourceCard {{ border:1px solid {_BORDER_L}; border-radius:7px; }}
@@ -94,6 +95,7 @@ class _ActionBar(QWidget):
         layout.setContentsMargins(7, 5, 7, 5)
         layout.setSpacing(5)
         self.status = _label('發票核對', True)
+        self.status.setFixedWidth(104)
         layout.addWidget(self.status)
         self.check = _CheckButton('辨識核對')
         self.check.setObjectName('checkInvoice')
@@ -121,6 +123,12 @@ class _ActionBar(QWidget):
             return False
         self.show()
         return pin_without_activation(self, pinned)
+
+    def set_status(self, text, color=_TEXT_SEC, detail=None):
+        self.status.setText(self.status.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight,
+                                                                 self.status.width()))
+        self.status.setStyleSheet(f'color:{color}; font-size:11px;')
+        self.status.setToolTip(detail or text)
 
 
 class _CalibrationDialog(QDialog):
@@ -352,14 +360,15 @@ class InvoiceCheckWindow(QWidget):
         self._pin.setToolTip('文字標示及核對小工具置頂；設定視窗仍可正常編輯。')
         self._pin.toggled.connect(self._pin_changed)
         appearance.addWidget(self._pin)
-        appearance.addWidget(_label('背景透明', True))
-        self._transparency = QSpinBox()
-        self._transparency.setRange(0, 100)
-        value = self._read_setting('overlay_transparency', 100)
-        self._transparency.setValue(value if type(value) is int and 0 <= value <= 100 else 100)
-        self._transparency.setSuffix(' %')
-        self._transparency.setToolTip('只調整標示底板；文字保持清楚。100% 不顯示底板。')
-        self._transparency.valueChanged.connect(self._transparency_changed)
+        appearance.addWidget(_label('標示背景', True))
+        transparency = self._read_setting('overlay_transparency', 100)
+        if type(transparency) is not int or not 0 <= transparency <= 100:
+            transparency = 100
+        self._transparency = numeric_choices((0, 25, 50, 75, 100), transparency, lambda value: f'{value}%')
+        apply_combo_box_theme(self._transparency)
+        self._transparency.setAccessibleName('標示背景透明度')
+        self._transparency.setToolTip('標示背景透明度。0% 為深色底板，100% 只顯示結果。')
+        self._transparency.currentIndexChanged.connect(self._transparency_changed)
         appearance.addWidget(self._transparency, 1)
         self._compact_button = QPushButton('收起')
         self._compact_button.setToolTip('收起設定，保留不搶焦點的辨識核對小工具；可先回來源軟體選定資料列。')
@@ -380,7 +389,7 @@ class InvoiceCheckWindow(QWidget):
         buttons.addWidget(self._clear_button)
         outer.addLayout(buttons)
         self.overlay.set_pinned(self._pin.isChecked())
-        self.overlay.set_background_transparency(self._transparency.value())
+        self.overlay.set_background_transparency(transparency)
 
     def _read_setting(self, key, default):
         return self._cfg.get('invoice_check', key, default=default) if self._cfg is not None else default
@@ -404,14 +413,16 @@ class InvoiceCheckWindow(QWidget):
             self._failed('無法更新標示置頂。')
         self._restore_controls()
 
-    def _transparency_changed(self, value):
+    def _transparency_changed(self):
         if not self._live():
             return
+        value = self._transparency.currentData()
         old = self.overlay.background_transparency
         try:
             self._save_setting('overlay_transparency', value)
         except (OSError, ValueError):
-            with QSignalBlocker(self._transparency): self._transparency.setValue(old)
+            with QSignalBlocker(self._transparency):
+                self._transparency.setCurrentIndex(self._transparency.findData(old))
             self._status.setText('透明度設定未儲存，請稍後再試。')
             return
         self.overlay.set_background_transparency(value)
@@ -525,20 +536,39 @@ class InvoiceCheckWindow(QWidget):
 
     def _check(self):
         if not self._live() or not self._check_button.isEnabled(): return
-        self._compact = True
         self._accept_results = True
-        self._hide_temporarily()
         accepted = self.controller.check_once()
         if accepted is False:
             self._accept_results = False
-            self.overlay.finish_capture(False)
         self._refresh()
         self._restore_controls()
 
-    def _hide_temporarily(self):
+    def capture_overlaps(self, widget):
+        if not widget.isVisible() or widget.isMinimized():
+            return False
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return True
+        geometry = screen.geometry()
+        scale = screen.devicePixelRatio()
+        frame = QRectF(widget.frameGeometry())
+        regions = getattr(self.controller, 'capture_regions', self._regions)
+        for x, y, width, height, _ in regions.values():
+            region = QRectF(geometry.x() + x / scale, geometry.y() + y / scale,
+                            width / scale, height / scale)
+            if frame.intersects(region.adjusted(-1, -1, 1, 1)):
+                return True
+        return False
+
+    def _hide_panel_temporarily(self):
         self._temporary_hide = True
-        try: self.hide()
-        finally: self._temporary_hide = False
+        try:
+            self.hide()
+        finally:
+            self._temporary_hide = False
+
+    def _hide_temporarily(self):
+        self._hide_panel_temporarily()
         self.action_bar.hide()
         self.overlay.hide_for_capture()
 
@@ -549,7 +579,11 @@ class InvoiceCheckWindow(QWidget):
         self._reset_rows()
         self.overlay.clear()
         self._snapshot = None
-        self._hide_temporarily()
+        self.overlay.hide_for_capture()
+        if self.capture_overlaps(self):
+            self._hide_panel_temporarily()
+        if self.capture_overlaps(self.action_bar):
+            self.action_bar.hide()
         self._refresh()
 
     def _capture_finished(self):
@@ -561,17 +595,17 @@ class InvoiceCheckWindow(QWidget):
         if not self._live(): return
         self._status.setText(message)
         if state != 'ready' or self._snapshot is None:
-            self.action_bar.status.setText(message[:18])
-            self.action_bar.status.setStyleSheet(f'color:{_TEXT_SEC}; font-size:11px;')
-            self.action_bar.status.setToolTip(message)
+            self.action_bar.set_status(message)
         self._refresh()
         self._restore_controls()
 
     def _restore_controls(self):
         if not self._live() or self._selection_active or self._capturing: return
-        if getattr(self.controller, 'state', '') in ('capturing', 'verifying'): return
         if self._compact:
-            self.action_bar.reveal(self._pin.isChecked())
+            pinned = self._pin.isChecked()
+            if (not self.action_bar.isVisible()
+                    or bool(self.action_bar.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) != pinned):
+                self.action_bar.reveal(pinned)
         elif not self.isVisible():
             self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
             self.show()
@@ -611,9 +645,8 @@ class InvoiceCheckWindow(QWidget):
         statuses = [item.get('status') for item in checks]
         summary, color = ('有差異', _ERROR) if 'different' in statuses else (
             ('待確認', _WARNING) if any(status != 'matched' for status in statuses) else ('本次相符', _SUCCESS))
-        self.action_bar.status.setText(summary + (f' · {overflow}項未標示' if overflow else ''))
-        self.action_bar.status.setStyleSheet(f'color:{color}; font-size:11px;')
-        self.action_bar.status.setToolTip('本次截圖結果。未標示欄位請回設定視窗查看。')
+        summary += f' · {overflow}項未標示' if overflow else ''
+        self.action_bar.set_status(summary, color, f'{summary}。可在設定視窗查看完整結果。')
         self._refresh()
         self._restore_controls()
 
@@ -624,8 +657,7 @@ class InvoiceCheckWindow(QWidget):
         self._snapshot = None
         self._reset_rows()
         self._status.setText(message)
-        self.action_bar.status.setText('需要確認')
-        self.action_bar.status.setToolTip(message)
+        self.action_bar.set_status('需要確認', _WARNING, message)
         self._refresh()
         self._restore_controls()
 
@@ -669,8 +701,7 @@ class InvoiceCheckWindow(QWidget):
     def _show_compact(self):
         if not self._live(): return
         self._compact = True
-        self._hide_temporarily()
-        self.overlay.finish_capture(self._snapshot is not None and self._live())
+        self._hide_panel_temporarily()
         self._restore_controls()
 
     def open(self):
@@ -692,6 +723,8 @@ class InvoiceCheckWindow(QWidget):
         self.activateWindow()
         activate_native_editor(self)
         self.action_bar.hide()
+        if self._snapshot is not None:
+            self.overlay.restore()
         if self._snapshot is None:
             self._status.setText('按辨識核對取得本次畫面。' if len(self._regions) == 2 else '框選發票與目前資料列')
         self._refresh()
