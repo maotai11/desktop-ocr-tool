@@ -180,7 +180,7 @@ try {
         }
         if ($probe.mode -eq '--self-test') {
             if ($result.telemetry_env -cne '1') { throw 'Telemetry opt-out hook missing' }
-            foreach ($key in @('qt', 'models', 'ocr', 'database')) {
+            foreach ($key in @('qt', 'models', 'ocr', 'invoice_qr_items', 'database')) {
                 if ($result.checks.$key -ne $true) { throw "Failed self-test check: $key" }
             }
             Assert-ModelProfileProbes $result $manifest

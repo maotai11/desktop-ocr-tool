@@ -435,7 +435,7 @@ def candidate(tmp_path, monkeypatch):
               "version": publisher.VERSION, "clean_machine_verified": False, "database_integrity": "ok",
               "executable_sha256": hashlib.sha256(exe).hexdigest()}
     probes = {"frozen-selftest.json": dict(common, probe="ocr_database", telemetry_env="1", **profile_report(profiles),
-                                         checks={"qt": True, "models": True, "ocr": True, "database": True}),
+                                         checks={"qt": True, "models": True, "ocr": True, "invoice_qr_items": True, "database": True}),
               "frozen-app-smoke.json": dict(common, probe="application_lifecycle", phase_a=True,
                                           engine_ready=True, shutdown_clean=True,
                                           threads_stopped={"capture": True, "ocr": True, "database": True, "hotkeys": True, "history_maintenance": True})}
@@ -661,11 +661,11 @@ def test_evidence_mutation_during_verify_is_rejected(candidate, tmp_path, monkey
         publisher.prepare_release(root, report, tmp_path / "upload", CONTEXT)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.18', '1.8.0-rc.19'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.18', '1.8.0-rc.19', '1.8.0-rc.20'])
 def test_other_candidate_marker_is_outside_publication_authorization(runner, other_version):
     from src.core.version import APP_VERSION
     env, event, path = runner
-    assert publisher.VERSION == '1.8.0-rc.20'
+    assert publisher.VERSION == '1.8.0-rc.21'
     assert APP_VERSION == publisher.VERSION
     event['head_commit']['message'] = 'publish-prerelease: v' + other_version
     path.write_text(json.dumps(event))
@@ -673,7 +673,7 @@ def test_other_candidate_marker_is_outside_publication_authorization(runner, oth
         publisher.validate_runner_context(env)
 
 
-@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.18', '1.8.0-rc.19'])
+@pytest.mark.parametrize('other_version', ['1.7.0-rc.2', '1.8.0-rc.2', '1.8.0-rc.3', '1.8.0-rc.4', '1.8.0-rc.5', '1.8.0-rc.6', '1.8.0-rc.7', '1.8.0-rc.8', '1.8.0-rc.9', '1.8.0-rc.10', '1.8.0-rc.11', '1.8.0-rc.12', '1.8.0-rc.13', '1.8.0-rc.14', '1.8.0-rc.15', '1.8.0-rc.16', '1.8.0-rc.17', '1.8.0-rc.18', '1.8.0-rc.19', '1.8.0-rc.20'])
 def test_new_candidate_metadata_is_rejected_before_upload_preparation(candidate, tmp_path, other_version):
     root, report_path, _, _, _ = candidate
     report = json.loads(report_path.read_text())

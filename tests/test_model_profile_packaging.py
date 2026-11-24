@@ -132,7 +132,7 @@ def test_build_candidate_gate_requires_profile_probe_evidence(tmp_path, monkeypa
                   passed=True, frozen=True, platform='win32', qt_platform='windows',
                   version=build.APP_VERSION, executable_sha256=build.sha256_file(paths['out_exe']),
                   clean_machine_verified=False, telemetry_env='1', database_integrity='ok',
-                  checks={'qt': True, 'models': True, 'ocr': True, 'database': True})
+                  checks={'qt': True, 'models': True, 'ocr': True, 'invoice_qr_items': True, 'database': True})
     corrupt_profile(report, defect)
     monkeypatch.setattr(build, '_run_probe', lambda *args: report)
     with pytest.raises(RuntimeError, match='model-profile gate'):

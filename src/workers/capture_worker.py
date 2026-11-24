@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 class CaptureWorker(QueueWorker):
     capture_done = Signal(str, object)   # image_path, ItemCreateDTO
     capture_failed = Signal(str)
+    invoice_frame_ready = Signal(object)
+    invoice_items_ready = Signal(object, object, str)
 
     def __init__(self, file_manager: FileManager, parent=None):
         super().__init__(parent)
@@ -49,9 +51,41 @@ class CaptureWorker(QueueWorker):
         except RuntimeError as exc:
             self.capture_failed.emit(str(exc))
 
+    def capture_invoice_items(self, region, expected_monitor, cancel):
+        self.submit(('invoice_items', region, expected_monitor, cancel))
+
+    def _read_invoice_items(self, region, expected_monitor, cancel):
+        from ..core.resource_budget import ResourceBudgetExceeded, memory_preflight
+        from ..invoice_check.capture import capture_regions
+        from ..invoice_check.qr_items import MAX_QR_PIXELS, InvoiceQrError, read_invoice_items
+
+        result, error = None, ''
+        try:
+            pixels = region[2] * region[3]
+            if pixels > MAX_QR_PIXELS:
+                raise InvoiceQrError('框選範圍太大，請只框住同張發票的左右兩碼。')
+            memory_preflight(additional_bytes=pixels * 32 + 32_000_000)
+            snapshot = capture_regions({'invoice': region}, expected_monitor=expected_monitor,
+                                       cancel_event=cancel)
+            if snapshot is None or cancel.is_set():
+                return
+            self.invoice_frame_ready.emit(cancel)
+            result = read_invoice_items(snapshot['images']['invoice'])
+        except (InvoiceQrError, ResourceBudgetExceeded) as exc:
+            error = str(exc)
+        except Exception:
+            error = '無法讀取框選畫面，請重新框選發票的 QR Code。'
+        if not cancel.is_set():
+            self.invoice_items_ready.emit(cancel, result, error)
+
     def run(self):
         backend = None
         for task in self.tasks():
+            if task[0] == 'invoice_items':
+                _, region, expected_monitor, cancel = task
+                if not cancel.is_set():
+                    self._read_invoice_items(region, expected_monitor, cancel)
+                continue
             abs_path = thumb_abs = None
             owned_files = []
             handed_off = False

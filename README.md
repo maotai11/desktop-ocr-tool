@@ -2,33 +2,33 @@
 
 Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可框選螢幕辨識文字、手寫單字找候選，也能匯入 PDF／圖片，把固定位置的欄位逐頁填入文字模板，最後複製或匯出 TXT。
 
-本版為 **1.8.0-rc.20 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
+本版為 **1.8.0-rc.21 候選版**，延續文件套版、螢幕擷取、複製模式、手寫、歷史與檔案位置功能。EXE 包含 Python、Qt、PDFium、兩組 OCR 模型及手寫引擎；使用電腦不需安裝 Python、pip、PDF 閱讀器或 Windows 手寫語言套件，也不需連線下載模型。
 
 保留前版對連續操作的修正：最小化後重新開啟仍看不到視窗、取消框選後沿用舊座標，以及退出期間仍收到舊對話框的儲存操作。手寫視窗隱藏後會停止延遲辨識，重新開啟也不會自動送出舊筆畫。具體觸發步驟與回歸測試見 [浮窗狀態檢查](docs/FLOATING_STATE_AUDIT.md)。
 
-本版改善 **手動發票核對**。按「辨識核對」後會留在目前的面板或小工具，取圖時若擋住來源才短暫讓開。標示背景、封存天數、OCR 次數、圖像門檻、單檔上限與匯出筆數用下拉選單調整，文件位置可用滑桿微調。更新後仍會讀取原有的自訂設定值。
+本版新增 **發票 QR 品項**。框住台灣電子發票的左右 QR Code，就能讀取條碼收錄的品名、數量和單價，並複製為可貼進試算表的三欄明細。
 
 沿用前版的套件修補與背景工作回收：手寫完成後結束輔助程序，OCR 閒置時停用 CPU 忙等。移除的功能不再提供背景辨識入口。GUI、PE 原生元件、套件與防毒的檢查項目及尚未證明的範圍見 [本版驗證範圍](docs/VALIDATION_COVERAGE.md)。套件掃描及網路觀察方法見 [資安與背景工作檢查](docs/SECURITY_REVIEW.md)，設定、旁支與停用節點的掃描範圍見 [設定接線與節點稽核](docs/CONFIG_WIRING_MATRIX.md)。
 
 ## 下載與第一次執行
 
-從 [v1.8.0-rc.20 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.20) 下載：
+從 [v1.8.0-rc.21 Release](https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.21) 下載：
 
 | 檔案 | 用途 |
 | --- | --- |
-| [InkPick-v1.8.0-rc.20.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.20/InkPick-v1.8.0-rc.20.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
-| [InkPick-v1.8.0-rc.20.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.20/InkPick-v1.8.0-rc.20.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
-| [InkPick-v1.8.0-rc.20-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.20/InkPick-v1.8.0-rc.20-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
-| InkPick-v1.8.0-rc.20-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
-| InkPick-v1.8.0-rc.20-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
+| [InkPick-v1.8.0-rc.21.zip](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.21/InkPick-v1.8.0-rc.21.zip) | 建議使用。包含 EXE、離線操作說明、文件套版圖文說明、授權與手寫模型來源 |
+| [InkPick-v1.8.0-rc.21.exe](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.21/InkPick-v1.8.0-rc.21.exe) | 同版單一執行檔；PDF 引擎、模型與執行環境已包在裡面 |
+| [InkPick-v1.8.0-rc.21-README.txt](https://github.com/maotai11/desktop-ocr-tool/releases/download/v1.8.0-rc.21/InkPick-v1.8.0-rc.21-README.txt) | 可單獨下載的離線操作說明，與 ZIP 內 `OFFLINE_README.txt` 內容相同 |
+| InkPick-v1.8.0-rc.21-SHA256SUMS.txt | 核對同版下載檔案的 SHA256 |
+| InkPick-v1.8.0-rc.21-validation-metadata.zip | 同次建置的去識別驗證摘要，不是執行必需檔案 |
 
 1. 在可上網的電腦下載 ZIP，再用隨身碟帶到離線電腦。
 2. 解壓到自己有寫入權限的資料夾，例如 `D:\Tools\InkPick`。不要直接從 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 `InkPick-v1.8.0-rc.20.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
+3. 執行 `InkPick-v1.8.0-rc.21.exe`，不需管理員權限。預設縮到右下角系統匣，點拾字筆圖示開啟浮動窗。
 4. 首次開啟會解開內含資源並載入模型。浮動窗顯示「可擷取文字」後，即可使用。
 5. 結束程式請用系統匣的結束選項，讓尚未完成的辨識與儲存先結束。
 
-核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.20.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
+核對檔案可用 PowerShell：`Get-FileHash .\InkPick-v1.8.0-rc.21.exe -Algorithm SHA256`，與同版 SHA256SUMS 的 EXE 那一列比對。ZIP 內的 `OFFLINE_README.txt` 與 `README.txt` 是相同的完整文字說明，可直接用記事本閱讀。
 
 ## 主浮窗的複製控制
 
@@ -39,6 +39,14 @@ Windows 10（1809 以上）／Windows 11 的 64 位元離線文字工具。可�
 ![主浮窗的複製方式與清理入口](docs/ui/floating-window.png)
 
 上圖為合成介面示意，不含使用者文件。
+
+## 從發票 QR Code 取出品項
+
+1. 點主浮窗的 **「發票 QR 品項」**，在主要螢幕上框住**同一張發票的左右兩個 QR Code**，四周留一點白邊。按 Esc 可取消。
+2. 視窗會逐項列出 **品名、數量、單價**。例如「已讀 2／5 項」表示目前取得 2 項，發票記載交易共有 5 項。只讀到左碼時，可按「重新框選」補讀左右碼。
+3. 按 **「複製明細」**後，貼到試算表會分成三欄，貼到記事本會每項一行。小數、標點及品項順序都會保留。
+
+有些發票只把部分品項放進條碼，也有只含基本資料的發票。視窗會提示已讀筆數或缺少明細。若條碼太小，先在來源軟體放大再框選。每次只讀框內畫面，截圖和明細只在記憶體，關閉後即清除。
 
 ## 手動發票核對
 

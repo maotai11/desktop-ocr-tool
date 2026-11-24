@@ -1,9 +1,16 @@
-﻿InkPick 拾字筆 v1.8.0-rc.20
+﻿InkPick 拾字筆 v1.8.0-rc.21
 完整離線操作說明
 ========================================
 
 這份說明不需要網路、圖片或外部文件，即可完成主要操作。
-本版改善「發票核對」的操作。按下「辨識核對」會保留當前面板或小工具，
+「發票 QR 品項」可以離線讀取台灣電子發票條碼裡的品名、數量、單價。
+點主浮窗的「發票 QR 品項」，在主要螢幕框住同一張發票左右兩個 QR Code，
+四周留白。Esc 可取消，小字讀不到時可先放大發票，再按「重新框選」。
+若顯示「已讀 2／5 項」，表示發票共有 5 項，目前讀到 2 項。部分商家只把
+部分品項寫進條碼。條碼沒有收錄明細時，視窗會說明原因。
+按「複製明細」可貼到試算表，欄位順序為品名、數量、單價，每個品項一行。
+複製保留標點與小數。框選畫面和明細只在記憶體。
+「發票核對」可獨立使用。按下「辨識核對」會保留當前面板或小工具，
 遮到取圖範圍時會短暫讓開，取圖後回到原位置。標示背景可下拉選擇透明度。
 封存天數、辨識次數、圖像門檻、單檔上限與匯出筆數也可直接選擇。
 主浮窗保留複製全部／選字複製及四項清理；舊A／B與整列搜尋維持移除。
@@ -11,7 +18,7 @@
 四項複製清理仍可各選移除／替換並輸入自訂文字；
 儲存後套用一般 OCR／歷史複製及貼上最後一筆，文件套版與手寫候選維持原文。
 ZIP 內 OFFLINE_README.txt 與 README.txt 內容相同；Release 單獨提供的
-InkPick-v1.8.0-rc.20-README.txt 也是同一份 UTF-8（含 BOM）文字說明。
+InkPick-v1.8.0-rc.21-README.txt 也是同一份 UTF-8（含 BOM）文字說明。
 
 沿用前版的操作修正
 - 最小化工具後再從入口開啟會還原；同一個尚未關閉的編輯器保留未儲存草稿。
@@ -27,24 +34,24 @@ EXE 已包含 Python、Qt、PDFium、兩組 OCR 模型與手寫引擎。
 使用電腦不需安裝 Python、pip、PDF 閱讀器、Windows 手寫語言套件，
 首次執行也不需要下載模型，可以斷網使用。
 
-1. 在能上網的電腦下載同版 InkPick-v1.8.0-rc.20.zip，再用隨身碟帶到離線電腦。
+1. 在能上網的電腦下載同版 InkPick-v1.8.0-rc.21.zip，再用隨身碟帶到離線電腦。
 2. 將整份 ZIP 解壓到有寫入權限的資料夾，例如 D:\Tools\InkPick。
    不要直接在 ZIP 裡執行，也不要放在受保護的 Program Files。
-3. 執行 InkPick-v1.8.0-rc.20.exe，不需要管理員權限。
+3. 執行 InkPick-v1.8.0-rc.21.exe，不需要管理員權限。
 4. 預設會縮到右下角系統匣。點拾字筆圖示顯示／隱藏浮動窗；
    也可在圖示按右鍵，選擇功能。浮動窗出現「可擷取文字」後可開始。
 5. 第一次執行會先解開內含資源、載入模型，請等待完成。
    結束程式請從系統匣選「退出」，讓辨識、儲存與背景程序先結束。
 
 同版下載檔案：
-- InkPick-v1.8.0-rc.20.zip：EXE、離線說明、文件套版圖文說明、授權及模型來源。
-- InkPick-v1.8.0-rc.20.exe：單獨的相同執行檔，已內含所需執行環境與模型。
-- InkPick-v1.8.0-rc.20-README.txt：本份離線操作說明。
-- InkPick-v1.8.0-rc.20-SHA256SUMS.txt：同版檔案 SHA256。
-- InkPick-v1.8.0-rc.20-validation-metadata.zip：去識別驗證摘要，執行程式不需要它。
+- InkPick-v1.8.0-rc.21.zip：EXE、離線說明、文件套版圖文說明、授權及模型來源。
+- InkPick-v1.8.0-rc.21.exe：單獨的相同執行檔，已內含所需執行環境與模型。
+- InkPick-v1.8.0-rc.21-README.txt：本份離線操作說明。
+- InkPick-v1.8.0-rc.21-SHA256SUMS.txt：同版檔案 SHA256。
+- InkPick-v1.8.0-rc.21-validation-metadata.zip：去識別驗證摘要，執行程式不需要它。
 
 可在 PowerShell 核對下載檔：
-Get-FileHash .\InkPick-v1.8.0-rc.20.exe -Algorithm SHA256
+Get-FileHash .\InkPick-v1.8.0-rc.21.exe -Algorithm SHA256
 將結果與同版 SHA256SUMS 裡的 EXE 那一列比對。
 不要把其他版本的 EXE、ZIP 或校驗檔混在一起。
 
@@ -479,7 +486,7 @@ Linux 來源驗證可使用 Python 3.12 執行上面相同的依賴、模型與�
 Linux 無桌面測試可設定 QT_QPA_PLATFORM=offscreen。
 
 有網路時可查閱的版本與來源（主要操作不依賴這些網址）：
-https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.20
+https://github.com/maotai11/desktop-ocr-tool/releases/tag/v1.8.0-rc.21
 https://github.com/maotai11/desktop-ocr-tool
 
 

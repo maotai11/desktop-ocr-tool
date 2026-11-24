@@ -10,6 +10,10 @@
 - OpenSSL's upstream README copyright notice is retained here: **Copyright (c) 1998-2026 The OpenSSL Project Authors. Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson. All rights reserved.**
 - These files identify the newly selected runtime and OpenSSL components. The native payload inventory separately records the files actually shipped; neither this notice nor the vulnerability scan is a complete license review of every transitive component.
 
+## Taiwan e-invoice QR item parsing
+
+- einvoice-tw 0.1.0 (MIT). The frozen application includes the wheel’s MIT license in its distribution metadata. [Upstream source](https://github.com/Aaron-lab-c/einvoice-tw).
+
 ## Image processing runtime
 
 - Pillow 13.0.0: HPND / Pillow license; https://github.com/python-pillow/Pillow . Its upstream license metadata is included with the frozen application.
