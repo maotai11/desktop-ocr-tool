@@ -40,7 +40,7 @@ def candidate(tmp_path, monkeypatch):
               'executable_sha256': hashlib.sha256(exe).hexdigest()}
     probes = {
         'frozen-selftest.json': dict(common, probe='ocr_database', telemetry_env='1',
-                                    **profile_report(profiles), checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
+                                    **profile_report(profiles), checks={'qt': True, 'models': True, 'ocr': True, 'invoice_qr_items': True, 'database': True}),
         'frozen-app-smoke.json': dict(common, probe='application_lifecycle', phase_a=True,
                                      engine_ready=True, shutdown_clean=True,
                                      threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True,

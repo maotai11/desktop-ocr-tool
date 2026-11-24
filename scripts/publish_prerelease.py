@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.20. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.21. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -25,7 +25,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.20"
+TAG = "v1.8.0-rc.21"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -134,19 +134,13 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-按「辨識核對」會留在原本的面板或小工具。介面擋住來源時會在取圖期間短暫讓開，取圖後回到原位置。
+在主浮窗點「發票 QR 品項」，框住同一張台灣電子發票的左右 QR Code，即可離線讀出品名、數量和單價。
 
-### 這次調整
-- 發票標示使用深色底板，背景透明度可選 0%、25%、50%、75% 或 100%。100% 時只顯示結果文字。
-- 封存天數、OCR 次數、圖像門檻、文件上限與匯出筆數改用選單，文件欄位位置可用滑桿及方向鍵微調。有效的既有設定值可繼續使用。
-- 五項欄位：預設未稅金額、稅額、開立日期、發票號碼、賣方統編，可改總金額／買方統編；支援已定義的民國／西元日期換算，缺字、低信心與歧義保留待確認。
-- 核對畫面及結果只在記憶體，不存歷史或截圖、不改剪貼簿。主要螢幕合併擷取最多 600 萬像素；範圍校正、透明底板、置頂及收起小工具皆可操作。
-- 每次核對均由使用者按下開始；來源畫面變動或停止後，舊結果不會套回。原生 GUI 門檻另外實測 200% 縮放下主按鈕／小工具核對按鈕保留來源焦點。
-- EXE 與輔助程序總用量採十進位 1 GB 門檻；同版實際資源報告分列 RSS、private allocation、Job 原生峰值及 EXE／解壓／管理資料磁碟用量。模型檔大小不作為 RAM 證據。
-- 寫入前預留設定、影像、SQLite journal及匯出空間；舊資料超限不自動刪除。Log 每份 512 KiB、三份備份；儲存失敗只清理本次確定新建且未被引用的檔案。
-- 保留既有 GUI、封網、隔離資料模式、全部原生元件來源及 Defender、套件漏洞、模型 500 次推論與收尾門檻；新增 resource-budget.json，公開 metadata 共 34 份。這些測試不等於任意文件辨識正確或所有電腦保證。
-
-螢幕 OCR、選字複製、四項複製清理、PDF／圖片套版、手寫及歷史功能保留。原本已退休的 A／B 核對與整列搜尋不重新啟用。
+### 使用方式
+- 將兩個條碼和周圍白邊一起框入。只讀到部分明細時，視窗會列出可取得的品項和筆數。
+- 按「複製明細」，貼進試算表可分成品名、數量、單價三欄。小數及標點保留原樣。
+- 框選截圖與明細只留在記憶體。部分商家未將完整明細寫入條碼，這些品項仍需對照原始發票。
+- 同版 EXE 的離線自測實際解碼一對合成發票 QR Code，並核對品名、數量和單價。
 
 ### 複製清理設定
 - 點主浮窗「複製清理」，勾選項目、選移除／替換後按「套用」；完整設定的剪貼簿分頁也可調整同一組規則。替換可輸入自己的字串，留空等同移除。例：逗號替換成「・」，甲,乙變成甲・乙；換行替換成「 / 」，兩行文字變成同一行。

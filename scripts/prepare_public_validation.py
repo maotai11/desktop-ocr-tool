@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.20'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.21'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',
@@ -38,7 +38,7 @@ BOOLS = frozenset((
     'hashlib_verified ensurepip_completed environment_exported self_mime_preserved helper_stopped '
     'firewall_gate_acknowledged helper_outbound_blocked executable_outbound_blocked '
     'firewall_service_running firewall_profiles_enabled started timed_out output_limit_exceeded '
-    'direct_child_reaped owned_tree_exited implicit_pytest_addopts_cleared qt models ocr database '
+    'direct_child_reaped owned_tree_exited implicit_pytest_addopts_cleared qt models ocr invoice_qr_items database '
     'dirty verified phase_a engine_ready shutdown_clean capture hotkeys profile_empty '
     'copied_executable_only path_isolated python_env_cleared qt_env_cleared outer_network_blocked '
     'pdf_rendering image_rendering region_inheritance page_override template_merge source_unchanged '
@@ -381,7 +381,7 @@ def observed_result(value):
         ('failures_count', 'cases_failed_count', 'negative_protocol_failed_count', 'vulnerabilities_count', 'internet_family_calls',
          'unmapped_count', 'unresolved_dependencies_count', 'invalid_signatures_count', 'antivirus_detections_count')) or
         (type(r.get('checks')) is dict and any(r['checks'].get(k) is False for k in
-            ('qt','models','ocr','database','pdf_rendering','image_rendering','region_inheritance',
+            ('qt','models','ocr','invoice_qr_items','database','pdf_rendering','image_rendering','region_inheritance',
              'page_override','template_merge','source_unchanged','temporary_files_cleaned',
              'launcher_actions_and_capture_cancel','settings_cancel_and_apply','launcher_copy_controls','manual_invoice_check','history_search_tags_and_pin',
              'editor_save_and_history_refresh','ocr_selection_copy_explicit','document_import_template_zoom_clear',

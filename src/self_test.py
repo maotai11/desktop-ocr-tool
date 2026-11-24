@@ -38,6 +38,24 @@ def run_self_test(report_path):
             import hashlib
             import json
             import cv2
+            from .invoice_check.qr_items import read_invoice_items
+            # Synthetic, in-memory receipt exercises the actual bundled decoder
+            # and parser (including the continuation) on an offline machine.
+            header = 'AB112233441020523999900000144000001540000000001234567' + 'A' * 22 + '=='
+            qr_codes = [header + ':**********:2:2:1:茶:1:20:', '**米:2:30.50']
+            symbols = []
+            for payload in qr_codes:
+                code = cv2.QRCodeEncoder.create().encode(payload)
+                code = cv2.copyMakeBorder(code, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=255)
+                symbols.append(cv2.resize(code, None, fx=5, fy=5, interpolation=cv2.INTER_NEAREST))
+            first, second = symbols
+            receipt = np.full((max(len(first), len(second)), first.shape[1]+second.shape[1]+24),
+                              255, dtype=np.uint8)
+            receipt[:len(first), :first.shape[1]] = first
+            receipt[:len(second), -second.shape[1]:] = second
+            if read_invoice_items(receipt).rows != (('茶', '1', '20'), ('米', '2', '30.50')):
+                raise RuntimeError('Bundled invoice QR item decoding failed')
+            report['checks']['invoice_qr_items'] = True
             from .ocr.model_validator import MODEL_PROFILES, DEFAULT_MODEL_PROFILE, model_root
             fixture_root = model_root() / 'models' / 'validation'
             fixtures = json.loads((fixture_root / 'fixtures.json').read_text(encoding='utf-8'))

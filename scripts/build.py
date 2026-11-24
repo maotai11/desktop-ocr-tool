@@ -232,7 +232,7 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
            '--paths', str(root), '--runtime-hook', str(root/'scripts/runtime_offline.py'),
            '--icon', str(root/'assets/branding/inkpick.ico'), '--version-file', str(paths['version_info']),
            '--runtime-hook', str(paths['version_hook']),
-           '--copy-metadata', 'rapidocr-onnxruntime',
+           '--copy-metadata', 'rapidocr-onnxruntime', '--copy-metadata', 'einvoice-tw',
            '--copy-metadata', 'onnxruntime', '--collect-binaries', 'onnxruntime',
            '--copy-metadata', 'pypdfium2', '--collect-binaries', 'pypdfium2_raw',
            '--collect-data', 'pypdfium2_raw', '--hidden-import', 'pypdfium2',
@@ -321,7 +321,7 @@ def validate_candidate(paths):
             raise RuntimeError(f'Invalid candidate report: {report_path}')
         if mode == '--self-test':
             if (report.get('telemetry_env') != '1' or report.get('database_integrity') != 'ok'
-                    or report.get('checks') != {"qt": True, "models": True, "ocr": True, "database": True}):
+                    or report.get('checks') != {"qt": True, "models": True, "ocr": True, "invoice_qr_items": True, "database": True}):
                 raise RuntimeError(f'Incomplete OCR/model gate: {report_path}')
             try:
                 check_model_profiles(report, manifest)

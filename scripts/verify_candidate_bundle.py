@@ -218,7 +218,7 @@ def _check_probe(report, manifest, frozen):
         raise ValueError('Probe executable hash mismatch')
     if report.get('probe') == 'ocr_database':
         if (report.get('telemetry_env') != '1'
-                or report.get('checks') != {'qt': True, 'models': True, 'ocr': True, 'database': True}):
+                or report.get('checks') != {'qt': True, 'models': True, 'ocr': True, 'invoice_qr_items': True, 'database': True}):
             raise ValueError('OCR/model probe mismatch')
         check_model_profiles(report, manifest)
     elif report.get('probe') == 'application_lifecycle':

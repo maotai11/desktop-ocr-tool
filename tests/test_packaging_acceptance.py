@@ -97,7 +97,7 @@ def valid_reports(paths):
     return {
         '--self-test': dict(common, probe='ocr_database', telemetry_env='1',
                             **profile_report(build.bundled_model_profiles(build.ROOT), build.bundled_validation_fixtures(build.ROOT)),
-                            checks={'qt': True, 'models': True, 'ocr': True, 'database': True}),
+                            checks={'qt': True, 'models': True, 'ocr': True, 'invoice_qr_items': True, 'database': True}),
         '--smoke-app': dict(common, probe='application_lifecycle', phase_a=True,
                             engine_ready=True, shutdown_clean=True,
                             threads_stopped={'capture': True, 'ocr': True, 'database': True, 'hotkeys': True, 'history_maintenance': True}),

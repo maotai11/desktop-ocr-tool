@@ -103,6 +103,17 @@ class _CaptureJob(QThread):
             self.payload = {'error': '擷取畫面未完成，請重新辨識。'}
 
 
+def primary_monitor_geometry():
+    """Read on the GUI thread for comparison with the capture backend."""
+    from PySide6.QtGui import QGuiApplication
+    screen = QGuiApplication.primaryScreen()
+    if screen is None:
+        return None
+    rect, scale = screen.geometry(), screen.devicePixelRatio()
+    return {'left': round(rect.x()*scale), 'top': round(rect.y()*scale),
+            'width': round(rect.width()*scale), 'height': round(rect.height()*scale)}
+
+
 class PairCaptureService(QObject):
     """Own at most one finite capture thread; no idle thread or polling timer."""
     finished = Signal(str, object)
@@ -129,15 +140,9 @@ class PairCaptureService(QObject):
             return False
         expected = self._expected_monitor
         if expected is None:
-            # Read Qt's screen description on the GUI thread, then compare it
-            # with MSS inside the worker. Monitor order is not a mapping API.
-            from PySide6.QtGui import QGuiApplication
-            screen = QGuiApplication.primaryScreen()
-            if screen is None:
+            expected = primary_monitor_geometry()
+            if expected is None:
                 return False
-            rect, scale = screen.geometry(), screen.devicePixelRatio()
-            expected = {'left': round(rect.x()*scale), 'top': round(rect.y()*scale),
-                        'width': round(rect.width()*scale), 'height': round(rect.height()*scale)}
         job = _CaptureJob(token, dict(regions), event, self._backend_factory, dict(expected), self)
         self._job = job
         job.finished.connect(self._finished)

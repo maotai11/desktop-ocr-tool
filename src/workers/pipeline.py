@@ -1,5 +1,6 @@
 """Qt owner-thread dispatch and ordered, draining shutdown."""
 import logging
+from threading import Event
 
 from PySide6.QtCore import QEventLoop, QObject, Qt, QTimer, Signal, Slot
 
@@ -29,6 +30,7 @@ class Pipeline(QObject):
         self._ocr_selections = {}
         self._capture_overlay = None
         self._switching_capture = False
+        self._qr_request = self._qr_dialog = None
         self._invoice_selection = None
         self._capture_serial = 0
         self._tools_poll = QTimer(self)
@@ -58,6 +60,10 @@ class Pipeline(QObject):
         capture.finished.connect(self.capture_stopped)
         ocr.finished.connect(self.ocr_stopped)
         db_thread.finished.connect(self.db_stopped)
+        if hasattr(widget, 'invoice_items_requested'):
+            widget.invoice_items_requested.connect(self.start_invoice_items)
+            capture.invoice_frame_ready.connect(self._qr_frame_ready)
+            capture.invoice_items_ready.connect(self._qr_finished)
         for name, callback in (
                 ('invoice_tool_requested', self.cancel_region_capture),
                 ('invoice_region_requested', self.start_invoice_region_capture),
@@ -76,6 +82,7 @@ class Pipeline(QObject):
         overlay.cancelled.connect(self._capture_cancelled)
 
     def _capture_cancelled(self):
+        self._close_invoice_items()
         self._finish_invoice_selection()
         if not self.closing and not self._switching_capture:
             self._reveal_launcher()
@@ -87,7 +94,7 @@ class Pipeline(QObject):
             selection[0].set_selection_active(False)
 
     def cancel_invoice_region_capture(self):
-        if self._invoice_selection is not None:
+        if self._invoice_selection is not None or self._qr_request is not None:
             self.cancel_region_capture()
 
     def _reveal_launcher(self):
@@ -100,6 +107,7 @@ class Pipeline(QObject):
 
     def cancel_region_capture(self):
         # Switching tools must not resurrect the launcher under the new selector.
+        self._close_invoice_items()
         self._switching_capture = True
         try:
             if self._capture_overlay is not None:
@@ -158,9 +166,65 @@ class Pipeline(QObject):
 
         self._capture_overlay.start_capture(selected)
 
+    def _close_invoice_items(self):
+        if self._qr_request is not None:
+            self._qr_request.set()
+            self._qr_request = None
+        if self._qr_dialog is not None:
+            self._qr_dialog.reject()
+
+    def start_invoice_items(self):
+        if self.closing or self._capture_overlay is None:
+            return
+        from ..invoice_check.capture import primary_monitor_geometry
+        expected = primary_monitor_geometry()
+        if expected is None:
+            self.widget.set_ocr_status('找不到主要螢幕，請重新框選。')
+            return
+        self.cancel_region_capture()
+        self.widget.hide_invoice_check()
+        self.widget.hide()
+        self._capture_overlay.selection_prompt = '框住同一張發票的左右 QR Code'
+        request = self._qr_request = Event()
+
+        def selected(x, y, width, height, monitor):
+            if self.closing or request is not self._qr_request:
+                return
+            try:
+                self.capture.capture_invoice_items((x, y, width, height, monitor), expected, request)
+            except RuntimeError as exc:
+                self._qr_finished(request, None, str(exc))
+
+        self._capture_overlay.start_capture(selected)
+
+    def _qr_frame_ready(self, request):
+        if self.closing or request is not self._qr_request or self._qr_dialog is not None:
+            return
+        from ..ui.invoice_items_dialog import InvoiceItemsDialog
+        self._reveal_launcher()
+        dialog = self._qr_dialog = InvoiceItemsDialog(self.widget)
+        dialog.retry_requested.connect(self.start_invoice_items)
+
+        def finished(_):
+            if self._qr_dialog is dialog:
+                request.set()
+                self._qr_request = self._qr_dialog = None
+            dialog.deleteLater()
+
+        dialog.finished.connect(finished)
+        dialog.show()
+
+    def _qr_finished(self, request, result, error):
+        if self.closing or request is not self._qr_request:
+            return
+        self._qr_frame_ready(request)
+        if self._qr_dialog is not None:
+            self._qr_dialog.set_result(result, error)
+
     def start_region_capture(self, mode):
         if self.closing or self._capture_overlay is None:
             return
+        self._close_invoice_items()
         if mode not in ('region_ocr', 'region_image'):
             raise ValueError('Unsupported region capture mode')
         hide_invoice = getattr(self.widget, 'hide_invoice_check', None)
