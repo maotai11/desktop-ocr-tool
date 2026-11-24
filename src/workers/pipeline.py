@@ -202,7 +202,7 @@ class Pipeline(QObject):
             return
         from ..ui.invoice_items_dialog import InvoiceItemsDialog
         self._reveal_launcher()
-        dialog = self._qr_dialog = InvoiceItemsDialog(self.widget)
+        dialog = self._qr_dialog = InvoiceItemsDialog(self.widget, cfg=self.cfg)
         dialog.retry_requested.connect(self.start_invoice_items)
 
         def finished(_):

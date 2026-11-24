@@ -1,6 +1,6 @@
 """Publish one approved candidate from same-run, hash-bound Windows evidence.
 
-This program is deliberately specific to v1.8.0-rc.22. Merely preparing files
+This program is deliberately specific to v1.8.0-rc.23. Merely preparing files
 does not use credentials or network. The CLI can publish only on the explicitly
 marked push in the fixed repository/branch; the workflow owns token permissions.
 GitHub REST references: https://docs.github.com/en/rest/releases/releases and
@@ -25,7 +25,7 @@ import zipfile
 
 REPOSITORY = "maotai11/desktop-ocr-tool"
 BRANCH_REF = "refs/heads/master"
-TAG = "v1.8.0-rc.22"
+TAG = "v1.8.0-rc.23"
 VERSION = TAG[1:]
 PUBLISH_MARKER = "publish-prerelease: " + TAG
 API_BASE = "https://api.github.com/repos/" + REPOSITORY
@@ -134,19 +134,23 @@ def release_notes(context: RunnerContext, assets: tuple[Asset, ...]) -> str:
     hashes = "\n".join(f"- `{asset.name}`: `{asset.sha256}`" for asset in assets)
     return f"""## InkPick 拾字筆 {TAG} 候選測試版
 
-本版改善「發票 QR 品項」對小型及輕度模糊條碼的讀取。框住同張發票的左右 QR Code 後，拾字筆會在需要時對同一張截圖重試解碼。OpenCV 和新增的 ZXing-C++ 解碼器均已內附，可離線使用。
+「發票 QR 品項」改善縮小、模糊雙碼的離線讀取。預覽可選完整明細，或只複製品名、數量、單價其中一欄。
+
+在 108 張固定合成截圖上，前版完整讀出 73 張，本版 100 張，新增讀全 27 張。其餘 8 張沒有可用明細。測試中讓來源以兩倍尺寸重繪條碼再框選，這 8 張也都能讀全。
 
 ### 使用方式
-- 將兩個完整條碼和周圍白邊一起框入。只讀到部分明細時，視窗會列出實際解出的品項和筆數。
+
+- 將同一張發票的左右兩個條碼和周圍白邊一起框入。只讀到部分明細時，視窗會列出實際解出的品項和筆數。
 - 若重試後仍讀不到，請先在來源軟體放大原始發票，再按「重新框選」。
-- 按「複製明細」，貼進試算表可分成品名、數量、單價三欄。小數及標點保留原樣。
+- 預設「全部欄位」會複製表頭和三欄。「只取品名」「只取數量」「只取單價」會各複製一欄，省略表頭。這項偏好可在預覽或「設定 → 剪貼簿 → 辨識後複製 → 發票 QR 品項」更改。
+- QR 明細會套用主浮窗「複製清理」。例如只複製品名、將換行替換成「、」，即可貼成「麵包、豆漿」。
 - 框選截圖與明細只留在記憶體。部分商家未將完整明細寫入條碼，這些品項仍需對照原始發票。
 - 同版 EXE 的離線自測讀取清晰與縮小模糊的合成雙碼發票，逐項核對品名、數量和單價。
 
 ### 複製清理設定
 - 點主浮窗「複製清理」，勾選項目、選移除／替換後按「套用」；完整設定的剪貼簿分頁也可調整同一組規則。替換可輸入自己的字串，留空等同移除。例：逗號替換成「・」，甲,乙變成甲・乙；換行替換成「 / 」，兩行文字變成同一行。
 - 個別逗號／撇號／換行優先；替代字串原樣插入，不再次清理。單獨換行移除保留多筆紀錄間空行，明確換行替換會處理兩個分隔換行。
-- 一般 OCR／歷史複製及「貼上最後一筆」先套用清理。文件套版複製、手寫候選與匯出保持原樣。所有標點移除會讓 -1.23 變成 123，請按用途選擇。
+- 一般 OCR、發票 QR 品項、歷史複製及「貼上最後一筆」先套用清理。文件套版複製、手寫候選與匯出保持原樣。所有標點移除會讓 -1.23 變成 123，請按用途選擇。
 
 螢幕 OCR 仍先框選再辨識，預設自動複製全文，也能改成先選文字再複製。PDF／圖片套版、手寫、歷史與檔案位置功能保留；公開封裝繼續排除原始診斷、建置路徑與使用者資料。
 

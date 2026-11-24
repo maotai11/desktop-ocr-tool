@@ -43,6 +43,52 @@ def _item_name(text, encoding):
     return text
 
 
+def _has_unparsed_data(invoice):
+    # Empty trailing separators can remain after the last complete item.
+    return any(invoice.extra_fields) or any(not item.name and any(item.raw) for item in invoice.items)
+
+
+def _complete_numeric_item(item):
+    return bool(item.name and item.quantity is not None and item.unit_price is not None)
+
+
+def _repair_item_boundary(left, right, invoice, *, raw_bytes):
+    """Recover one misplaced separator only at a provable complete-row boundary."""
+    count = invoice.items_in_qr
+    if not right or not count or invoice.encoding_code not in ('0', '1', '3'):
+        return invoice
+    if sum(bool(item.name) for item in invoice.items) == count and not _has_unparsed_data(invoice):
+        return invoice
+
+    continuation = right[2:]
+    if left.endswith(':') and continuation.startswith(':'):
+        joined = '**' + continuation[1:]
+    elif not left.endswith(':') and continuation and not continuation.startswith(':'):
+        # A digit, sign, decimal separator or exponent may belong to the price
+        # at the end of the left code. Never choose which code owns that digit.
+        name = continuation.partition(':')[0]
+        try:
+            codec = 'cp950' if invoice.encoding_code == '0' else 'utf-8'
+            name = name.encode('latin-1').decode(codec)
+        except UnicodeError:
+            pass  # OpenCV may already have returned this name as Unicode.
+        if name[0].isdigit() or name[0].isspace() or name[0] in '.+-_,eE':
+            return invoice
+        joined = '**:' + continuation
+    else:
+        return invoice
+
+    prefix = parse(left, strict=True, fix_mojibake=not raw_bytes)
+    if (not 0 < len(prefix.items) < count or _has_unparsed_data(prefix)
+            or not all(_complete_numeric_item(item) for item in prefix.items)):
+        return invoice
+    candidate = parse(left, joined, strict=True, fix_mojibake=not raw_bytes)
+    if (len(candidate.items) != count or _has_unparsed_data(candidate)
+            or not all(_complete_numeric_item(item) for item in candidate.items)):
+        return invoice
+    return candidate
+
+
 def parse_items(payloads, *, raw_bytes=False, unreadable_partner=False):
     # Latin-1 is a reversible byte transport. Join both QR halves before
     # decoding their item fields, including a split inside a Chinese character.
@@ -71,26 +117,44 @@ def parse_items(payloads, *, raw_bytes=False, unreadable_partner=False):
         return InvoiceItems((), '左碼只有發票基本資料，沒有品項明細。')
     try:
         invoice = parse(left, right, strict=True, fix_mojibake=not raw_bytes)
+        if right and left[-1].isspace() and invoice.encoding_code in ('0', '1', '3'):
+            # The library strips each scanner input before joining it. At an
+            # internal byte boundary this can remove a space in a product name
+            # or a Latin-1 transport byte such as the final UTF-8 byte of 雅.
+            invoice = parse(left + right[2:], strict=True, fix_mojibake=not raw_bytes)
+        invoice = _repair_item_boundary(left, right, invoice, raw_bytes=raw_bytes)
     except InvoiceFormatError:
         raise InvoiceQrError('品項資料無法解讀。請將同張發票的左右兩碼一起框選。') from None
+
+    incomplete_fields = _has_unparsed_data(invoice)
+    items = [item for item in invoice.items if item.name]
+    encoded, total = invoice.items_in_qr, invoice.items_total
+    if (encoded is not None and len(items) > encoded) or (total is not None and len(items) > total):
+        raise InvoiceQrError('讀到的品項超過發票記載筆數，請確認框內只有同張發票。')
+    if right and (incomplete_fields or (encoded is not None and len(items) < encoded)):
+        # A shifted group can look like a valid name with a price containing
+        # the next item's name. Publish only the verified numeric prefix.
+        items = []
+        for item in invoice.items:
+            if not _complete_numeric_item(item):
+                break
+            items.append(item)
 
     if raw_bytes and invoice.encoding_code in ('0', '1', '3'):
         codec = 'cp950' if invoice.encoding_code == '0' else 'utf-8'
         try:
             rows = tuple(tuple(field.encode('latin-1').decode(codec) for field in item.raw)
-                         for item in invoice.items if item.name)
+                         for item in items)
         except UnicodeError:
             raise InvoiceQrError('品項編碼不完整，請將同張發票的左右兩碼一起框選。') from None
     else:
         rows = tuple((_item_name(item.raw[0], invoice.encoding_code), *item.raw[1:])
-                     for item in invoice.items if item.name)
-    count, encoded, total = len(rows), invoice.items_in_qr, invoice.items_total
-    if (encoded is not None and count > encoded) or (total is not None and count > total):
-        raise InvoiceQrError('讀到的品項超過發票記載筆數，請確認框內只有同張發票。')
+                     for item in items)
+    count = len(rows)
 
     # Without the continuation the last field could end mid-price. Only keep
     # a definitively terminated triple while more encoded items are outstanding.
-    end_unconfirmed = not right and not invoice.extra_fields and not left.endswith(':')
+    end_unconfirmed = not right and not incomplete_fields and not left.endswith(':')
     if ((unreadable_partner or encoded is not None and count < encoded) and rows
             and end_unconfirmed):
         rows = rows[:-1]
@@ -98,15 +162,18 @@ def parse_items(payloads, *, raw_bytes=False, unreadable_partner=False):
     summary = f'已讀 {count} 項' if total is None else f'已讀 {count}／{total} 項'
     if unreadable_partner:
         summary += '　另一個條碼未能解碼，請在來源軟體放大發票，再框住左右兩碼。'
-    elif not right and (encoded is None or count < encoded or invoice.extra_fields):
+    elif not right and (encoded is None or count < encoded or incomplete_fields):
         summary += '　僅讀到左碼，請在來源軟體放大發票，再框住同張發票的左右兩碼。'
-    elif invoice.extra_fields or (encoded is not None and count != encoded):
-        summary += '　條碼內有未能讀全的明細。'
+    elif incomplete_fields or (encoded is not None and count != encoded):
+        if encoded is not None and count < encoded:
+            summary += f'　已讀左右兩碼，條碼記載 {encoded} 項，只有 {count} 筆完整明細。請對照票面。'
+        else:
+            summary += '　已讀左右兩碼，末尾欄位未組成完整品項。請對照票面。'
     elif not rows:
         summary += '　條碼未附品項明細。'
     elif total is not None and count < total:
         summary += '　條碼只收錄部分品項。'
-    if not right and not unreadable_partner and count == encoded and count and not invoice.extra_fields:
+    if not right and not unreadable_partner and count == encoded and count and not incomplete_fields:
         summary += '（僅讀到左碼，末筆單價請對照右碼）' if end_unconfirmed else '（僅讀到左碼）'
     return InvoiceItems(rows, summary)
 
@@ -220,6 +287,11 @@ def _separate_unreadable(candidate, decoded):
         return False
     for symbol in decoded:
         valid = np.asarray(symbol.corners, dtype=np.float32)
+        # OpenCV can report zero intersection for nested polygons sharing an
+        # edge. Check containment with a half-pixel rounding allowance.
+        if all(cv2.pointPolygonTest(valid, tuple(map(float, point)), True) >= -.5
+               for point in polygon):
+            return False
         overlap, _ = cv2.intersectConvexConvex(polygon, valid)
         if overlap > .15 * min(area, cv2.contourArea(valid)):
             return False
@@ -236,13 +308,19 @@ def _read_symbols(symbols):
     if re.match(rb'^[A-Za-z]{2}[0-9]{15}', left.payload) and right.payload.startswith(b'**'):
         offset = right.center - left.center
         side = max(left.side, right.side)
-        axes = [(1., 0.), (left.corners[1] - left.corners[0]) / left.side,
-                (right.corners[1] - right.corners[0]) / right.side]
+        left_axis = (left.corners[1] - left.corners[0]) / left.side
+        right_axis = (right.corners[1] - right.corners[0]) / right.side
+
         def same_row(axis):
             along = float(np.dot(offset, axis))
             across = abs(float(offset[0]*axis[1] - offset[1]*axis[0]))
             return 0 < along <= 3.5 * side and across <= .65 * side
-        if not any(same_row(axis) for axis in axes):
+
+        # Both codes are printed in the same orientation on one invoice. A
+        # differently rotated continuation from the next page must not make
+        # the separation look horizontal in just its own coordinate system.
+        if (float(np.dot(left_axis, right_axis)) < math.cos(math.radians(30))
+                or not same_row(left_axis) or not same_row(right_axis)):
             raise InvoiceQrError('兩個條碼的位置無法配對，請只框同張發票並排的左右兩碼。')
     if left.raw_bytes == right.raw_bytes:
         return parse_items([left.payload, right.payload], raw_bytes=left.raw_bytes)
@@ -305,6 +383,11 @@ def read_invoice_items(image, *, cancel_event=None):
         observed, located = _zxing_symbols(enhanced, scale, padding)
         detected |= located
         _merge_symbols(found, observed)
+    if sum(bool(s.payload) for s in found) < 2:
+        from .qr_recovery import recover_patches
+        decoded_corners = [symbol.corners for symbol in found if symbol.payload]
+        for payload, corners in recover_patches(gray, decoded_corners, lambda: _check_cancel(cancel_event)):
+            _merge_symbols(found, [_Symbol(payload, corners, True)])
     _check_cancel(cancel_event)
     decoded = [s for s in found if s.payload]
     if not decoded and detected:

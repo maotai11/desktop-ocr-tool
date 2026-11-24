@@ -53,13 +53,14 @@ def run_self_test(report_path):
                               255, dtype=np.uint8)
             receipt[:len(first), :first.shape[1]] = first
             receipt[:len(second), -second.shape[1]:] = second
-            # The smaller second frame models a scaled invoice viewer. Both
-            # codes must still decode to the exact items with the packaged readers.
+            # A scaled viewer and two blur levels exercise the packaged reader.
+            # The stronger blur left this synthetic receipt unreadable in rc.22.
             small = cv2.resize(receipt, None, fx=0.4, fy=0.4, interpolation=cv2.INTER_AREA)
-            blurred = cv2.GaussianBlur(small, (0, 0), 0.85)
-            for frame in (receipt, blurred):
+            for label, frame in (('clear', receipt),
+                                 ('scaled', cv2.GaussianBlur(small, (0, 0), 0.85)),
+                                 ('defocused', cv2.GaussianBlur(small, (0, 0), 1.50))):
                 if read_invoice_items(frame).rows != (('茶', '1', '20'), ('米', '2', '30.50')):
-                    raise RuntimeError('Bundled invoice QR item decoding failed')
+                    raise RuntimeError(f'Bundled invoice QR item decoding failed ({label})')
             report['checks']['invoice_qr_items'] = True
             from .ocr.model_validator import MODEL_PROFILES, DEFAULT_MODEL_PROFILE, model_root
             fixture_root = model_root() / 'models' / 'validation'

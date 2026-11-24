@@ -1,6 +1,6 @@
 # 版本驗證範圍與結果判讀
 
-目前版本：1.8.0-rc.22。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
+目前版本：1.8.0-rc.23。下列探針在建置／驗證時執行，不是一般使用時的背景掃描。這份文件將 GUI 操作、OCR 功能、原生元件與防毒分開列出；「指定檢查通過」只指表內的資料、操作及環境，不能解讀為任意 GUI 輸入或所有 DLL 都安全。
 
 每版實際結果以該版 Release 的 `validation-metadata.zip` 為準，必須同時對上來源 commit 與 EXE SHA256。缺少、跳過、取消、逾時、不支援或未完成的必需報告不能當成通過；不能拿前版的綠燈替代新版。這份操作範圍表不是預先宣告尚未執行的發布檢查已成功。
 
@@ -21,6 +21,27 @@
 | rc.20 | 發票核對驗證面板恢復、背景透明度選擇與 Windows 原生鍵盤操作，沿用 16 項 GUI 檢查與 34 份發布報告 | Windows 成品、資源及隔離驗證以 rc.20 同次報告為準 |
 | rc.21 | 離線自測以合成雙碼發票讀取中文品名、數量與單價，驗證封裝的 QR 解碼及解析 | 實際收錄的品項取決於商家，螢幕縮放會影響條碼可讀性 |
 | rc.22 | OpenCV 搭配離線 ZXing-C++ 3.1.1 解碼。以合成發票檢查輕度模糊及縮小後的品項讀取，逐欄比對品名、數量、單價 | 原圖缺少可解碼的方格細節時，仍需較清楚的來源 |
+| rc.23 | 針對前版未讀全的縮小、模糊雙碼，逐項核對品名、數量、單價。另檢查複製完整明細與單欄時的換行、替換及偏好保存 | 合成發票的結果適用於測試中的尺寸與失真條件，實際文件仍受畫質與條碼內明細限制 |
+
+## 怎麼重跑發票 QR 品項的 108 張比對
+
+在已安裝專案依賴的環境，從專案根目錄執行以下指令。測試資料含 108 張合成發票畫面裁圖，其中 rc.22 讀全 73 張、未讀全 35 張。每張圖都先核對灰階像素 SHA256，再將影像交給與浮窗相同的品項讀取函式。正解只用於最後評分。
+
+本版在相同像素上讀全 100 張，原先未讀全的 35 張新增讀全 27 張，另外 8 張沒有可用明細。逐欄比較共 0 張錯值、0 張退步。針對這 8 張另做兩次實驗，放大原截圖仍無法讀全，讓合成發票來源以兩倍尺寸重新繪出相同條碼後再擷取，8 張都能讀全。
+
+```sh
+python scripts/benchmark_invoice_qr.py --report qr-report.json
+```
+
+`qr-report.json` 中的 `recovered` 是前版未讀全、本次品名、數量、單價及順序都吻合的張數。`regressions` 列出原先讀全、本次未讀全的圖片，包含 rc.22 讀全的 73 張及 rc.23 新讀全後列入 `recovered_in_rc23` 的圖片。CI 會重跑全部 108 張，遇到退步或錯值即失敗。個案用 `complete` 表示完整吻合、`partial` 表示只讀出開頭若干完整品項、`unreadable` 表示沒有可用明細、`wrong` 表示輸出與正解有出入。讀取任一真實發票時，仍以螢幕框選所得的像素為限。[測試資料](../tests/fixtures/invoice_qr) · [執行腳本](../scripts/benchmark_invoice_qr.py)
+
+另依 awesome-qr-code 收錄的 jsQR 逐圖回歸作法，比較每張圖的結果，再用另一個產碼器 Nayuki 建立 48 張獨立合成圖，以不同容錯等級、遮罩、旋轉、模糊及 JPEG 壓縮測試中文品項。這組另行計分的圖，rc.22 讀全 40 張，本版讀全 45 張。剩餘 3 張未讀出明細，錯值及退步均為 0 張。[awesome-qr-code](https://github.com/make-github-pseudonymous-again/awesome-qr-code/tree/d04e5493dc6ac5060031779777e2490e6dcbe5fe) · [jsQR 測試方法](https://github.com/cozmo/jsQR/blob/8e6a036beafa7053dd44b1b76ac578d22b1b3311/README.md#contributing) · [Nayuki 產碼器](https://github.com/nayuki/QR-Code-generator/tree/9a217d443937f60cc56c1458c39a211d7f2d3af5)
+
+另一組盲測使用 Python qrcode 產生 10 張不同品項的合成發票，每張以 8 種尺寸或影像失真呈現。80 張中 rc.22 讀全 50 張，本版 69 張，原先讀全的 50 張全部保留。其餘 11 張沒有可用明細，逐欄比對 0 張錯值。另外提供 16 張雜訊、表格線或非發票條碼，本版均未輸出品項。
+
+複製操作參考 awesome-qt 的 PySide 資源，以及 awesome-python-applications 收錄的 qutebrowser 剪貼簿測試。在 Qt 100% 與 200% 縮放下操作預覽，核對按鈕回饋和實際剪貼簿文字，涵蓋全部欄位、三種單欄、換行替換及清理後為空的情形。[專案內的預覽測試](../tests/test_invoice_item_copy.py) · [awesome-qt](https://github.com/JesseTG/awesome-qt/tree/628b26bfade7c26a45025450a11d34b727675690) · [awesome-python-applications](https://github.com/mahmoud/awesome-python-applications) · [qutebrowser 測試案例](https://github.com/qutebrowser/qutebrowser/blob/main/tests/end2end/features/yankpaste.feature)
+
+來源版及封裝版的離線自測另以同一張合成雙碼發票，分別測正常畫面、縮小輕度模糊與縮小重度模糊三種情形。三次都需讀出「茶／1／20」及「米／2／30.50」，才會記錄 `invoice_qr_items` 通過。
 
 ## GUI 要驗證到哪裡
 

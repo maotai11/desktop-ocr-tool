@@ -71,6 +71,7 @@ DEFAULT_SETTINGS = {
         "max_text_length": 50000,
         "deduplicate": True,
         "ocr_copy_mode": "all",
+        "invoice_item_copy_field": "all",
         "copy_remove_commas": False,
         "copy_remove_apostrophes": False,
         "copy_remove_newlines": False,
