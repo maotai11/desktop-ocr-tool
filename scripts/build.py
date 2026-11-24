@@ -233,6 +233,7 @@ def pyinstaller_command(root: Path, paths: dict[str, Path], onefile=True):
            '--icon', str(root/'assets/branding/inkpick.ico'), '--version-file', str(paths['version_info']),
            '--runtime-hook', str(paths['version_hook']),
            '--copy-metadata', 'rapidocr-onnxruntime', '--copy-metadata', 'einvoice-tw',
+           '--copy-metadata', 'zxing-cpp',
            '--copy-metadata', 'onnxruntime', '--collect-binaries', 'onnxruntime',
            '--copy-metadata', 'pypdfium2', '--collect-binaries', 'pypdfium2_raw',
            '--collect-data', 'pypdfium2_raw', '--hidden-import', 'pypdfium2',

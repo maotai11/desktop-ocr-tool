@@ -12,6 +12,7 @@
 
 ## Taiwan e-invoice QR item parsing
 
+- zxing-cpp 3.1.1 (Apache-2.0), by the ZXing-C++ contributors. The application uses the wheel’s local QR decoder. The Windows EXE includes its native Python module and the complete upstream wheel license at `zxing_cpp-3.1.1.dist-info/licenses/LICENSE`. [Upstream release](https://github.com/zxing-cpp/zxing-cpp/tree/v3.1.1) · [License](https://github.com/zxing-cpp/zxing-cpp/blob/v3.1.1/LICENSE).
 - einvoice-tw 0.1.0 (MIT). The frozen application includes the wheel’s MIT license in its distribution metadata. [Upstream source](https://github.com/Aaron-lab-c/einvoice-tw).
 
 ## Image processing runtime

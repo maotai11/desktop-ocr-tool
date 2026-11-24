@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+from importlib.metadata import distribution
 
 from src.ocr.model_validator import DEFAULT_MODEL_PROFILE, MODEL_PROFILES
 
@@ -41,6 +42,9 @@ def fixture_profiles():
     assets.update(fixture_validation()[1])
     assets['rapidocr_onnxruntime/config.yaml'] = b'fake-runtime-config'
     assets['rapidocr_onnxruntime-1.4.4.dist-info/METADATA'] = b'Name: rapidocr-onnxruntime\nVersion: 1.4.4\n'
+    license_path = 'zxing_cpp-3.1.1.dist-info/licenses/LICENSE'
+    assets[license_path] = distribution('zxing-cpp').locate_file(license_path).read_bytes()
+    assets['zxingcpp/zxingcpp.pyd'] = b'synthetic native component'
     return profiles, assets
 
 

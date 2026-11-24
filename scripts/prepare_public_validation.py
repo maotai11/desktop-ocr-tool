@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 OUTPUT = 'artifacts/public-validation'
-VERSION = '1.8.0-rc.21'  # same fixed internal candidate as the existing gate
+VERSION = '1.8.0-rc.22'  # same fixed internal candidate as the existing gate
 MAX_REPORT = 16 * 1024 * 1024
 MAX_BINARY = 2 * 1024 * 1024 * 1024
 STEP_IDS = ('checkout', 'python', 'runtime_preparation', 'linux_dependencies', 'build_installer', 'wheels', 'wheel_inventory',

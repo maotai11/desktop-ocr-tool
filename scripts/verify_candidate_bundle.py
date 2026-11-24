@@ -369,6 +369,11 @@ def inspect_frozen_payload(path, model_profiles, source_files=None, validation_f
     for name in required:
         if not any(value.endswith('/' + name) or value == name for value in lower):
             raise ValueError(f'Frozen dependency absent: {name}')
+    qr_license = names.get('zxing_cpp-3.1.1.dist-info/licenses/LICENSE')
+    if ('zxingcpp/zxingcpp.pyd' not in names or qr_license is None
+            or hashlib.sha256(reader.extract(qr_license).replace(b'\r\n', b'\n')).hexdigest()
+               != 'c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08'):
+        raise ValueError('Frozen ZXing-C++ decoder or complete wheel license absent or mismatched')
     metadata_names = [name for name in names if name.endswith('/METADATA')
                       and PurePosixPath(name).parent.name.lower().replace('-', '_').startswith('rapidocr_onnxruntime_')
                       and PurePosixPath(name).parent.name.endswith('.dist-info')]
