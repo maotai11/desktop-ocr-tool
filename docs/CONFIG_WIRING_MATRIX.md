@@ -23,7 +23,8 @@
 | `clipboard.max_text_length` | JSON；每次收錄時讀 | 控制器在交付前檢查型別、長度及當下開關，超長不保存，內容不寫入診斷訊息 |
 | `clipboard.deduplicate` | JSON；下次啟動 | `app.main` → `DbWorker` → Repository 去重政策 |
 | `clipboard.ocr_copy_mode` | 浮窗「複製全部／選字複製」點選即保存，或完整設定「辨識完成後」儲存；立即 | `Pipeline` OCR 完成時選擇全部複製或開啟選字視窗；晚到或過期結果不能覆蓋較新的手動複製 |
-| `clipboard.copy_remove_commas`、`clipboard.copy_remove_apostrophes`、`clipboard.copy_remove_newlines`、`clipboard.copy_remove_punctuation` | 浮窗「複製清理」四列勾選按套用，或完整設定儲存；立即 | 名稱沿用舊鍵，現在代表該規則是否啟用；一般 OCR／歷史／編輯器經 `writer.copy_text`／`copy_text_batch` 清理輸出，`FloatingWidget.paste_last_item` 在貼上前也準備清理文字，不改原文。文件套版複製、手寫候選與貼上／還原低階路徑保持原樣 |
+| `clipboard.invoice_item_copy_field` | 發票 QR 品項預覽選單，或「設定 → 剪貼簿 → 辨識後複製 → 發票 QR 品項」 | `all` 複製表頭與三欄，`name`、`quantity`、`unit_price` 各複製一欄。預設 `all`。按複製才將結果經 `writer.copy_text` 套用清理並寫入剪貼簿 |
+| `clipboard.copy_remove_commas`、`clipboard.copy_remove_apostrophes`、`clipboard.copy_remove_newlines`、`clipboard.copy_remove_punctuation` | 浮窗「複製清理」四列勾選按套用，或完整設定儲存；立即 | 名稱沿用舊鍵，現在代表該規則是否啟用；一般 OCR／發票 QR 品項／歷史／編輯器經 `writer.copy_text`／`copy_text_batch` 清理輸出，`FloatingWidget.paste_last_item` 在貼上前也準備清理文字，不改原文。文件套版複製、手寫候選與貼上／還原低階路徑保持原樣 |
 | `clipboard.copy_cleanup_mode_*`（commas／apostrophes／newlines／punctuation） | 浮窗清理面板／完整設定的移除／替換選單；保存後立即 | `text_cleanup.prepare_copy_text` 讀取 remove／replace，舊設定缺鍵預設 remove；個別類別優先於所有標點，未知動作保留該類原字元 |
 | `clipboard.copy_replace_*`（同上四個尾碼） | 浮窗清理面板／完整設定的自訂文字；保存後立即 | 最多 64 個 Unicode 字元的字面字串；只在 replace 使用，不解讀表達式，插入後不再清理。`copy_batch_separator` 區分舊換行移除與明確替換的紀錄分隔；無效設定不退化成額外移除 |
 | `documents.max_file_size_mb` | 文件視窗大小上限；匯入時讀 | 文件套版匯入控制器限制單檔大小，預設 100MB；另有頁數、解碼及像素資源限制 |

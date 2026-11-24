@@ -8,6 +8,25 @@ from .theme import (_BG, _BG_RAISE, _TEXT_PRI, _TEXT_SEC, _BORDER,
                     _ACCENT, apply_combo_box_theme)
 
 
+INVOICE_ITEM_COLUMNS = {'name': '品名', 'quantity': '數量', 'unit_price': '單價'}
+
+
+def invoice_copy_field(cfg):
+    value = cfg.get('clipboard', 'invoice_item_copy_field', default='all') if cfg is not None else 'all'
+    return value if isinstance(value, str) and value in INVOICE_ITEM_COLUMNS else 'all'
+
+
+def invoice_copy_field_combo(cfg):
+    combo = QComboBox()
+    combo.addItem('全部欄位', 'all')
+    for field, label in INVOICE_ITEM_COLUMNS.items():
+        combo.addItem('只取' + label, field)
+    combo.setCurrentIndex(combo.findData(invoice_copy_field(cfg)))
+    combo.setAccessibleName('發票品項複製欄位')
+    combo.setToolTip('全部欄位含表頭。單一欄位每項一行，複製時套用剪貼簿的複製清理。')
+    return combo
+
+
 def read_copy_mode(cfg):
     return 'select' if cfg.get('clipboard', 'ocr_copy_mode', default='all') == 'select' else 'all'
 
@@ -19,6 +38,13 @@ def _write_copy_values(cfg, updates):
     else:
         for key, value in updates.items():
             cfg.set('clipboard', key, value)
+
+
+def save_invoice_copy_field(cfg, field):
+    if field not in ('all', *INVOICE_ITEM_COLUMNS):
+        raise ValueError('未知的發票品項欄位')
+    if field != invoice_copy_field(cfg):
+        _write_copy_values(cfg, {'invoice_item_copy_field': field})
 
 
 def set_copy_mode(cfg, mode):
@@ -56,7 +82,7 @@ class CopyCleanupEditor(QGroupBox):
         self._cleanup_replacement_edited = set()
         cleanup = self
         self.setTitle('複製清理')
-        cleanup.setToolTip('套用於一般 OCR、歷史與編輯器的文字複製，以及「貼上最後一筆」；文件套版及手寫候選保留原樣。原始文字不變。個別規則優先於「所有標點與空白」；替代文字不會再次被清理。')
+        cleanup.setToolTip('套用於一般 OCR、發票 QR 品項、歷史與編輯器的文字複製，以及「貼上最後一筆」；文件套版及手寫候選保留原樣。原始文字不變。個別規則優先於「所有標點與空白」；替代文字不會再次被清理。')
         cleanup_rows = QVBoxLayout(cleanup)
         cleanup_rows.setSpacing(10)
         titles = {'copy_remove_commas': '逗號', 'copy_remove_apostrophes': '撇號',

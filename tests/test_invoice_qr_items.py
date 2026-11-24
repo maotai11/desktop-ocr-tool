@@ -1,6 +1,8 @@
 """Synthetic receipts only. Exercise real QR decoding as well as partial payloads."""
 import base64
+from pathlib import Path
 from threading import Event
+from zipfile import ZipFile
 
 import cv2
 import numpy as np
@@ -238,6 +240,10 @@ def test_no_code_on_screen():
 
 def test_floating_entry_through_worker_preview_copy_retry_escape(qtbot, running_pipeline, monkeypatch):
     pipeline, widget, overlay = running_pipeline
+    pipeline.cfg = widget._cfg
+    pipeline.cfg.set('clipboard', 'copy_remove_newlines', True)
+    pipeline.cfg.set('clipboard', 'copy_cleanup_mode_newlines', 'replace')
+    pipeline.cfg.set('clipboard', 'copy_replace_newlines', '+')
     image = screen(left('茶-葉:1:25.50:', encoded=1, total=1).encode())
     h, w = image.shape[:2]
     def capture(regions, **kwargs):
@@ -248,7 +254,7 @@ def test_floating_entry_through_worker_preview_copy_retry_escape(qtbot, running_
     captures = []
     pipeline.capture.capture_done.connect(lambda *args: captures.append(args))
     copies = []
-    monkeypatch.setattr('src.ui.invoice_items_dialog.write_text_to_clipboard', copies.append)
+    monkeypatch.setattr('src.clipboard.writer.write_text_to_clipboard', lambda text: copies.append(text) or 'ok')
     widget.show()
     qtbot.mouseClick(widget._btn_invoice_items, Qt.MouseButton.LeftButton)
     assert overlay.isVisible() and not widget.isVisible()
@@ -263,7 +269,10 @@ def test_floating_entry_through_worker_preview_copy_retry_escape(qtbot, running_
     assert widget.isVisible() and dialog.table.item(0,0).text() == '茶-葉'
     assert not captures and not copies
     qtbot.mouseClick(dialog.copy_button, Qt.MouseButton.LeftButton)
-    assert copies == ['品名\t數量\t單價\n茶-葉\t1\t25.50']
+    assert copies == ['品名\t數量\t單價+茶-葉\t1\t25.50']
+    dialog.copy_field.setCurrentIndex(dialog.copy_field.findData('name'))
+    qtbot.mouseClick(dialog.copy_button, Qt.MouseButton.LeftButton)
+    assert copies[-1] == '茶-葉'
     request = pipeline._qr_request
     dialog.retry_requested.emit()
     assert request.is_set() and overlay.isVisible() and pipeline._qr_dialog is None
@@ -305,3 +314,131 @@ def test_error_without_capture_restores_launcher_and_allows_retry(qtbot, running
     dialog.retry_requested.emit()
     pipeline.start_region_capture('region_image')
     assert pipeline._qr_request is None and overlay.selection_prompt == ''
+
+
+@pytest.mark.parametrize(('left_items', 'right_items'), [
+    ('麵包:1:35.00:', '**:餅乾:2:40.50'),  # Duplicate separator at the join
+    ('麵包:1:35.00', '**餅乾:2:40.50'),    # Missing separator between complete rows
+])
+def test_declared_complete_rows_recover_only_a_separator_at_the_qr_join(left_items, right_items):
+    result = read_invoice_items(screen(left(left_items, encoded=2, total=2).encode(),
+                                       right_items.encode()))
+    assert result.rows == (('麵包', '1', '35.00'), ('餅乾', '2', '40.50'))
+    assert '2／2' in result.summary and '未能讀全' not in result.summary
+
+
+def test_extra_empty_trailing_fields_are_not_a_missing_item():
+    result = parse_items([left('螺帽:1:25.00:', encoded=1, total=1).encode(), b'**::'])
+    assert result.rows == (('螺帽', '1', '25.00'),)
+    assert result.summary == '已讀 1／1 項'
+
+
+def test_both_codes_read_but_one_genuine_item_field_missing():
+    result = parse_items([left('蘋果:2:12:', encoded=2, total=2).encode(), '**橘子:1'.encode()])
+    assert result.rows == (('蘋果', '2', '12'),)
+    assert '已讀左右兩碼' in result.summary and '只有 1 筆完整明細' in result.summary
+
+
+@pytest.mark.parametrize('leading', ['2', '２', '_2'])
+@pytest.mark.parametrize('raw', [True, False])
+def test_missing_join_before_numeric_prefix_never_guesses_price_or_product(leading, raw):
+    # It is unclear whether the next '2' extends the previous unit price.
+    result = parse_items([left('白糖:1:5:橘子:2:1', encoded=3, total=3).encode(),
+                          f'**{leading}B鉛筆:1:30'.encode()], raw_bytes=raw)
+    assert result.rows == (('白糖', '1', '5'),)
+
+
+def test_measured_price_split_and_non_numeric_quantity_keep_original_reading():
+    result = parse_items([left('米:散裝:1', encoded=1, total=1).encode(), b'**99.50'])
+    assert result.rows == (('米', '散裝', '199.50'),)
+
+
+@pytest.mark.parametrize('prefix', ['雅', '大 '])
+def test_scanner_transport_preserves_item_name_at_whitespace_like_byte_boundary(prefix):
+    result = read_invoice_items(screen(left(prefix, encoded=2, total=2).encode(),
+                                       '**瓶:1:35:米:1:35'.encode()))
+    assert result.rows == ((prefix + '瓶', '1', '35'), ('米', '1', '35'))
+
+
+def _blurred_grid_pair():
+    fixture = Path(__file__).parent / 'fixtures' / 'invoice_qr' / 'screens.zip'
+    with ZipFile(fixture) as archive:
+        png = archive.read('main_60_0_reduced.png')
+    return cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR)
+
+
+def test_recovered_coordinates_follow_rotated_receipt_and_reject_a_different_row():
+    image = _blurred_grid_pair()
+    rotated = np.ascontiguousarray(np.rot90(image))
+    assert read_invoice_items(rotated).rows == (
+        ('乾電池', '1', '105'), ('口罩', '1', '210'), ('鮮奶', '0.5', '25.00'))
+
+    left_half, right_half = np.hsplit(image, 2)
+    h, w = left_half.shape[:2]
+    separated = np.full((3*h, 2*w, 3), image[0, 0], np.uint8)
+    separated[:h, :w] = left_half
+    separated[-h:, -w:] = right_half
+    with pytest.raises(InvoiceQrError, match='位置無法配對'):
+        read_invoice_items(separated)
+
+
+@pytest.mark.parametrize(('vertical', 'turns'), [(True, -1), (False, 1), (False, 2)])
+def test_individually_rotated_continuation_from_another_invoice_is_rejected(vertical, turns):
+    first, second = _receipt_pair()
+    symbols = [cv2.resize(screen(code), (144, 144), interpolation=cv2.INTER_NEAREST)
+               for code in (first, second)]
+    rotated = np.rot90(symbols[1], turns)
+    image = np.vstack((symbols[0], rotated)) if vertical else np.hstack((symbols[0], rotated))
+    with pytest.raises(InvoiceQrError, match='位置無法配對'):
+        read_invoice_items(image)
+
+
+@pytest.mark.parametrize('turns', [0, 1, 2, 3])
+def test_rotating_complete_receipt_preserves_its_local_pairing_axis(turns):
+    image = np.ascontiguousarray(np.rot90(screen(*_receipt_pair()), turns))
+    assert read_invoice_items(image).rows == (
+        ('乾電池', '1', '105'), ('口罩', '1', '210'), ('鮮奶', '0.5', '25.00'))
+
+
+def test_retry_cancels_active_optical_recovery_and_only_publishes_new_receipt(
+        qtbot, running_pipeline, monkeypatch):
+    from src.invoice_check import qr_sampling
+
+    pipeline, widget, overlay = running_pipeline
+    first = _blurred_grid_pair()
+    second = screen(left('新憑證:2:18:', encoded=1, total=1).encode(), b'**')
+    captures = iter([first, second])
+    monkeypatch.setattr('src.invoice_check.capture.capture_regions',
+                        lambda *_args, **_kwargs: {'images': {'invoice': next(captures)}})
+    monkeypatch.setattr('src.core.resource_budget.memory_preflight', lambda **_: None)
+    entered, resume = Event(), Event()
+    original_solve = qr_sampling._solve_modules
+
+    def paused_solve(*args):
+        entered.set()
+        if not resume.wait(5):
+            raise AssertionError('timed out waiting for retry')
+        return original_solve(*args)
+
+    monkeypatch.setattr(qr_sampling, '_solve_modules', paused_solve)
+    published = []
+    pipeline.capture.invoice_items_ready.connect(lambda request, *_: published.append(request))
+    widget.show()
+    widget._btn_invoice_items.click()
+    overlay._finish_capture(QRect(0, 0, 156, 73))
+    try:
+        qtbot.waitUntil(lambda: entered.is_set() and pipeline._qr_dialog is not None, timeout=5000)
+        first_request = pipeline._qr_request
+        pipeline._qr_dialog.retry_requested.emit()
+        assert first_request.is_set() and overlay.isVisible()
+        second_request = pipeline._qr_request
+        assert second_request is not first_request
+        overlay._finish_capture(QRect(0, 0, 200, 180))
+    finally:
+        resume.set()
+    qtbot.waitUntil(lambda: pipeline._qr_dialog is not None and pipeline._qr_dialog.copy_button.isEnabled(),
+                    timeout=5000)
+    assert published == [second_request]
+    assert pipeline._qr_dialog.table.item(0, 0).text() == '新憑證'
+    pipeline._qr_dialog.close()
+    assert second_request.is_set() and pipeline._qr_dialog is None

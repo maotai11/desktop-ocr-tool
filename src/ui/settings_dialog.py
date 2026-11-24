@@ -251,6 +251,9 @@ class SettingsDialog(QDialog):
         self._ocr_copy_mode.setCurrentIndex(1 if copy_mode == 'select' else 0)
         clf.addRow('辨識完成後：', self._ocr_copy_mode)
         self._ocr_copy_mode.setToolTip('選字模式會在辨識後開啟選取視窗；複製設定儲存後立即生效。')
+        from .copy_preferences import invoice_copy_field_combo
+        self._invoice_copy_field = invoice_copy_field_combo(self._cfg)
+        clf.addRow('發票 QR 品項：', self._invoice_copy_field)
         clf = self._section(clv, '剪貼簿收錄')
         self._cb_monitor = QCheckBox("啟用剪貼簿監聽")
         self._cb_monitor.setChecked(
@@ -405,6 +408,8 @@ class SettingsDialog(QDialog):
         self._cfg.set('ocr', 'max_image_short_side', self._short_side.currentData())
         if self._model_profile.currentData() is not None:
             self._cfg.set('ocr', 'model_profile', self._model_profile.currentData())
+        from .copy_preferences import save_invoice_copy_field
+        save_invoice_copy_field(self._cfg, self._invoice_copy_field.currentData())
         self._cfg.set('clipboard', 'ocr_copy_mode', self._ocr_copy_mode.currentData())
         self._cfg.set('clipboard', 'monitor_clipboard', self._cb_monitor.isChecked())
         self._cfg.set('clipboard', 'auto_save_text', self._cb_auto_text.isChecked())
