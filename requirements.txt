@@ -5,6 +5,7 @@ shiboken6==6.11.3
 onnxruntime==1.30.0
 opencv-python==5.0.0.93
 einvoice-tw==0.1.0
+zxing-cpp==3.1.1
 numpy==2.2.6
 pillow==13.0.0
 pypdfium2==5.14.0

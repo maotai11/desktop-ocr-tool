@@ -19,7 +19,7 @@ def receipt():
     manual = deepcopy(base)
     manual.update(workload_checks=dict.fromkeys(WORKLOAD_CHECKS, True), manual_rounds_completed=3,
                   fields_each=5, large_source_pixels=6_000_000, native_capture_used=True)
-    return {'schema': 1, 'probe': 'resource_budget', 'version': '1.8.0-rc.21', 'platform': 'win32',
+    return {'schema': 1, 'probe': 'resource_budget', 'version': '1.8.0-rc.22', 'platform': 'win32',
             'passed': True, 'limit_bytes': 1_000_000_000, 'sample_interval_ms': 20,
             'source_commit': 'a'*40, 'executable_sha256': 'c'*64,
             'workflow': {'repository': 'maotai11/desktop-ocr-tool', 'run_id': '12345',
@@ -29,7 +29,7 @@ def receipt():
 
 
 def check(value):
-    validate_resource_report(value, version='1.8.0-rc.21', executable_sha256='c'*64,
+    validate_resource_report(value, version='1.8.0-rc.22', executable_sha256='c'*64,
                              source_commit='a'*40, run_id='12345', run_attempt='1')
 
 

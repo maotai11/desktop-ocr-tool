@@ -222,6 +222,26 @@ def test_frozen_payload_rejects_every_unreferenced_model_asset(monkeypatch, unex
         inspect_frozen_payload('unused.exe', profiles, validation_fixtures=fixture_validation()[0])
 
 
+@pytest.mark.parametrize('member', ['zxingcpp/zxingcpp.pyd', 'zxing_cpp-3.1.1.dist-info/licenses/LICENSE'])
+def test_frozen_payload_requires_qr_decoder_and_complete_wheel_license(monkeypatch, member):
+    from PyInstaller.archive import readers
+    profiles, data = fixture_profiles()
+    data.update({'python312.dll': b'python', 'qwindows.dll': b'qt',
+                 'onnxruntime_pybind11_state.pyd': b'ort'})
+    if member.endswith('.pyd'):
+        data.pop(member)
+    else:
+        data[member] = data[member][:128]
+
+    class Reader:
+        def __init__(self, _): self.toc = dict.fromkeys(data)
+        def extract(self, name): return data[name]
+
+    monkeypatch.setattr(readers, 'CArchiveReader', Reader)
+    with pytest.raises(ValueError, match=r'Frozen ZXing-C\+\+'):
+        inspect_frozen_payload('unused.exe', profiles, validation_fixtures=fixture_validation()[0])
+
+
 def test_frozen_payload_reports_exact_allowed_onnx_assets(monkeypatch):
     from PyInstaller.archive import readers
     profiles, data = fixture_profiles()

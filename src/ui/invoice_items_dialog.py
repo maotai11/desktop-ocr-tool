@@ -6,8 +6,10 @@ from PySide6.QtWidgets import (
 )
 
 from ..clipboard.writer import write_text_to_clipboard
-from ..invoice_check.qr_items import HEADERS
 from .design_system import apply_button
+
+
+HEADERS = ('品名', '數量', '單價')
 
 
 class InvoiceItemsDialog(QDialog):

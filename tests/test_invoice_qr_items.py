@@ -1,5 +1,6 @@
 """Synthetic receipts only. Exercise real QR decoding as well as partial payloads."""
 import base64
+from threading import Event
 
 import cv2
 import numpy as np
@@ -39,6 +40,165 @@ def test_dual_qr_reads_items_in_invoice_order_and_preserves_values(codec, flag):
     result = read_invoice_items(image)
     assert result.rows == (('乾電池', '1', '105'), ('口罩', '1', '210'), ('鮮奶', '0.5', '25.00'))
     assert '3／3' in result.summary
+
+
+def _receipt_pair():
+    return left('乾電池:1:105:').encode(), '**口罩:1:210:鮮奶:0.5:25.00'.encode()
+
+
+@pytest.mark.parametrize('scale,sigma', [(.40, .7), (.48, .5), (.56, .9)],
+                         ids=['neither-code', 'left-only', 'right-only'])
+def test_small_blurred_invoice_recovers_both_symbols(scale, sigma):
+    # rc.21 respectively read zero, one left, or one right symbol at these
+    # three viewer scales. Success needs the entire ordered item list.
+    image = cv2.resize(screen(*_receipt_pair()), None, fx=scale, fy=scale,
+                       interpolation=cv2.INTER_AREA)
+    blurred = cv2.GaussianBlur(image, (0, 0), sigma)
+    assert read_invoice_items(blurred).rows == (
+        ('乾電池', '1', '105'), ('口罩', '1', '210'), ('鮮奶', '0.5', '25.00'))
+
+
+@pytest.mark.parametrize('codec,flag', [('big5', 0), ('utf8', 1)])
+def test_qr_split_in_middle_of_product_character(codec, flag):
+    tail = '茶葉:1:35.50'.encode(codec)
+    first = left('', flag, encoded=1, total=1).encode() + tail[:1]
+    second = b'**' + tail[1:]
+    assert read_invoice_items(screen(first, second)).rows == (('茶葉', '1', '35.50'),)
+
+
+def test_tightly_cropped_small_symbol_with_all_modules_present():
+    image = screen(left('收納盒:1:39.00', encoded=1, total=1).encode())
+    ys, xs = np.nonzero(image[:, :, 0] == 0)
+    cropped = image[ys.min():ys.max()+1, xs.min():xs.max()+1]
+    small = cv2.resize(cropped, None, fx=.6, fy=.6, interpolation=cv2.INTER_AREA)
+    soft = cv2.GaussianBlur(small, (0, 0), .7)
+    assert read_invoice_items(soft).rows == (('收納盒', '1', '39.00'),)
+
+
+def test_unrecoverable_continuation_keeps_only_confirmed_left_items():
+    first, second = _receipt_pair()
+    image = screen(first, second)
+    split = screen(first).shape[1]
+    # Destroy the continuation's data while leaving its finder patterns.
+    side = image[:, split:]
+    ys, xs = np.nonzero(side[:, :, 0] == 0)
+    x1, x2 = xs.min(), xs.max()+1
+    y1, y2 = ys.min(), ys.max()+1
+    side[y1+40:y2, x1+40:x2] = 255
+    partial = read_invoice_items(image)
+    assert partial.rows == (('乾電池', '1', '105'),)
+    assert '1／3' in partial.summary
+
+
+@pytest.mark.parametrize('has_prior', [False, True])
+def test_damaged_continuation_never_publishes_part_of_last_price(has_prior):
+    prior_fields = '前項:2:30.00:' if has_prior else ''
+    prior_rows = (('前項', '2', '30.00'),) if has_prior else ()
+    count = len(prior_rows) + 1
+    first = left(prior_fields + '烏龍:1:1', encoded=count, total=count).encode()
+    image = screen(first, b'**99')
+    assert read_invoice_items(image).rows == (*prior_rows, ('烏龍', '1', '199'))
+
+    # Keep the right symbol's finders intact but break its checksum by
+    # occluding the central quarter of its data area.
+    side = image[:, screen(first).shape[1]:]
+    ys, xs = np.nonzero(side[:, :, 0] == 0)
+    cy = (ys.min() + ys.max() + 1) // 2
+    cx = (xs.min() + xs.max() + 1) // 2
+    radius = round((ys.max() - ys.min() + 1) / 8)
+    side[cy-radius:cy+radius, cx-radius:cx+radius] = 127
+
+    result = read_invoice_items(image)
+    assert result.rows == prior_rows
+    assert f'{len(prior_rows)}／{count}' in result.summary
+    assert '框' in result.summary
+
+
+def test_detected_but_damaged_code_reports_unreadable_data():
+    image = screen(left('麵包:1:10:', encoded=1, total=1).encode())
+    ys, xs = np.nonzero(image[:, :, 0] == 0)
+    start_x, start_y = xs.min(), ys.min()
+    end_x, end_y = xs.max() + 1, ys.max() + 1
+    keep = round((end_x - start_x) * .35)
+    # Keep all three finder patterns, overwrite most of the lower right data.
+    image[start_y+keep:end_y-7, start_x+keep:end_x-7] = 255
+    with pytest.raises(InvoiceQrError, match='未能解碼') as error:
+        read_invoice_items(image)
+    assert '放大' in str(error.value)
+
+
+def test_already_cancelled_invoice_does_not_publish_a_readable_pair():
+    event = Event()
+    event.set()
+    with pytest.raises(InvoiceQrError, match='取消'):
+        read_invoice_items(screen(*_receipt_pair()), cancel_event=event)
+
+
+def test_worker_cancellation_after_first_decode_skips_retries_and_publication(qtbot, file_mgr, monkeypatch):
+    from src.invoice_check import qr_items
+    from src.workers.capture_worker import CaptureWorker
+
+    event = Event()
+    worker = CaptureWorker(file_mgr)
+    image = screen(*_receipt_pair())
+    seen, published = [], []
+
+    def stop_after_read(*_):
+        seen.append('original')
+        event.set()
+        return [], False
+
+    def unexpected_retry(*_):
+        seen.append('retry')
+        return [], False
+
+    monkeypatch.setattr(qr_items, '_zxing_symbols', stop_after_read)
+    monkeypatch.setattr(qr_items, '_opencv_symbols', unexpected_retry)
+    monkeypatch.setattr('src.invoice_check.capture.capture_regions',
+                        lambda *args, **kwargs: {'images': {'invoice': image}})
+    monkeypatch.setattr('src.core.resource_budget.memory_preflight', lambda **_: None)
+    worker.invoice_items_ready.connect(lambda *args: published.append(args))
+    h, w = image.shape[:2]
+    try:
+        with qtbot.waitSignal(worker.finished, timeout=5000):
+            worker.capture_invoice_items((0, 0, w, h, 1), None, event)
+            worker.stop()
+        assert seen == ['original']
+        assert event.is_set() and not published
+    finally:
+        worker.stop()
+        assert worker.wait(5000)
+
+
+def test_same_position_read_by_both_decoders_requires_equivalent_bytes():
+    from src.invoice_check.qr_items import _Symbol, _merge_symbols
+
+    corners = np.array([(10, 10), (60, 10), (60, 60), (10, 60)], dtype=np.float32)
+    payload = left('茶葉:1:35.50', 0, encoded=1, total=1)
+    raw = _Symbol(payload.encode('big5'), corners, True)
+    converted = raw.payload.decode('latin-1').encode('utf-8')
+    found = [raw]
+    _merge_symbols(found, [_Symbol(converted, corners + 1, False)])
+    assert len(found) == 1 and found[0].payload == raw.payload
+    with pytest.raises(InvoiceQrError, match='不同內容'):
+        _merge_symbols(found, [_Symbol(converted.replace(b'35.50', b'85.50'), corners + 1, False)])
+
+
+def test_distant_continuation_from_another_row_cannot_complete_receipt():
+    first, second = _receipt_pair()
+    top, bottom = screen(first), screen(second)
+    image = np.full((top.shape[0] + bottom.shape[0] + 80,
+                     top.shape[1] + bottom.shape[1], 3), 255, np.uint8)
+    image[:top.shape[0], :top.shape[1]] = top
+    image[-bottom.shape[0]:, -bottom.shape[1]:] = bottom
+    with pytest.raises(InvoiceQrError, match='配對'):
+        read_invoice_items(image)
+
+
+def test_two_identical_left_symbols_are_not_deduplicated_across_positions():
+    first, second = _receipt_pair()
+    with pytest.raises(InvoiceQrError):
+        read_invoice_items(screen(first, second, first))
 
 
 def test_single_big5_item_and_base64_continuation():

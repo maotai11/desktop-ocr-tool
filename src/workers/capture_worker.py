@@ -56,21 +56,30 @@ class CaptureWorker(QueueWorker):
 
     def _read_invoice_items(self, region, expected_monitor, cancel):
         from ..core.resource_budget import ResourceBudgetExceeded, memory_preflight
-        from ..invoice_check.capture import capture_regions
-        from ..invoice_check.qr_items import MAX_QR_PIXELS, InvoiceQrError, read_invoice_items
+        try:
+            from ..invoice_check.capture import capture_regions
+            from ..invoice_check.qr_items import (
+                MAX_QR_PIXELS, MAX_QR_RECOVERY_PIXELS, InvoiceQrError, read_invoice_items,
+            )
+        except (ImportError, OSError):
+            if not cancel.is_set():
+                self.invoice_items_ready.emit(cancel, None, '無法載入 QR 解碼元件，請重新開啟拾字筆。')
+            return
 
         result, error = None, ''
         try:
             pixels = region[2] * region[3]
             if pixels > MAX_QR_PIXELS:
                 raise InvoiceQrError('框選範圍太大，請只框住同張發票的左右兩碼。')
-            memory_preflight(additional_bytes=pixels * 32 + 32_000_000)
+            # The recovery workspace is capped even for a large source crop;
+            # a tiny crop may still grow to three times its side plus a quiet zone.
+            memory_preflight(additional_bytes=pixels * 32 + MAX_QR_RECOVERY_PIXELS * 12 + 32_000_000)
             snapshot = capture_regions({'invoice': region}, expected_monitor=expected_monitor,
                                        cancel_event=cancel)
             if snapshot is None or cancel.is_set():
                 return
             self.invoice_frame_ready.emit(cancel)
-            result = read_invoice_items(snapshot['images']['invoice'])
+            result = read_invoice_items(snapshot['images']['invoice'], cancel_event=cancel)
         except (InvoiceQrError, ResourceBudgetExceeded) as exc:
             error = str(exc)
         except Exception:
